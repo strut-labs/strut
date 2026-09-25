@@ -891,11 +891,11 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 ## Phase 18 — Serious dogfooding and ecosystem
 
 ### CP106 — Build multiple non-trivial Strut programs
-- [ ] CLI utility.
-- [ ] concurrent/network service.
-- [ ] data/JSON-heavy tool.
-- [ ] one-binary web app.
-- [ ] use dogfood pain to revise APIs before stability freeze.
+- [x] CLI utility.
+- [x] concurrent/network service.
+- [x] data/JSON-heavy tool.
+- [x] one-binary web app.
+- [x] use dogfood pain to revise APIs before stability freeze.
 
 ### CP107 — Package ecosystem dogfood
 - [ ] HTTP.
