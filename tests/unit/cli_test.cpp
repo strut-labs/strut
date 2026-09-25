@@ -2,6 +2,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <filesystem>
+#include <fstream>
 
 #include "strut/cli.h"
 
@@ -36,6 +38,25 @@ int main() {
         require(strut::run_cli(3, argv, out, err) == 0, "--version --json exit status");
         require(out.str().find("\"jsonic\"") != std::string::npos, "Jsonic++ metadata present");
         require(err.str().empty(), "--version --json stderr");
+    }
+
+
+    {
+        const auto old = std::filesystem::current_path();
+        auto root = std::filesystem::temp_directory_path() / "strut-cli-make-test";
+        std::error_code ec; std::filesystem::remove_all(root, ec); std::filesystem::create_directories(root / ".strut", ec);
+        std::ofstream(root / "main.p") << "function main() -> void { print(\"make-ok\"); return; }\n";
+        std::ofstream(root / ".strut/config.json") << R"({"entrypoint":"main.p","output":"app","target":"native","mode":"debug","linking":"dynamic","incremental":"modified"})";
+        std::filesystem::current_path(root);
+        char arg0[] = "strut"; char arg1[] = "make"; char* argv[] = {arg0,arg1};
+        std::ostringstream out; std::ostringstream err;
+        require(strut::run_cli(2, argv, out, err) == 0, "make project");
+#ifdef _WIN32
+        require(std::filesystem::exists(root / "app.exe"), "make output");
+#else
+        require(std::filesystem::exists(root / "app"), "make output");
+#endif
+        std::filesystem::current_path(old); std::filesystem::remove_all(root, ec);
     }
 
     return 0;

@@ -44,6 +44,7 @@ void print_help(std::ostream& out) {
         << "      --release        Optimise, strip and enable dead-code elimination\n"
         << "      --verbose        Explain object rebuild/reuse decisions\n"
         << "      compile         Optional explicit compile command alias\n"
+        << "      make            Build the current Strut project\n"
         << "      add <path>      Add a local package checkout to this project\n"
         << "      remove <name>   Remove a package dependency\n"
         << "      list            List project dependencies\n"
@@ -190,6 +191,30 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     return 0;
 }
 
+
+int run_make_command(bool release_override, bool verbose, std::ostream& out, std::ostream& err) {
+    const auto root = find_project_root(std::filesystem::current_path());
+    const auto config_path = root / ".strut" / "config.json";
+    if (!std::filesystem::exists(config_path)) {
+        err << "strut: no .strut/config.json found; run 'strut init' first\n";
+        return 2;
+    }
+    BuildConfig config; std::string config_error;
+    if (!load_build_config(config_path, config, config_error)) { err << "strut: " << config_error << '\n'; return 1; }
+    const auto source = root / config.entrypoint;
+    if (!std::filesystem::exists(source)) { err << "strut: project entrypoint not found: " << source.string() << '\n'; return 1; }
+    auto output = root / config.output;
+#ifdef _WIN32
+    if (output.extension().empty()) output += ".exe";
+#endif
+    NativeLinkOptions link;
+    link.release = release_override || config.mode == "release";
+    link.fully_static = config.linking == "static";
+    link.prefer_dynamic = config.linking == "dynamic";
+    if (verbose) out << "project " << root.generic_string() << '\n';
+    return compile_source(source, output, link, out, err, verbose);
+}
+
 int run_package_command(const std::string& command, const std::string& argument, std::ostream& out, std::ostream& err) {
     const auto root = std::filesystem::current_path(); PackageManifest project; std::string error;
     if (!load_package_manifest_file(root / "strut.json", project, error)) { err << "strut: " << error << '\n'; return 2; }
@@ -225,6 +250,16 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             std::string init_error;
             if (!init_project_build_state(std::filesystem::current_path(), init_error)) { err << "strut: " << init_error << '\n'; return 1; }
             out << "created .strut/config.json\n"; return 0;
+        }
+        if (command == "make") {
+            bool release = false; bool make_verbose = false;
+            for (int i = 2; i < argc; ++i) {
+                const std::string_view arg(argv[i]);
+                if (arg == "--release") release = true;
+                else if (arg == "--verbose") make_verbose = true;
+                else { err << "strut: unsupported make option '" << arg << "'\n"; return 2; }
+            }
+            return run_make_command(release, make_verbose, out, err);
         }
         if (command == "add" || command == "remove" || command == "list" || command == "install") {
             const std::string argument = argc >= 3 ? argv[2] : std::string();

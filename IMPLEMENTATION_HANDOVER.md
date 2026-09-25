@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP86 complete; CP87 is next.**
+Current implementation progress: **CP0–CP87 complete; CP88 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -742,12 +742,12 @@ Current implementation progress: **CP0–CP86 complete; CP87 is next.**
 ## Phase 15 — Project CLI, formatter, tests, docs maintenance
 
 ### CP87 — `strut make`
-- [ ] project discovery/manifest loading.
-- [ ] compile project entrypoint/dependencies.
-- [ ] incremental build strategy.
-- [ ] debug/release selection.
-- [ ] clear diagnostics.
-- [ ] docs.
+- [x] project discovery/manifest loading.
+- [x] compile project entrypoint/dependencies.
+- [x] incremental build strategy.
+- [x] debug/release selection.
+- [x] clear diagnostics.
+- [x] docs.
 
 ### CP88 — `strut test`
 - [ ] native Strut test convention/API.
