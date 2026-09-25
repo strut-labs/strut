@@ -46,6 +46,7 @@ private:
     StmtPtr parse_for(ParseResult& result);
     StmtPtr parse_try(ParseResult& result);
     StmtPtr parse_function(ParseResult& result);
+    StmtPtr parse_operator(ParseResult& result);
     StmtPtr parse_struct(ParseResult& result);
     StmtPtr parse_enum(ParseResult& result);
     StmtPtr parse_include(ParseResult& result);

@@ -212,6 +212,28 @@ StmtPtr Parser::parse_typed_function_value(ParseResult& result) {
     auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::declaration;st->name=name.lexeme;st->declared_type=std::move(type);st->value=std::move(value);st->span=join(begin.span,previous().span);return st;
 }
 
+
+StmtPtr Parser::parse_operator(ParseResult& result) {
+    const Token begin=previous(); auto st=std::make_unique<Stmt>(); st->kind=Stmt::Kind::operator_decl;
+    if(match("[")){
+        if(check("]")){error(result,peek(),"generic operator list cannot be empty");return nullptr;}
+        do{if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected generic parameter");return nullptr;}auto g=advance();bool upper=!g.lexeme.empty();for(unsigned char c:g.lexeme)if(std::islower(c))upper=false;if(!upper){error(result,g,"generic type parameters must use uppercase names");return nullptr;}st->generic_parameters.push_back(g.lexeme);}while(match(","));
+        if(!match("]")){error(result,peek(),"expected ']' after operator generics");return nullptr;}
+    }
+    if(peek().kind!=TokenKind::op){error(result,peek(),"expected overloadable operator after 'operator'");return nullptr;}
+    const Token op=advance(); st->op=op.lexeme;
+    if(!overloadable_operator(st->op,OperatorFixity::prefix) && !overloadable_operator(st->op,OperatorFixity::infix) && !overloadable_operator(st->op,OperatorFixity::postfix)){error(result,op,"operator is not overloadable in Strut");return nullptr;}
+    if(!match("(")){error(result,peek(),"expected '(' after operator token");return nullptr;}
+    if(!check(")")){do{auto type=parse_type(result);if(type.name.empty())return nullptr;if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected operator parameter name");return nullptr;}auto name=advance();st->parameters.push_back(Parameter{std::move(type),name.lexeme,name.span});}while(match(","));}
+    if(!match(")")){error(result,peek(),"expected ')' after operator parameters");return nullptr;}
+    if(!match("->")){error(result,peek(),"expected '->' and operator return type");return nullptr;}st->return_type=parse_type(result);if(!st->return_type||st->return_type->name.empty())return nullptr;
+    const std::size_t arity=st->parameters.size();
+    const OperatorFixity fixity=arity==1?OperatorFixity::prefix:OperatorFixity::infix;
+    if(!overloadable_operator(st->op,fixity)){error(result,op,"operator does not support this arity/fixity");return nullptr;}
+    if(match(";")){st->has_body=false;st->span=join(begin.span,previous().span);return st;}
+    if(!match("{")){error(result,peek(),"expected operator body or ';'");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->has_body=true;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;
+}
+
 StmtPtr Parser::parse_function(ParseResult& result) {
     const Token begin = previous();
     if (peek().kind != TokenKind::identifier) { error(result, peek(), "expected function name"); return nullptr; }
@@ -399,6 +421,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("unsafe")) { const Token kw=previous(); if(!match("{")){error(result,peek(),"expected '{' after unsafe");return nullptr;} auto block=parse_block(result); if(!block)return nullptr; block->kind=Stmt::Kind::unsafe_stmt; block->span=join(kw.span,block->span); return block; }
     if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
     if (match("function")) return parse_function(result);
+    if (match("operator")) return parse_operator(result);
     if (match("{")) return parse_block(result);
     if (match("if")) return parse_if(result);
     if (match("while")) return parse_while(result);

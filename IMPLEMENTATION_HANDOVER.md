@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP51 complete; CP52 is next.**
+Current implementation progress: **CP0–CP52 complete; CP53 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -451,13 +451,13 @@ Current implementation progress: **CP0–CP51 complete; CP52 is next.**
 - [x] tests + regressions.
 
 ### CP52 — Normal operator declarations
-- [ ] `operator +(A a, B b) -> R { ... }`.
-- [ ] generic `operator[T] ...` declarations.
-- [ ] overload arithmetic/comparison/stream operators from the approved set.
-- [ ] support prefix `*` dereference for `ptr<T>` and make it overloadable.
-- [ ] add indexing/call operators only where semantics remain clear.
-- [ ] explicitly reserve structural operators such as member access unless later justified.
-- [ ] tests + docs.
+- [x] `operator +(A a, B b) -> R { ... }`.
+- [x] generic `operator[T] ...` declarations.
+- [x] overload arithmetic/comparison/stream operators from the approved set.
+- [x] support prefix `*` dereference for `ptr<T>` and make it overloadable.
+- [x] add indexing/call operators only where semantics remain clear.
+- [x] explicitly reserve structural operators such as member access unless later justified.
+- [x] tests + docs.
 
 ### CP53 — Lambda operator declarations
 - [ ] `operator<(A, B) -> R> + := (a, b) => ...;`.

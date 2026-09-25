@@ -113,6 +113,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
             if(expr.text=="*"){if(operand.name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw_ptr<T> dereference requires unsafe block"});for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
+            auto oit=operator_returns_.find("prefix:"+expr.text+"|"+operand.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
             return operand;
         }
         case Expr::Kind::binary: {
@@ -134,6 +135,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (left.kind == right.kind) return left.bits >= right.bits ? left : right;
                 return left.bits > right.bits ? left : right;
             }
+            auto oit=operator_returns_.find("infix:"+expr.text+"|"+left.name+","+right.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
             return {};
         }
         case Expr::Kind::call: {
@@ -256,6 +258,13 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:fields)declare(result,Symbol{field.first,SymbolNamespace::value,method->span,false,resolved_type_name(field.second)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
             break;
         }
+        case Stmt::Kind::operator_decl: {
+            std::string signature;for(std::size_t i=0;i<st.parameters.size();++i){if(i)signature+=",";signature+=resolved_type_name(st.parameters[i].type.name);}
+            const std::string fixity=st.parameters.size()==1?"prefix":"infix";const std::string key=fixity+":"+st.op;
+            auto& seen=operator_signatures_[key];if(!seen.insert(signature).second)result.diagnostics.push_back(Diagnostic{st.span,"ambiguous duplicate operator overload for '"+st.op+"' with signature ("+signature+")"});
+            if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,false,resolved_type_name(p.type.name)});analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
+            break;
+        }
         case Stmt::Kind::function_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
             if (st.has_body) {
@@ -338,13 +347,14 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); unsafe_depth_=0; catch_all_depth_=0;
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); unsafe_depth_=0; catch_all_depth_=0;
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){auto& errs=function_errors_[st->name];for(const auto& e:st->error_types)errs.insert(resolved_type_name(e.name));}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=resolved_type_name(st->parameters[i].type.name);}const std::string fixity=st->parameters.size()==1?"prefix":"infix";operator_returns_[fixity+":"+st->op+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }
     analyze_statements(result, program.statements, false);

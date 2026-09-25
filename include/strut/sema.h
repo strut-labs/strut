@@ -61,6 +61,8 @@ private:
     std::string current_function_return_type_;
     std::unordered_set<std::string> current_function_errors_;
     std::unordered_map<std::string, std::unordered_set<std::string>> function_errors_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> operator_signatures_;
+    std::unordered_map<std::string, std::string> operator_returns_;
     int unsafe_depth_ = 0;
     int catch_all_depth_ = 0;
 };
