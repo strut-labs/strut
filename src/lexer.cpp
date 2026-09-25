@@ -118,7 +118,88 @@ void Lexer::lex_identifier(LexResult& result) {
     advance();
     while (!at_end() && is_identifier_continue(peek())) advance();
     const std::string_view value(source_.text().data() + begin_offset, offset_ - begin_offset);
-    add_token(result, is_keyword(value) ? TokenKind::keyword : TokenKind::identifier, begin, begin_offset);
+    if (value == "true" || value == "false") {
+        add_token(result, TokenKind::boolean_literal, begin, begin_offset);
+    } else if (value == "null") {
+        add_token(result, TokenKind::null_literal, begin, begin_offset);
+    } else {
+        add_token(result, is_keyword(value) ? TokenKind::keyword : TokenKind::identifier, begin, begin_offset);
+    }
+}
+
+void Lexer::lex_number(LexResult& result) {
+    const auto begin = location();
+    const auto begin_offset = offset_;
+    bool floating = false;
+
+    while (!at_end() && std::isdigit(static_cast<unsigned char>(peek()))) advance();
+
+    if (!at_end() && peek() == '.' && std::isdigit(static_cast<unsigned char>(peek(1)))) {
+        floating = true;
+        advance();
+        while (!at_end() && std::isdigit(static_cast<unsigned char>(peek()))) advance();
+    }
+
+    if (!at_end() && (peek() == 'e' || peek() == 'E')) {
+        floating = true;
+        advance();
+        if (!at_end() && (peek() == '+' || peek() == '-')) advance();
+        if (at_end() || !std::isdigit(static_cast<unsigned char>(peek()))) {
+            while (!at_end() && is_identifier_continue(peek())) advance();
+            add_error(result, begin, "malformed floating literal: exponent requires digits");
+            return;
+        }
+        while (!at_end() && std::isdigit(static_cast<unsigned char>(peek()))) advance();
+    }
+
+    if (!at_end() && is_identifier_start(peek())) {
+        while (!at_end() && is_identifier_continue(peek())) advance();
+        add_error(result, begin, "malformed numeric literal");
+        return;
+    }
+
+    add_token(result, floating ? TokenKind::floating_literal : TokenKind::integer_literal, begin, begin_offset);
+}
+
+void Lexer::lex_string(LexResult& result) {
+    const auto begin = location();
+    const auto begin_offset = offset_;
+    advance(); // opening quote
+    bool valid = true;
+
+    while (!at_end()) {
+        const char c = peek();
+        if (c == '"') {
+            advance();
+            if (valid) add_token(result, TokenKind::string_literal, begin, begin_offset);
+            return;
+        }
+        if (c == '\n' || c == '\r') {
+            add_error(result, begin, "unterminated string literal");
+            return;
+        }
+        if (c == '\\') {
+            const auto escape_begin = location();
+            advance();
+            if (at_end()) {
+                add_error(result, begin, "unterminated string literal");
+                return;
+            }
+            const char escaped = advance();
+            switch (escaped) {
+                case '\\': case '"': case 'n': case 'r': case 't': case '0':
+                    break;
+                default:
+                    add_error(result, escape_begin, std::string("invalid string escape character '") + escaped + "'");
+                    valid = false;
+                    break;
+            }
+            continue;
+        }
+        advance();
+    }
+
+    add_error(result, begin, "unterminated string literal");
 }
 
 void Lexer::lex_punctuation_or_operator(LexResult& result) {
@@ -156,6 +237,10 @@ LexResult Lexer::lex() {
         if (at_end()) break;
         if (is_identifier_start(peek())) {
             lex_identifier(result);
+        } else if (std::isdigit(static_cast<unsigned char>(peek()))) {
+            lex_number(result);
+        } else if (peek() == '"') {
+            lex_string(result);
         } else {
             lex_punctuation_or_operator(result);
         }

@@ -11,6 +11,11 @@ enum class TokenKind {
     end_of_file,
     identifier,
     keyword,
+    integer_literal,
+    floating_literal,
+    string_literal,
+    boolean_literal,
+    null_literal,
     punctuation,
     op,
 };

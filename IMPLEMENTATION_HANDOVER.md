@@ -4,95 +4,97 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
+Current implementation progress: **CP0–CP9 complete; CP10 is next.**
+
 ## Phase 0 — Project contract and repo foundations
 
 ### CP0 — Freeze the initial written design baseline
-- [ ] Review `HANDOVER.md`.
-- [ ] Review `LANGUAGE_HANDOVER.md` against the latest design discussion.
-- [ ] Resolve any immediately blocking syntax contradictions before compiler code starts.
-- [ ] Record remaining provisional decisions explicitly rather than guessing during implementation.
-- [ ] Commit the handover baseline in `strut/`.
+- [x] Review `HANDOVER.md`.
+- [x] Review `LANGUAGE_HANDOVER.md` against the latest design discussion.
+- [x] Resolve any immediately blocking syntax contradictions before compiler code starts.
+- [x] Record remaining provisional decisions explicitly rather than guessing during implementation.
+- [x] Commit the handover baseline in `strut/`.
 
 ### CP1 — Choose bootstrap implementation/toolchain
-- [ ] Choose the implementation language/toolchain for the first Strut compiler/runtime.
-- [ ] Document compiler/frontend/backend boundaries.
-- [ ] Choose the initial native code-generation strategy/backend.
-- [ ] Confirm Linux-first developer workflow while preserving portable architecture from day one: no POSIX-only assumptions in compiler core, runtime abstractions for OS services, and Windows/macOS build paths kept viable.
-- [ ] Add reproducible build instructions.
+- [x] Choose the implementation language/toolchain for the first Strut compiler/runtime.
+- [x] Document compiler/frontend/backend boundaries.
+- [x] Choose the initial native code-generation strategy/backend.
+- [x] Confirm Linux-first developer workflow while preserving portable architecture from day one: no POSIX-only assumptions in compiler core, runtime abstractions for OS services, and Windows/macOS build paths kept viable.
+- [x] Add reproducible build instructions.
 
 ### CP2 — Establish `strut/` repository structure
-- [ ] Add compiler/runtime/stdlib/test directories.
-- [ ] Add build configuration.
-- [ ] Add formatter/lint rules for compiler source where appropriate.
-- [ ] Add a minimal compiler executable with `--help` and `--version`.
-- [ ] Add unit-test harness.
-- [ ] Commit a clean bootstrap checkpoint.
+- [x] Add compiler/runtime/stdlib/test directories.
+- [x] Add build configuration.
+- [x] Add formatter/lint rules for compiler source where appropriate.
+- [x] Add a minimal compiler executable with `--help` and `--version`.
+- [x] Add unit-test harness.
+- [x] Commit a clean bootstrap checkpoint.
 
 ## Phase 1 — Establish independent regression suite immediately
 
 ### CP3 — Bootstrap `strut-regression-suite/`
-- [ ] Add README and suite handover/readme describing its independence from compiler tests.
-- [ ] Add fixture directory structure.
-- [ ] Add a harness capable of accepting/locating a local Strut compiler binary.
-- [ ] Add initial placeholder/smoke cases.
-- [ ] Commit in the regression-suite repository.
+- [x] Add README and suite handover/readme describing its independence from compiler tests.
+- [x] Add fixture directory structure.
+- [x] Add a harness capable of accepting/locating a local Strut compiler binary.
+- [x] Add initial placeholder/smoke cases.
+- [x] Commit in the regression-suite repository.
 
 ### CP4 — Certify the regression harness itself
-- [ ] Assert successful compile exit status.
-- [ ] Assert program stdout/stderr/exit status.
-- [ ] Assert expected compiler failure.
-- [ ] Assert diagnostic text and, where practical, source locations.
-- [ ] Ensure a deliberately wrong expectation makes the suite fail.
-- [ ] Keep the harness dependency-light and agent-readable.
+- [x] Assert successful compile exit status.
+- [x] Assert program stdout/stderr/exit status.
+- [x] Assert expected compiler failure.
+- [x] Assert diagnostic text and, where practical, source locations.
+- [x] Ensure a deliberately wrong expectation makes the suite fail.
+- [x] Keep the harness dependency-light and agent-readable.
 
 ## Phase 2 — Build the public website/docs early
 
 ### CP5 — Turn the barebones Nift site into the Strut website shell
-- [ ] Inspect existing Nift config/tracking/template structure.
-- [ ] Create a distinctive minimalist dark-mode visual system similar in discipline to `nift.dev` without cloning it.
-- [ ] Avoid a blue-dominated palette.
-- [ ] Add header/navigation and responsive layout.
-- [ ] Add a hamburger on mobile.
-- [ ] Make the hamburger show/hide a full-screen docs/navigation menu.
-- [ ] Ensure menu state/scroll behaviour works correctly on mobile.
-- [ ] Add a Strut favicon/brand asset.
-- [ ] Run `nift build` and fix all errors.
-- [ ] Commit website changes.
+- [x] Inspect existing Nift config/tracking/template structure.
+- [x] Create a distinctive minimalist dark-mode visual system similar in discipline to `nift.dev` without cloning it.
+- [x] Avoid a blue-dominated palette.
+- [x] Add header/navigation and responsive layout.
+- [x] Add a hamburger on mobile.
+- [x] Make the hamburger show/hide a full-screen docs/navigation menu.
+- [x] Ensure menu state/scroll behaviour works correctly on mobile.
+- [x] Add a Strut favicon/brand asset.
+- [x] Run `nift build` and fix all errors.
+- [x] Commit website changes.
 
 ### CP6 — Establish multi-page docs architecture
-- [ ] Add landing/about/install/getting-started pages.
-- [ ] Add initial language/docs sections for syntax, types, functions, collections, JSON, structs, memory, errors, concurrency, async, packages, CLI, examples.
-- [ ] Wire internal navigation using Nift project-aware linking.
-- [ ] Add previous/next or equivalent docs navigation if useful.
-- [ ] Ensure desktop and mobile docs navigation scale beyond a handful of pages.
-- [ ] Build and inspect generated output.
-- [ ] Commit website changes.
+- [x] Add landing/about/install/getting-started pages.
+- [x] Add initial language/docs sections for syntax, types, functions, collections, JSON, structs, memory, errors, concurrency, async, packages, CLI, examples.
+- [x] Wire internal navigation using Nift project-aware linking.
+- [x] Add previous/next or equivalent docs navigation if useful.
+- [x] Ensure desktop and mobile docs navigation scale beyond a handful of pages.
+- [x] Build and inspect generated output.
+- [x] Commit website changes.
 
 ### CP7 — Add branded 404 and docs maintenance contract
-- [ ] Add a custom dark 404 page.
-- [ ] Keep 404 centered/minimal with no normal header/footer, similar in spirit to `nift.dev`.
-- [ ] Add a clear path back to useful content.
-- [ ] Confirm favicon/theme consistency.
-- [ ] Document implemented vs planned language features clearly.
-- [ ] Commit website changes.
+- [x] Add a custom dark 404 page.
+- [x] Keep 404 centered/minimal with no normal header/footer, similar in spirit to `nift.dev`.
+- [x] Add a clear path back to useful content.
+- [x] Confirm favicon/theme consistency.
+- [x] Document implemented vs planned language features clearly.
+- [x] Commit website changes.
 
 ## Phase 3 — Lexer, parser, AST, diagnostics
 
 ### CP8 — Source files and lexical skeleton
-- [ ] Support provisional `.p` Strut source files.
-- [ ] Support optional `.h` declaration/header files semantically, without C preprocessor text substitution.
-- [ ] Implement source locations/spans from day one.
-- [ ] Implement comments, whitespace, identifiers, keywords, punctuation.
-- [ ] Add unit tests and independent regressions.
+- [x] Support provisional `.p` Strut source files.
+- [x] Support optional `.h` declaration/header files semantically, without C preprocessor text substitution.
+- [x] Implement source locations/spans from day one.
+- [x] Implement comments, whitespace, identifiers, keywords, punctuation.
+- [x] Add unit tests and independent regressions.
 
 ### CP9 — Literals and primitive tokens
-- [ ] Integer literals.
-- [ ] Floating literals.
-- [ ] String literals and escapes.
-- [ ] Boolean literals.
-- [ ] `null`.
-- [ ] Error diagnostics for malformed literals.
-- [ ] Tests + regression fixtures.
+- [x] Integer literals.
+- [x] Floating literals.
+- [x] String literals and escapes.
+- [x] Boolean literals.
+- [x] `null`.
+- [x] Error diagnostics for malformed literals.
+- [x] Tests + regression fixtures.
 
 ### CP10 — Declaration and assignment grammar
 - [ ] `x := value;`.
@@ -849,7 +851,7 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] clear boundary between safe guarantees and unsafe responsibility.
 - [ ] docs/security guidance.
 
-## Phase 17 — Serious dogfooding and ecosystem
+## Phase 18 — Serious dogfooding and ecosystem
 
 ### CP102 — Build multiple non-trivial Strut programs
 - [ ] CLI utility.
@@ -866,7 +868,7 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] package authoring docs.
 - [ ] verify package workflow from clean machine/environment.
 
-### CP98 — Website/docs maintenance audit 2
+### CP104 — Website/docs maintenance audit 2
 - [ ] make website represent the real language, not early concept syntax.
 - [ ] comprehensive language reference.
 - [ ] package docs.
@@ -876,28 +878,28 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] `nift build` green.
 - [ ] commit.
 
-### CP99 — Regression-suite maintenance audit 2
+### CP105 — Regression-suite maintenance audit 2
 - [ ] full feature matrix.
 - [ ] real-project fixtures.
 - [ ] package fixtures.
 - [ ] cross-platform CI matrix where practical.
 - [ ] compatibility policy for releases.
 
-### CP100 — Investigate rewriting Nift in Strut
+### CP106 — Investigate rewriting Nift in Strut
 - [ ] map Nift requirements against Strut capabilities.
 - [ ] identify missing systems/IO/performance capabilities.
 - [ ] prototype one meaningful Nift subsystem.
 - [ ] measure performance/memory/complexity.
 - [ ] decide based on evidence, not symbolism.
 
-### CP101 — Self-hosting feasibility review
+### CP107 — Self-hosting feasibility review
 - [ ] determine what is required for Strut to compile its own compiler.
 - [ ] prototype only if it benefits the project.
 - [ ] do not distort language design merely to achieve a vanity milestone.
 
-## Phase 17 — Stability and release readiness
+## Phase 19 — Stability and release readiness
 
-### CP102 — Language design audit
+### CP108 — Language design audit
 - [ ] review every provisional decision in `LANGUAGE_HANDOVER.md`.
 - [ ] remove dead syntax/features.
 - [ ] resolve extension/header/source conventions.
@@ -908,20 +910,20 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] audit stream/process APIs against real systems programs.
 - [ ] audit static/dynamic linking and executable-size goals against real programs.
 
-### CP103 — Compatibility/versioning policy
+### CP109 — Compatibility/versioning policy
 - [ ] semantic/versioning strategy for compiler/language/packages.
 - [ ] deprecation policy.
 - [ ] regression-suite compatibility baselines.
 - [ ] package compatibility expectations.
 
-### CP98 — Security/reliability review
+### CP110 — Security/reliability review
 - [ ] safe memory guarantee audit.
 - [ ] unsafe/FFI audit.
 - [ ] package resolver/supply-chain review.
 - [ ] HTTP/TLS default review.
 - [ ] parser/input hardening review.
 
-### CP99 — Release candidate certification
+### CP111 — Release candidate certification
 - [ ] compiler unit/integration tests green.
 - [ ] full independent regression suite green.
 - [ ] supported OS matrix green.
@@ -931,7 +933,7 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] official packages green.
 - [ ] benchmark/regression gates green.
 
-### CP100 — First serious public release
+### CP112 — First serious public release
 - [ ] tag/release compiler.
 - [ ] publish install artifacts/instructions.
 - [ ] publish/verify official packages.

@@ -35,6 +35,8 @@ private:
 
     void skip_trivia(LexResult& result);
     void lex_identifier(LexResult& result);
+    void lex_number(LexResult& result);
+    void lex_string(LexResult& result);
     void lex_punctuation_or_operator(LexResult& result);
     void add_token(LexResult& result, TokenKind kind, const SourceLocation& begin, std::size_t begin_offset);
     void add_error(LexResult& result, const SourceLocation& begin, std::string message);
