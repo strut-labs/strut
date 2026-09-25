@@ -29,10 +29,12 @@ struct Expr {
     ExprPtr right;
 };
 
+struct Parameter { TypeSyntax type; std::string name; SourceSpan span; };
+
 struct Stmt;
 using StmtPtr = std::unique_ptr<Stmt>;
 struct Stmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl };
     Kind kind;
     SourceSpan span;
     std::string name;
@@ -45,6 +47,11 @@ struct Stmt {
     StmtPtr initializer;
     std::vector<StmtPtr> body;
     std::vector<StmtPtr> else_body;
+    std::vector<Parameter> parameters;
+    std::vector<std::string> generic_parameters;
+    std::optional<TypeSyntax> return_type;
+    std::string owner;
+    bool has_body = false;
 };
 
 struct Program { std::vector<StmtPtr> statements; };

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP12 complete; CP13 is next.**
+Current implementation progress: **CP0–CP13 complete; CP14 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -125,15 +125,15 @@ Current implementation progress: **CP0–CP12 complete; CP13 is next.**
 - [x] Tests + regressions + docs.
 
 ### CP13 — Function parser
-- [ ] `function name(args) -> Type { ... }`.
-- [ ] explicit `-> void`.
-- [ ] `return value;`.
-- [ ] bare `return;` for `void`.
-- [ ] function declarations without bodies.
-- [ ] `function Struct::method(...) -> Type { ... }` out-of-struct definitions.
-- [ ] generic declaration form `function name[T](...) -> Type`.
-- [ ] require generic/template parameter identifiers to use uppercase identifiers.
-- [ ] Tests + regressions.
+- [x] `function name(args) -> Type { ... }`.
+- [x] explicit `-> void`.
+- [x] `return value;`.
+- [x] bare `return;` for `void`.
+- [x] function declarations without bodies.
+- [x] `function Struct::method(...) -> Type { ... }` out-of-struct definitions.
+- [x] generic declaration form `function name[T](...) -> Type`.
+- [x] require generic/template parameter identifiers to use uppercase identifiers.
+- [x] Tests + regressions.
 
 ### CP14 — Lambda/function-type parser
 - [ ] `(x) => expr`.

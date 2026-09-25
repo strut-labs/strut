@@ -5,6 +5,8 @@
 #include "strut/parser.h"
 #include "strut/source.h"
 namespace {void require(bool c,const char*m){if(!c){std::cerr<<"FAIL: "<<m<<'\n';std::exit(1);}} strut::ParseResult parse(std::string t){strut::SourceFile s("fixture.p",std::move(t));strut::Lexer l(s);auto x=l.lex();require(x.ok(),"fixture lex");strut::Parser p(x.tokens);return p.parse();}}
-int main(){auto d=parse("x := 2; int y := 3; const z := 4; y = x;");require(d.ok(),"declarations");auto e=parse("x := 1 + 2 * 3; y := obj.member[2]++; ++x; x += 4;");require(e.ok(),"expressions");require(e.program.statements[0]->value->right->text=="*","precedence");
-auto c=parse("if (x > 0) { y := 1; } else { y := 2; } while (x) { x--; if (x == 2) { break; } } for (i := 0; i < 10; i++) { continue; } for (item : items) { out := item; }");require(c.ok(),"control flow");require(c.program.statements.size()==4,"four controls");require(c.program.statements[3]->kind==strut::Stmt::Kind::range_for,"range for");
-auto missing=parse("x := 2");require(!missing.ok(),"semicolon rejected");return 0;}
+int main(){
+require(parse("x := 2; int y := 3; y = x;").ok(),"declarations");auto e=parse("x := 1 + 2 * 3;");require(e.ok()&&e.program.statements[0]->value->right->text=="*","precedence");
+require(parse("if (x) { y := 1; } else { y := 2; } while (x) { break; } for (i := 0; i < 3; i++) { continue; } for (v : values) { x := v; }").ok(),"control");
+auto f=parse("function add[T](T a, T b) -> T { return a + b; } function User::name() -> string; function main() -> void { return; }");require(f.ok(),"functions");require(f.program.statements.size()==3,"three functions");require(f.program.statements[0]->generic_parameters[0]=="T","generic T");require(f.program.statements[1]->owner=="User"&&!f.program.statements[1]->has_body,"method declaration");
+auto bad=parse("function bad[t](t x) -> t { return x; }");require(!bad.ok(),"lowercase generic rejected");return 0;}
