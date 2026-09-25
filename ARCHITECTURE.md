@@ -63,3 +63,7 @@ Jsonic++ is the canonical JSON implementation for the bootstrap compiler/runtime
 ## Cross-platform rule
 
 Do not put POSIX assumptions into parser, AST, semantic, or IR code. Platform branching belongs at narrow boundaries. Every new OS-facing API must define its Windows/macOS/Linux behaviour when introduced.
+
+## Typed IR boundary
+
+The parser AST is not a backend contract. After semantic checking, `IRLowerer` creates a backend-facing typed IR that preserves source spans while recording resolved/inferred type names on values. Backends consume this IR rather than parser details. This separation is intentional so native code generation can evolve independently of syntax and parsing.

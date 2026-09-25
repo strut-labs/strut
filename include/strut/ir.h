@@ -1,0 +1,61 @@
+#pragma once
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "strut/ast.h"
+#include "strut/diagnostic.h"
+#include "strut/source.h"
+
+namespace strut {
+
+struct IRExpr;
+using IRExprPtr = std::unique_ptr<IRExpr>;
+struct IRExpr {
+    enum class Kind { identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, unary, binary, grouping, member, index, postfix, lambda };
+    Kind kind = Kind::identifier;
+    std::string text;
+    std::string type_name;
+    SourceSpan span;
+    IRExprPtr left;
+    IRExprPtr right;
+};
+
+struct IRStmt;
+using IRStmtPtr = std::unique_ptr<IRStmt>;
+struct IRStmt {
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias };
+    Kind kind = Kind::expression;
+    SourceSpan span;
+    std::string name;
+    std::string op;
+    std::string type_name;
+    bool is_const = false;
+    IRExprPtr value;
+    IRExprPtr condition;
+    IRExprPtr increment;
+    IRStmtPtr initializer;
+    std::vector<IRStmtPtr> body;
+    std::vector<IRStmtPtr> else_body;
+    std::vector<Parameter> parameters;
+    std::vector<std::string> generic_parameters;
+    std::string return_type;
+    std::string owner;
+    bool has_body = false;
+};
+
+struct IRProgram { std::vector<IRStmtPtr> statements; };
+
+struct IRResult {
+    IRProgram program;
+    std::vector<Diagnostic> diagnostics;
+    bool ok() const { return diagnostics.empty(); }
+};
+
+class IRLowerer {
+public:
+    IRResult lower(const Program& program);
+};
+
+} // namespace strut

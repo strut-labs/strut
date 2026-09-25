@@ -187,10 +187,10 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] Tests + regressions.
 
 ### CP20 — Typed IR
-- [ ] define stable typed IR distinct from parser AST.
-- [ ] lower declarations/expressions/control flow/functions.
-- [ ] preserve source mapping for diagnostics/debugging.
-- [ ] document backend contract.
+- [x] define stable typed IR distinct from parser AST.
+- [x] lower declarations/expressions/control flow/functions.
+- [x] preserve source mapping for diagnostics/debugging.
+- [x] document backend contract.
 
 ### CP21 — First native code generation
 - [ ] compile integer/string hello-world style programs.
