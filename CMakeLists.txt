@@ -103,3 +103,8 @@ add_test(NAME strut_formatter_tests COMMAND strut_formatter_tests)
 add_executable(strut_lsp_tests tests/unit/lsp_test.cpp)
 target_link_libraries(strut_lsp_tests PRIVATE strut_compiler)
 add_test(NAME strut_lsp_tests COMMAND strut_lsp_tests)
+
+add_executable(strut_frontend_fuzz_tests tests/fuzz/frontend_fuzz.cpp)
+target_link_libraries(strut_frontend_fuzz_tests PRIVATE strut_compiler)
+add_test(NAME strut_frontend_fuzz_tests COMMAND strut_frontend_fuzz_tests)
+set_tests_properties(strut_frontend_fuzz_tests PROPERTIES TIMEOUT 30)

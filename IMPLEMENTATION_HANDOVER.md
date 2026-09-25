@@ -863,10 +863,10 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 ## Phase 17 — Hardening
 
 ### CP102 — Parser/typechecker fuzzing
-- [ ] malformed source corpus.
-- [ ] parser fuzzing.
-- [ ] typechecker fuzzing.
-- [ ] no crashes/hangs on invalid programs.
+- [x] malformed source corpus.
+- [x] parser fuzzing.
+- [x] typechecker fuzzing.
+- [x] no crashes/hangs on invalid programs.
 
 ### CP103 — Memory/runtime hardening
 - [ ] sanitizers.
