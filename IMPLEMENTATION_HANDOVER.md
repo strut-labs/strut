@@ -656,13 +656,13 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [x] tests + docs.
 
 ### CP78 — Official SQLite package
-- [ ] create/use official SQLite package rather than bloating core stdlib.
-- [ ] connection/open/close.
-- [ ] prepared statements/parameters by default.
-- [ ] query/exec.
-- [ ] typed row mapping where feasible.
-- [ ] transactions.
-- [ ] async/blocking policy.
+- [x] create/use official SQLite package rather than bloating core stdlib.
+- [x] connection/open/close.
+- [x] prepared statements/parameters by default.
+- [x] query/exec.
+- [x] typed row mapping where feasible.
+- [x] transactions.
+- [x] async/blocking policy.
 - [x] tests + docs.
 
 ## Phase 14 — Embedded resources and first serious web app
