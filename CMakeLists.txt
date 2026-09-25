@@ -28,6 +28,7 @@ add_library(strut_compiler STATIC
     src/ir.cpp
     src/codegen.cpp
     src/package.cpp
+    src/project.cpp
 )
 target_include_directories(strut_compiler
     PUBLIC
@@ -88,3 +89,7 @@ add_test(NAME strut_codegen_tests COMMAND strut_codegen_tests)
 add_executable(strut_package_tests tests/unit/package_test.cpp)
 target_link_libraries(strut_package_tests PRIVATE strut_compiler)
 add_test(NAME strut_package_tests COMMAND strut_package_tests)
+
+add_executable(strut_project_tests tests/unit/project_test.cpp)
+target_link_libraries(strut_project_tests PRIVATE strut_compiler)
+add_test(NAME strut_project_tests COMMAND strut_project_tests)

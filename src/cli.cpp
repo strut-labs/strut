@@ -14,6 +14,7 @@
 #include "strut/diagnostic.h"
 #include "strut/parser.h"
 #include "strut/package.h"
+#include "strut/project.h"
 #include "strut/source.h"
 #include "strut/sema.h"
 #include "strut/token.h"
@@ -42,7 +43,8 @@ void print_help(std::ostream& out) {
         << "      add <path>      Add a local package checkout to this project\n"
         << "      remove <name>   Remove a package dependency\n"
         << "      list            List project dependencies\n"
-        << "      install         Resolve dependencies from the shared cache\n";
+        << "      install         Resolve dependencies from the shared cache\n"
+        << "      init            Create .strut/config.json build configuration\n";
 }
 
 std::string escaped_lexeme(std::string_view value) {
@@ -178,6 +180,12 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
 
     if (argc >= 2) {
         const std::string command(argv[1]);
+        if (command == "init") {
+            if (argc != 2) { err << "strut: init takes no arguments\n"; return 2; }
+            std::string init_error;
+            if (!init_project_build_state(std::filesystem::current_path(), init_error)) { err << "strut: " << init_error << '\n'; return 1; }
+            out << "created .strut/config.json\n"; return 0;
+        }
         if (command == "add" || command == "remove" || command == "list" || command == "install") {
             const std::string argument = argc >= 3 ? argv[2] : std::string();
             if ((command == "list" || command == "install") && argc > 2) { err << "strut: " << command << " takes no argument\n"; return 2; }

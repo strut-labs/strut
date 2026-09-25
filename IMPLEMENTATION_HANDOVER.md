@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP81 complete; CP82 is next.**
+Current implementation progress: **CP0–CP82 complete; CP83 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -696,12 +696,12 @@ Current implementation progress: **CP0–CP81 complete; CP82 is next.**
 ## Phase 15 — Incremental object builds and project state
 
 ### CP82 — `strut init` and `.strut/config.json`
-- [ ] add `strut init` for creating project-local build metadata/config without overwriting existing project files.
-- [ ] define `.strut/config.json` schema for entrypoint, output, target, build mode, linking defaults, and incremental mode.
-- [ ] keep `strut.json` as package/project manifest; `.strut/config.json` is build-machine/project build state/configuration.
-- [ ] document which `.strut` files are source-controlled vs generated/ignored.
-- [ ] use JSONIC for config parsing.
-- [ ] tests + docs.
+- [x] add `strut init` for creating project-local build metadata/config without overwriting existing project files.
+- [x] define `.strut/config.json` schema for entrypoint, output, target, build mode, linking defaults, and incremental mode.
+- [x] keep `strut.json` as package/project manifest; `.strut/config.json` is build-machine/project build state/configuration.
+- [x] document which `.strut` files are source-controlled vs generated/ignored.
+- [x] use JSONIC for config parsing.
+- [x] tests + docs.
 
 ### CP83 — Persistent object directory
 - [ ] compile translation units to persistent native `.o`/`.obj` files under `.strut/obj/<target>/<mode>/`.
