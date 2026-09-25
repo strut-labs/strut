@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP42 complete; CP43 is next.**
+Current implementation progress: **CP0–CP43 complete; CP44 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -379,11 +379,11 @@ Current implementation progress: **CP0–CP42 complete; CP43 is next.**
 - [x] tests + docs.
 
 ### CP43 — Abstract struct contracts
-- [ ] permit structs with unimplemented function declarations.
-- [ ] such structs cannot be instantiated while requirements remain unsatisfied.
-- [ ] derived struct can provide required definitions.
-- [ ] diagnostics list unsatisfied required methods.
-- [ ] tests + regressions.
+- [x] permit structs with unimplemented function declarations.
+- [x] such structs cannot be instantiated while requirements remain unsatisfied.
+- [x] out-of-struct definitions can satisfy required methods.
+- [x] diagnostics list unsatisfied required methods.
+- [x] tests + regressions.
 
 ### CP44 — Inheritance and multiple contracts
 - [ ] `struct User : Serializable, Printable` syntax.

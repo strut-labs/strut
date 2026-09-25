@@ -53,6 +53,7 @@ private:
 
     std::unordered_map<std::string, std::string> aliases_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> abstract_methods_;
     std::vector<Scope> scopes_;
     std::string current_function_return_type_;
     int unsafe_depth_ = 0;
