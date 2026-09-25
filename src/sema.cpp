@@ -102,6 +102,9 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {TypeKind::named,0,expr.text};
         }
         case Expr::Kind::identifier: {
+            if(expr.text=="in") return {TypeKind::named,0,"istream"};
+            if(expr.text=="out"||expr.text=="err") return {TypeKind::named,0,"ostream"};
+            if(expr.text=="endl") return {TypeKind::named,0,"opaque"};
             auto* symbol = lookup(expr.text, SymbolNamespace::value);
             if (symbol) return resolve_type(symbol->type_name);
             if (auto* fn=lookup(expr.text,SymbolNamespace::function)) return {TypeKind::named,0,fn->type_name};
@@ -152,7 +155,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(name=="raw"){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires unsafe block"});if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires exactly one ptr<T>"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"raw(...) currently requires ptr<T>"});return {TypeKind::named,0,"raw_ptr<"+inner+">"};}
                 if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one ptr<T>"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires ptr<T>"});return {TypeKind::named,0,"weak_ptr<"+inner+">"};}
                 if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});if(a.kind==Expr::Kind::index&&a.left){auto owner=infer_expression(result,*a.left);if(owner.name.size()>2&&owner.name.compare(owner.name.size()-2,2,"[]")==0)result.diagnostics.push_back(Diagnostic{a.span,"ref<T> cannot borrow a dynamic-array element because later mutation could invalidate the reference"});}auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
-                if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};
+                if (name == "print") return {TypeKind::void_type, 0, "void"};
+                if (name == "input") return expr.arguments.empty()?builtin_type("string"):TypeInfo{TypeKind::void_type,0,"void"};
                 if (name == "istream" || name == "ostream" || name == "sstream" || name == "ifstream" || name == "ofstream") return {TypeKind::named,0,name};
                 if (name == "exists") return builtin_type("bool");
                 if (name == "ls") return {TypeKind::named,0,"string[]"};
@@ -321,7 +325,19 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             if (st.value) infer_expression(result, *st.value);
             push_scope(); declare(result, Symbol{st.name, SymbolNamespace::value, st.span, false, "opaque"}); analyze_statements(result, st.body, false); pop_scope(); break;
         case Stmt::Kind::expression: if (st.value) infer_expression(result, *st.value); break;
-        case Stmt::Kind::return_stmt: if (st.value) { infer_expression(result,*st.value); if(current_function_return_type_.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"returning ref<T> is not permitted until lifetime proof can establish a safe escape"}); } break;
+        case Stmt::Kind::return_stmt: if (st.value) {
+            auto returned = infer_expression(result,*st.value);
+            if(current_function_return_type_.rfind("ref<",0)==0) {
+                bool safe_escape=false;
+                if(st.value->kind==Expr::Kind::identifier) {
+                    if(auto* symbol=lookup(st.value->text,SymbolNamespace::value)) {
+                        safe_escape = symbol->type_name.rfind("ref<",0)==0 && compatible(resolve_type(symbol->type_name), resolve_type(current_function_return_type_));
+                    }
+                }
+                if(!safe_escape) result.diagnostics.push_back(Diagnostic{st.span,"returning ref<T> is only permitted when returning an existing compatible ref<T> binding"});
+            }
+            (void)returned;
+        } break;
         case Stmt::Kind::throw_stmt: {
             std::string thrown; if(st.value){if(st.value->kind==Expr::Kind::call&&st.value->left&&st.value->left->kind==Expr::Kind::identifier){thrown=st.value->left->text;for(const auto& a:st.value->arguments)infer_expression(result,*a);}else if(st.value->kind==Expr::Kind::struct_literal)thrown=st.value->text;else {auto t=infer_expression(result,*st.value);thrown=t.name;}}
             thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in function signature"});break;

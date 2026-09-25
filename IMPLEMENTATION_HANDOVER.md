@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP56 complete; CP57 is next.**
+Current implementation progress: **CP0–CP57 complete; CP58 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -492,15 +492,15 @@ Current implementation progress: **CP0–CP56 complete; CP57 is next.**
 - [x] tests + regressions.
 
 ### CP57 — Standard console streams and stream syntax
-- [ ] `in` standard input stream.
-- [ ] `out` standard output stream.
-- [ ] `err` standard error stream.
-- [ ] `ofstream ofs(path);` style construction.
-- [ ] `<<` insertion and `>>` extraction using ordinary operator dispatch.
-- [ ] `endl` or deliberately chosen equivalent.
-- [ ] retain `print(...)`, `input()`, and `input(value)` conveniences.
-- [ ] user-defined stream insertion/extraction overload fixtures.
-- [ ] tests + regressions + docs.
+- [x] `in` standard input stream.
+- [x] `out` standard output stream.
+- [x] `err` standard error stream.
+- [x] `ofstream ofs(path);` style construction.
+- [x] `<<` insertion and `>>` extraction using ordinary operator dispatch.
+- [x] `endl` or deliberately chosen equivalent.
+- [x] retain `print(...)`, `input()`, and `input(value)` conveniences.
+- [x] user-defined stream insertion/extraction overload fixtures.
+- [x] tests + regressions + docs.
 
 ### CP58 — Time/environment foundation
 - [ ] environment access.
