@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP13 complete; CP14 is next.**
+Current implementation progress: **CP0–CP14 complete; CP15 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -136,14 +136,14 @@ Current implementation progress: **CP0–CP13 complete; CP14 is next.**
 - [x] Tests + regressions.
 
 ### CP14 — Lambda/function-type parser
-- [ ] `(x) => expr`.
-- [ ] `(x, y) => { ... }`.
-- [ ] `async (...) => ...` syntax parsing.
-- [ ] `function<(A, B) -> R>` function types.
-- [ ] `function<() -> void>` zero-argument form.
-- [ ] `function[T]<(T, T) -> T>` explicit generic function-value type form.
-- [ ] infer undeclared uppercase template identifiers from typed lambda parameters; reject misspelled lowercase/mixed-case types instead of treating them as templates.
-- [ ] Tests + regressions.
+- [x] `(x) => expr`.
+- [x] `(x, y) => { ... }`.
+- [x] `async (...) => ...` syntax parsing.
+- [x] `function<(A, B) -> R>` function types.
+- [x] `function<() -> void>` zero-argument form.
+- [x] `function[T]<(T, T) -> T>` explicit generic function-value type form.
+- [x] infer undeclared uppercase template identifiers from typed lambda parameters; reject misspelled lowercase/mixed-case types instead of treating them as templates.
+- [x] Tests + regressions.
 
 ### CP15 — Diagnostic foundation
 - [ ] Stable error reporting format.

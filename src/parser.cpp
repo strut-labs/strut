@@ -37,6 +37,31 @@ int Parser::precedence(std::string_view op) {
 bool Parser::is_binary_operator(std::string_view op){return precedence(op)>=0;}
 bool Parser::is_assignment_operator(std::string_view op){return op=="="||op=="+="||op=="-="||op=="*="||op=="/="||op=="%="||op=="<<="||op==">>=";}
 
+ExprPtr Parser::parse_lambda(ParseResult& result, bool is_async) {
+    const Token begin = peek();
+    if (!match("(")) { error(result, peek(), "expected '(' to start lambda parameters"); return nullptr; }
+    auto data = std::make_shared<LambdaData>(); data->is_async = is_async;
+    if (!check(")")) {
+        do {
+            TypeSyntax type{"", peek().span, false}; std::string name;
+            if (peek().kind == TokenKind::identifier && peek(1).kind == TokenKind::identifier) {
+                type = parse_type(result); if (type.name.empty()) return nullptr; name = advance().lexeme;
+                bool upper = !type.name.empty(); for(char c:type.name) if(c>='a'&&c<='z') upper=false;
+                if (upper) data->generic_parameters.push_back(type.name);
+            } else if (peek().kind == TokenKind::identifier) {
+                name = advance().lexeme;
+            } else { error(result, peek(), "expected lambda parameter"); return nullptr; }
+            data->parameters.push_back(Parameter{std::move(type), name, previous().span});
+        } while (match(","));
+    }
+    if (!match(")")) { error(result, peek(), "expected ')' after lambda parameters"); return nullptr; }
+    if (!match("=>")) { error(result, peek(), "expected '=>' after lambda parameters"); return nullptr; }
+    auto expr = std::make_unique<Expr>(); expr->kind = Expr::Kind::lambda; expr->lambda = data;
+    if (match("{")) { auto block = parse_block(result); if (!block) return nullptr; data->body = std::move(block->body); expr->span = SourceSpan{begin.span.begin, block->span.end}; }
+    else { data->expression_body = parse_expression(result); if (!data->expression_body) return nullptr; expr->span = SourceSpan{begin.span.begin, data->expression_body->span.end}; }
+    return expr;
+}
+
 ExprPtr Parser::parse_primary(ParseResult& result) {
     const Token token=peek(); Expr::Kind kind;
     switch(token.kind){
@@ -64,6 +89,8 @@ ExprPtr Parser::parse_postfix(ParseResult& result){
     return expr;
 }
 ExprPtr Parser::parse_unary(ParseResult& result){
+    if (match("async")) return parse_lambda(result, true);
+    if (check("(")) { std::size_t i=current_, depth=0; bool lambda=false; for(;i<tokens_.size();++i){if(tokens_[i].lexeme=="(")++depth;else if(tokens_[i].lexeme==")"){if(--depth==0){lambda=(i+1<tokens_.size()&&tokens_[i+1].lexeme=="=>");break;}}} if(lambda) return parse_lambda(result,false); }
     if(check("!")||check("~")||check("-")||check("+")||check("*")||check("++")||check("--")){const Token op=advance();auto rhs=parse_unary(result);if(!rhs)return nullptr;auto e=std::make_unique<Expr>();e->kind=Expr::Kind::unary;e->text=op.lexeme;e->span=join(op.span,rhs->span);e->right=std::move(rhs);return e;}return parse_postfix(result);
 }
 ExprPtr Parser::parse_expression(ParseResult& result,int minp){
@@ -87,13 +114,47 @@ StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
 }
 
 TypeSyntax Parser::parse_type(ParseResult& result) {
-    const Token token = peek();
-    if (!is_type_token(token)) {
-        error(result, token, "expected type");
-        return TypeSyntax{"", token.span, false};
+    const Token begin = peek();
+    if (check("function")) {
+        std::string text;
+        text += advance().lexeme;
+        if (match("[")) {
+            text += "[";
+            bool first = true;
+            while (!at_end() && !check("]")) {
+                if (!first) { if (!match(",")) { error(result, peek(), "expected ',' in function generic list"); return TypeSyntax{"", begin.span, false}; } text += ","; }
+                if (peek().kind != TokenKind::identifier) { error(result, peek(), "expected uppercase generic parameter"); return TypeSyntax{"", begin.span, false}; }
+                const std::string g = advance().lexeme; for(char c:g) if(c>='a'&&c<='z'){error(result,previous(),"generic parameter names must be uppercase");return TypeSyntax{"",begin.span,false};}
+                text += g; first = false;
+            }
+            if (!match("]")) { error(result, peek(), "expected ']' after function generics"); return TypeSyntax{"", begin.span, false}; }
+            text += "]";
+        }
+        if (!match("<")) { error(result, peek(), "expected '<' in function type"); return TypeSyntax{"", begin.span, false}; }
+        text += "<";
+        int depth = 1;
+        while (!at_end() && depth > 0) {
+            if (check("<")) { ++depth; text += advance().lexeme; continue; }
+            if (check(">")) { --depth; text += advance().lexeme; continue; }
+            text += advance().lexeme;
+        }
+        if (depth != 0) { error(result, peek(), "unterminated function type"); return TypeSyntax{"", begin.span, false}; }
+        return TypeSyntax{text, SourceSpan{begin.span.begin, previous().span.end}, false};
     }
+    if (!is_type_token(begin)) { error(result, begin, "expected type"); return TypeSyntax{"", begin.span, false}; }
     advance();
-    return TypeSyntax{token.lexeme, token.span, false};
+    return TypeSyntax{begin.lexeme, begin.span, false};
+}
+
+StmtPtr Parser::parse_typed_function_value(ParseResult& result) {
+    const Token begin = peek();
+    auto type = parse_type(result); if (type.name.empty()) return nullptr;
+    if (peek().kind != TokenKind::identifier) { error(result, peek(), "expected variable name after function type"); return nullptr; }
+    Token name = advance();
+    if (!match(":=")) { error(result, peek(), "expected ':=' after function-valued variable name"); return nullptr; }
+    auto value = parse_expression(result); if (!value) return nullptr;
+    if (!match(";")) { error(result, peek(), "expected ';' after function-valued declaration"); return nullptr; }
+    auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::declaration;st->name=name.lexeme;st->declared_type=std::move(type);st->value=std::move(value);st->span=join(begin.span,previous().span);return st;
 }
 
 StmtPtr Parser::parse_function(ParseResult& result) {
@@ -160,6 +221,7 @@ StmtPtr Parser::parse_for(ParseResult& result){
     if(!check(")")){st->increment=parse_expression(result);if(!st->increment)return nullptr;}if(!match(")")){error(result,peek(),"expected ')' after for clauses");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after for clauses");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;
 }
 StmtPtr Parser::parse_statement(ParseResult& result){
+    if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
     if (match("function")) return parse_function(result);
     if (match("{")) return parse_block(result);
     if (match("if")) return parse_if(result);
