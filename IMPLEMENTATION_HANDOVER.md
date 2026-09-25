@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP35 complete; CP36 is next.**
+Current implementation progress: **CP0–CP36 complete; CP37 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -322,12 +322,12 @@ Current implementation progress: **CP0–CP35 complete; CP36 is next.**
 - [x] benchmark baseline overhead before optimizing.
 
 ### CP36 — Const pointer semantics
-- [ ] `ptr<T>`.
-- [ ] `ptr<const T>`.
-- [ ] `const ptr<T>`.
-- [ ] `const ptr<const T>`.
-- [ ] enforce referent vs binding const independently.
-- [ ] tests + regressions.
+- [x] `ptr<T>`.
+- [x] `ptr<const T>`.
+- [x] `const ptr<T>`.
+- [x] `const ptr<const T>`.
+- [x] enforce referent vs binding const independently.
+- [x] tests + regressions.
 
 ### CP37 — `ref<T>` safe borrows
 - [ ] `ref<T>` non-null/non-owning.

@@ -38,6 +38,7 @@ struct IRStmt {
     std::string type_name;
     bool is_const = false;
     IRExprPtr value;
+    IRExprPtr target;
     IRExprPtr condition;
     IRExprPtr increment;
     IRStmtPtr initializer;

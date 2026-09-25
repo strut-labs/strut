@@ -64,7 +64,7 @@ public:
         out->owner=st.owner; out->generic_parameters=st.generic_parameters; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
         out->type_name = st.declared_type ? st.declared_type->name : "";
         if (st.return_type) out->return_type = st.return_type->name;
-        out->value=expression(st.value.get()); out->condition=expression(st.condition.get()); out->increment=expression(st.increment.get());
+        out->value=expression(st.value.get()); out->target=expression(st.target.get()); out->condition=expression(st.condition.get()); out->increment=expression(st.increment.get());
         if (st.initializer) out->initializer=statement(*st.initializer);
         if (st.kind == Stmt::Kind::declaration) {
             if (out->type_name.empty() && out->value) out->type_name = out->value->type_name;

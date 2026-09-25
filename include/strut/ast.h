@@ -46,6 +46,7 @@ struct Stmt {
     std::optional<TypeSyntax> declared_type;
     bool is_const = false;
     ExprPtr value;
+    ExprPtr target;
     ExprPtr condition;
     ExprPtr increment;
     StmtPtr initializer;

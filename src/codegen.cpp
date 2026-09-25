@@ -15,6 +15,7 @@ std::string cpp_type(std::string t){
             return out+")>";
         }
     }
+    if(t.rfind("const ",0)==0) return "const "+cpp_type(t.substr(6));
     if(!t.empty() && t.back()=='?') return "std::optional<"+cpp_type(t.substr(0,t.size()-1))+">";
     if(t.rfind("ptr<",0)==0 && t.back()=='>') return "std::shared_ptr<"+cpp_type(t.substr(4,t.size()-5))+">";
     if(t.rfind("map<",0)==0 && t.back()=='>'){auto inner=t.substr(4,t.size()-5);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}if(comma!=std::string::npos)return "std::map<"+cpp_type(inner.substr(0,comma))+","+cpp_type(inner.substr(comma+1))+">";}
@@ -99,7 +100,7 @@ std::string expr(const IRExpr& e){
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
     switch(s.kind){
         case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name<<" = "<<expr(*s.value)<<";\n";break;
-        case IRStmt::Kind::assignment:o<<pad<<s.name<<" "<<s.op<<" "<<expr(*s.value)<<";\n";break;
+        case IRStmt::Kind::assignment:o<<pad<<(s.target?expr(*s.target):s.name)<<" "<<s.op<<" "<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::expression:o<<pad<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::return_stmt:o<<pad<<"return"<<(s.value?" "+expr(*s.value):"")<<";\n";break;
         case IRStmt::Kind::break_stmt:o<<pad<<"break;\n";break; case IRStmt::Kind::continue_stmt:o<<pad<<"continue;\n";break;

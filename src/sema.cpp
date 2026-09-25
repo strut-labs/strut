@@ -7,6 +7,7 @@ namespace strut {
 namespace {
 std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}sig+=")->"+(st.return_type?st.return_type->name:std::string("void"))+">";return sig;}
 std::string function_return(std::string_view sig){auto p=sig.rfind(")->");if(p==std::string_view::npos||sig.empty()||sig.back()!='>')return "opaque";return std::string(sig.substr(p+3,sig.size()-(p+4)));}
+std::string generic_inner(std::string_view type,std::string_view head){if(type.rfind(head,0)!=0||type.size()<=head.size()+1||type.back()!='>')return {};return std::string(type.substr(head.size(),type.size()-head.size()-1));}
 }
 
 std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& scope, SymbolNamespace ns) {
@@ -109,6 +110,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::postfix: {
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
+            if(expr.text=="*"){for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
             return operand;
         }
         case Expr::Kind::binary: {
@@ -209,13 +211,21 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             break;
         }
         case Stmt::Kind::assignment: {
-            auto* target = lookup(st.name, SymbolNamespace::value);
-            if (!target) { result.diagnostics.push_back(Diagnostic{st.span, "assignment to unknown value '" + st.name + "'"}); break; }
-            if (target->is_const) result.diagnostics.push_back(Diagnostic{st.span, "cannot assign to const value '" + st.name + "'"});
-            if (st.value) {
-                auto rhs = infer_expression(result, *st.value); auto lhs = resolve_type(target->type_name);
-                if (rhs.valid() && lhs.valid() && !compatible(rhs, lhs)) result.diagnostics.push_back(Diagnostic{st.value->span, "incompatible assignment to '" + st.name + "'"});
+            TypeInfo lhs; std::string label=st.name.empty()?"assignment target":st.name;
+            if(st.target){
+                if(st.target->kind==Expr::Kind::unary && st.target->text=="*" && st.target->right){
+                    auto owner=infer_expression(result,*st.target->right);
+                    auto inner=generic_inner(owner.name,"ptr<"); if(inner.empty())inner=generic_inner(owner.name,"raw_ptr<");
+                    if(inner.rfind("const ",0)==0){result.diagnostics.push_back(Diagnostic{st.target->span,"cannot modify through pointer to const value"});inner=inner.substr(6);}
+                    lhs=resolve_type(inner);
+                } else lhs=infer_expression(result,*st.target);
+            } else {
+                auto* target = lookup(st.name, SymbolNamespace::value);
+                if (!target) { result.diagnostics.push_back(Diagnostic{st.span, "assignment to unknown value '" + st.name + "'"}); break; }
+                if (target->is_const) result.diagnostics.push_back(Diagnostic{st.span, "cannot assign to const value '" + st.name + "'"});
+                lhs=resolve_type(target->type_name);
             }
+            if (st.value) { auto rhs=infer_expression(result,*st.value); if(rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs))result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"}); }
             break;
         }
         case Stmt::Kind::type_alias:

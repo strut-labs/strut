@@ -138,7 +138,9 @@ StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     if(name.lexeme.empty() && peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
     if(name.lexeme.empty()) { // expression statement
         if(is_const){error(result,begin,"'const' may only be used on a declaration");return nullptr;}
-        auto expr=parse_expression(result);if(!expr)return nullptr;if(!match(";")){error(result,peek(),"expected ';' after statement");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::expression;st->span=join(begin.span,previous().span);st->value=std::move(expr);return st;
+        auto expr=parse_expression(result);if(!expr)return nullptr;
+        if(peek().kind==TokenKind::op && is_assignment_operator(peek().lexeme)){std::string aop=advance().lexeme;auto rhs=parse_expression(result);if(!rhs)return nullptr;if(!match(";")){error(result,peek(),"expected ';' after assignment");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::assignment;st->span=join(begin.span,previous().span);st->op=aop;st->target=std::move(expr);st->value=std::move(rhs);return st;}
+        if(!match(";")){error(result,peek(),"expected ';' after statement");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::expression;st->span=join(begin.span,previous().span);st->value=std::move(expr);return st;
     }
     const bool declaration=match(":=");std::string op=declaration?":":"";if(!declaration){if(!is_assignment_operator(peek().lexeme)){error(result,peek(),"expected ':=' or assignment operator");return nullptr;}op=advance().lexeme;}
     if(is_const&&!declaration){error(result,begin,"'const' may only be used on a declaration");return nullptr;}
@@ -169,6 +171,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         while (!at_end() && depth > 0) {
             if (check("<")) { ++depth; text += advance().lexeme; continue; }
             if (check(">")) { --depth; text += advance().lexeme; continue; }
+            if (check("const")) { text += "const "; advance(); continue; }
             text += advance().lexeme;
         }
         if (depth != 0) { error(result, peek(), "unterminated function type"); return TypeSyntax{"", begin.span, false}; }
@@ -183,6 +186,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         while (!at_end() && depth > 0) {
             if (check("<")) { ++depth; text += advance().lexeme; continue; }
             if (check(">")) { --depth; text += advance().lexeme; span.end = previous().span.end; continue; }
+            if (check("const")) { text += "const "; advance(); continue; }
             text += advance().lexeme;
         }
         if (depth != 0) { error(result, peek(), "unterminated generic type"); return TypeSyntax{"", begin.span, false}; }
