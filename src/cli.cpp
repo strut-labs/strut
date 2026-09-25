@@ -147,6 +147,28 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     if(!checked.ok())return 1;
     IRLowerer lowerer; auto lowered=lowerer.lower(program); if(!lowered.ok())return 1;
     CppBackend backend; std::string backend_error;
+    const auto root = find_project_root(path);
+    const auto config_path = root / ".strut" / "config.json";
+    if (std::filesystem::exists(config_path)) {
+        BuildConfig config;
+        std::string config_error;
+        if (!load_build_config(config_path, config, config_error)) { err << path.string() << ": error: " << config_error << '\n'; return 1; }
+        std::error_code ec;
+        auto rel = std::filesystem::relative(std::filesystem::absolute(path), root, ec);
+        if (!ec && rel.lexically_normal() == std::filesystem::path(config.entrypoint).lexically_normal()) {
+#ifdef _WIN32
+            const char* object_ext = ".obj";
+#else
+            const char* object_ext = ".o";
+#endif
+            const std::string mode = link.release ? "release" : config.mode;
+            const auto object = root / ".strut" / "obj" / config.target / mode / (path.stem().string() + object_ext);
+            const auto generated = root / ".strut" / "gen" / config.target / mode / (path.stem().string() + ".cpp");
+            if (!backend.compile_object(lowered.program, object, generated, backend_error, link)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
+            if (!backend.link_objects(lowered.program, {object}, output, backend_error, link)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
+            return 0;
+        }
+    }
     if(!backend.compile(lowered.program,output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}
     return 0;
 }

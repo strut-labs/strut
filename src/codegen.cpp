@@ -688,6 +688,71 @@ inline std::map<strut_string,strut_string> strut_embed_dir(const strut_string& r
 
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
 )CPP";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
+bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
+ auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
+#ifdef _WIN32
+ const char* def="cl";
+#else
+ const char* def="c++";
+#endif
+ const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
+#ifdef _WIN32
+ cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy ":"")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
+#else
+ cmd=cxx+" -std=c++20 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
+#endif
+ if(std::system(cmd.c_str())!=0){error="native C++ object compilation failed";return false;}return true;
+}
+
+bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesystem::path>& objects,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {
+ if(objects.empty()){error="no object files to link";return false;}
+#ifdef _WIN32
+ const char* def="cl";
+#else
+ const char* def="c++";
+#endif
+ const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd=cxx;
+#ifdef _WIN32
+ cmd+=" /nologo "+std::string(link.fully_static?"/MT ":"/MD ");for(const auto&o:objects)cmd+=" \""+o.string()+"\"";cmd+=" /Fe:\""+output.string()+"\"";bool ls=false;for(const auto&d:link.search_paths){if(!ls){cmd+=" /link";ls=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}for(const auto&lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}if(!ls)cmd+=" /link";cmd+=" ws2_32.lib";if(link.release)cmd+=" /OPT:REF /OPT:ICF";
+#else
+#ifdef __APPLE__
+ if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";return false;}
+#endif
+ for(const auto& o : objects) { cmd += " \"" + o.string() + "\""; }
+ cmd += " -o \"" + output.string() + "\"";
+ if (link.fully_static) cmd += " -static";
+ for (const auto& d : link.search_paths) { cmd += " -L\"" + d.string() + "\""; }
+ for (const auto& lib : link.libraries) { std::filesystem::path lp(lib.value); if(lp.has_extension()||lib.value.find('/')!=std::string::npos){cmd+=" \""+lib.value+"\"";continue;}
+#ifdef __APPLE__
+ if(lib.mode==NativeLinkMode::static_link){error="macOS static native libraries must be supplied as an explicit .a path";return false;}cmd+=" -l"+lib.value;
+#else
+ if(lib.mode==NativeLinkMode::static_link)cmd+=" -Wl,-Bstatic -l"+lib.value+" -Wl,-Bdynamic";else cmd+=" -l"+lib.value;
+#endif
+ }if(link.release){
+#ifdef __APPLE__
+ cmd+=" -Wl,-dead_strip -Wl,-x";
+#else
+ cmd+=" -Wl,--gc-sections -s";
+#endif
+ }
+#endif
+ if(program_uses_sqlite(p)){
+#ifdef _WIN32
+ cmd+=" sqlite3.lib";
+#else
+ cmd+=" -lsqlite3";
+#endif
+ }
+ if(program_uses_curl(p)){
+#ifdef _WIN32
+ cmd+=" libcurl.lib";
+#else
+ cmd+=" -lcurl";
+#endif
+ }
+ if(std::system(cmd.c_str())!=0){error="native linker failed";return false;}return true;
+}
+
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
 #ifdef _WIN32
  const char* def="cl";

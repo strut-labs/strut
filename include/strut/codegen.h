@@ -18,5 +18,7 @@ class CppBackend {
 public:
     CodegenResult generate(const IRProgram& program) const;
     bool compile(const IRProgram& program, const std::filesystem::path& output, std::string& error, const NativeLinkOptions& link = {}) const;
+    bool compile_object(const IRProgram& program, const std::filesystem::path& object, const std::filesystem::path& generated_cpp, std::string& error, const NativeLinkOptions& link = {}) const;
+    bool link_objects(const IRProgram& program, const std::vector<std::filesystem::path>& objects, const std::filesystem::path& output, std::string& error, const NativeLinkOptions& link = {}) const;
 };
 }

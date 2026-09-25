@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP82 complete; CP83 is next.**
+Current implementation progress: **CP0–CP83 complete; CP84 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -704,12 +704,12 @@ Current implementation progress: **CP0–CP82 complete; CP83 is next.**
 - [x] tests + docs.
 
 ### CP83 — Persistent object directory
-- [ ] compile translation units to persistent native `.o`/`.obj` files under `.strut/obj/<target>/<mode>/`.
-- [ ] separate compilation from final linking.
-- [ ] cache generated backend source only when useful for diagnostics/debugging.
-- [ ] object cache keys include compiler version, target, build mode, relevant compiler flags, and linking ABI settings.
-- [ ] deleting `.strut/obj` must always be a safe clean rebuild path.
-- [ ] tests + docs.
+- [x] compile translation units to persistent native `.o`/`.obj` files under `.strut/obj/<target>/<mode>/`.
+- [x] separate compilation from final linking.
+- [x] cache generated backend source only when useful for diagnostics/debugging.
+- [x] object cache keys include compiler version, target, build mode, relevant compiler flags, and linking ABI settings.
+- [x] deleting `.strut/obj` must always be a safe clean rebuild path.
+- [x] tests + docs.
 
 ### CP84 — Per-object dependency `.info.json` metadata
 - [ ] follow Nift's proven per-output metadata model, adapted for compilation units.
