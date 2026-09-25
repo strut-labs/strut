@@ -1,6 +1,7 @@
 #include "strut/parser.h"
 
 #include <array>
+#include <charconv>
 #include <string>
 
 namespace strut {
@@ -113,6 +114,7 @@ ExprPtr Parser::parse_postfix(ParseResult& result){
             if(!match(")")){error(result,peek(),"expected ')' after call arguments");return nullptr;}
             n->span=join(n->left->span,previous().span);expr=std::move(n);continue;
         }
+        if(match("::")){if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected name after '::'");return nullptr;}const Token member=advance();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::member;n->text="::"+member.lexeme;n->span=join(expr->span,member.span);n->left=std::move(expr);expr=std::move(n);continue;}
         if(match("?.")){if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected member name after '?.'");return nullptr;}const Token member=advance();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::safe_member;n->text=member.lexeme;n->span=join(expr->span,member.span);n->left=std::move(expr);expr=std::move(n);continue;}
         if(match(".")){if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected member name after '.'");return nullptr;}const Token member=advance();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::member;n->text=member.lexeme;n->span=join(expr->span,member.span);n->left=std::move(expr);expr=std::move(n);continue;}
         if(match("[")){auto idx=parse_expression(result);if(!idx)return nullptr;if(!match("]")){error(result,peek(),"expected ']' after index");return nullptr;}auto n=std::make_unique<Expr>();n->kind=Expr::Kind::index;n->span=join(expr->span,previous().span);n->left=std::move(expr);n->right=std::move(idx);expr=std::move(n);continue;}
@@ -283,6 +285,22 @@ StmtPtr Parser::parse_include(ParseResult& result) {
     match(";"); st->span = join(begin.span, previous().span); return st;
 }
 
+StmtPtr Parser::parse_enum(ParseResult& result) {
+    const Token begin=previous(); if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected enum name");return nullptr;}
+    const Token name=advance(); if(!match("{")){error(result,peek(),"expected '{' after enum name");return nullptr;}
+    auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::enum_decl;st->name=name.lexeme;
+    long long next=0;
+    while(!at_end()&&!check("}")){
+        if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected enum member name");return nullptr;}
+        st->enum_names.push_back(advance().lexeme);
+        if(match("=")){bool neg=match("-");if(peek().kind!=TokenKind::integer_literal){error(result,peek(),"enum values must be integer literals");return nullptr;}std::string v=(neg?"-":"")+advance().lexeme;long long parsed=0;auto conv=std::from_chars(v.data(),v.data()+v.size(),parsed);if(conv.ec!=std::errc{}||conv.ptr!=v.data()+v.size()){error(result,previous(),"enum integer value is out of range");return nullptr;}st->enum_values.push_back(v);next=parsed+1;}
+        else {st->enum_values.push_back(std::to_string(next++));}
+        if(check("}")) break;
+        if(!match(",")){error(result,peek(),"expected ',' between enum members");return nullptr;}
+    }
+    if(!match("}")){error(result,peek(),"expected '}' after enum");return nullptr;}match(";");st->span=join(begin.span,previous().span);return st;
+}
+
 StmtPtr Parser::parse_struct(ParseResult& result) {
     const Token begin=previous();
     if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected struct name");return nullptr;}
@@ -328,6 +346,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("include")) return parse_include(result);
     if (match("type")) return parse_type_alias(result);
     if (match("struct")) return parse_struct(result);
+    if (match("enum")) return parse_enum(result);
     if (match("unsafe")) { const Token kw=previous(); if(!match("{")){error(result,peek(),"expected '{' after unsafe");return nullptr;} auto block=parse_block(result); if(!block)return nullptr; block->kind=Stmt::Kind::unsafe_stmt; block->span=join(kw.span,block->span); return block; }
     if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
     if (match("function")) return parse_function(result);

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP44 complete; CP45 is next.**
+Current implementation progress: **CP0–CP45 complete; CP46 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -393,11 +393,11 @@ Current implementation progress: **CP0–CP44 complete; CP45 is next.**
 - [x] tests + regressions.
 
 ### CP45 — Enums with explicit values
-- [ ] implicit enum values.
-- [ ] `name = integer` explicit values.
-- [ ] continuation after explicit values.
-- [ ] underlying representation policy.
-- [ ] tests + regressions.
+- [x] implicit enum values.
+- [x] `name = integer` explicit values.
+- [x] continuation after explicit values.
+- [x] underlying representation policy.
+- [x] tests + regressions.
 
 ### CP46 — `switch`
 - [ ] `case` / `default`.

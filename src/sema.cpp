@@ -160,6 +160,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {TypeKind::named, 0, "function"};
         }
         case Expr::Kind::member: {
+            if(expr.text.rfind("::",0)==0 && expr.left && expr.left->kind==Expr::Kind::identifier){auto it=enum_members_.find(expr.left->text);std::string member=expr.text.substr(2);if(it==enum_members_.end()){result.diagnostics.push_back(Diagnostic{expr.span,"unknown enum type '"+expr.left->text+"'"});return {};}if(it->second.find(member)==it->second.end())result.diagnostics.push_back(Diagnostic{expr.span,"unknown enum member '"+member+"' for "+expr.left->text});return {TypeKind::named,0,expr.left->text};}
             auto base=infer_expression(result,*expr.left);
             if (is_nullable_type(base.name)) { result.diagnostics.push_back(Diagnostic{expr.span,"cannot access member of nullable value without ?. or null check"}); return {}; }
             auto sit=struct_fields_.find(base.name);if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end())return resolve_type(f->second);}
@@ -239,6 +240,9 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, {}});
             if (st.alias_target) aliases_[st.name] = st.alias_target->name;
             break;
+        case Stmt::Kind::enum_decl: {
+            declare(result,Symbol{st.name,SymbolNamespace::type,st.span,true,st.name});auto& set=enum_members_[st.name];for(const auto& n:st.enum_names)if(!set.insert(n).second)result.diagnostics.push_back(Diagnostic{st.span,"duplicate enum member '"+n+"'"});break;
+        }
         case Stmt::Kind::struct_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, st.name});
             auto& fields=struct_fields_[st.name];
@@ -303,7 +307,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
