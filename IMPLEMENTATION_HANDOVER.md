@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP93 complete; CP94 is next.**
+Current implementation progress: **CP0–CP94 complete; CP95 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -808,12 +808,12 @@ Current implementation progress: **CP0–CP93 complete; CP94 is next.**
 - [x] reproducible benchmark docs.
 
 ### CP94 — Optimisation pipeline
-- [ ] dead-code elimination.
-- [ ] constant folding.
-- [ ] inlining strategy.
-- [ ] escape/refcount optimization opportunities.
-- [ ] release optimization/LTO where backend supports it.
-- [ ] benchmark every claimed win.
+- [x] dead-code elimination.
+- [x] constant folding.
+- [x] inlining strategy.
+- [x] escape/refcount optimization opportunities.
+- [x] release optimization/LTO where backend supports it.
+- [x] benchmark every claimed win.
 
 ### CP95 — Reference-count optimisation pass
 - [ ] elide provably unnecessary increments/decrements.

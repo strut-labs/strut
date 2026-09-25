@@ -1,0 +1,84 @@
+{
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "machine": "x86_64",
+  "compiler": "/mnt/data/strut-cp96-work/strut/build/strut",
+  "programs": {
+    "hello": {
+      "release_compile_s": 1.769984389000001,
+      "release_bytes": 14504,
+      "median_run_ms": 1.2387779997879989
+    },
+    "arithmetic": {
+      "release_compile_s": 1.8102562280000711,
+      "release_bytes": 14408,
+      "median_run_ms": 1.293089999762742
+    },
+    "collections_json": {
+      "release_compile_s": 2.6753510420003295,
+      "release_bytes": 51736,
+      "median_run_ms": 1.2562440001602226
+    },
+    "ptr": {
+      "release_compile_s": 2.039606035000361,
+      "release_bytes": 14672,
+      "median_run_ms": 1.5899670001999766
+    },
+    "lambda": {
+      "release_compile_s": 1.6771960739997667,
+      "release_bytes": 14408,
+      "median_run_ms": 1.3188200000513461
+    },
+    "thread_async": {
+      "release_compile_s": 2.65585107600009,
+      "release_bytes": 39648,
+      "median_run_ms": 1.7171190002045478
+    },
+    "sqlite": {
+      "release_compile_s": 2.983419765000235,
+      "release_bytes": 64160,
+      "median_run_ms": 1.8594540001686255
+    }
+  },
+  "linking": {
+    "dynamic": {
+      "compile_s": 1.838473193000027,
+      "bytes": 14504,
+      "median_start_ms": 1.3200905000303464
+    },
+    "static": {
+      "compile_s": 1.8834829639999953,
+      "bytes": 1393864,
+      "median_start_ms": 0.4804449997664051
+    }
+  },
+  "first_app": {
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "python": "3.13.5",
+    "compiler": "/mnt/data/strut-work/strut/build/strut",
+    "modes": {
+      "debug": {
+        "cold_start_ms": 11.433037999950102,
+        "idle_rss_kib": 7232,
+        "requests": 100,
+        "throughput_req_s": 4647.569894909872,
+        "latency_mean_ms": 0.21469025000101283,
+        "latency_p50_ms": 0.19234999990658252,
+        "latency_p95_ms": 0.3291259999969043,
+        "cold_compile_s": 3.3410904119999714,
+        "executable_bytes": 2039648
+      },
+      "release": {
+        "cold_start_ms": 5.7663540000021385,
+        "idle_rss_kib": 2840,
+        "requests": 100,
+        "throughput_req_s": 4814.303410975532,
+        "latency_mean_ms": 0.20724366999502308,
+        "latency_p50_ms": 0.18338699999276287,
+        "latency_p95_ms": 0.3304990000287944,
+        "cold_compile_s": 3.860385468000004,
+        "executable_bytes": 97424
+      }
+    }
+  }
+}

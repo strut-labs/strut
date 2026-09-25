@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <limits>
 
 #include "strut/type.h"
 
@@ -33,6 +35,21 @@ IRExpr::Kind convert_expr_kind(Expr::Kind kind) { return static_cast<IRExpr::Kin
 IRStmt::Kind convert_stmt_kind(Stmt::Kind kind) { return static_cast<IRStmt::Kind>(kind); }
 std::string strip_ref_type(std::string t){if(t.rfind("ref<",0)==0&&t.back()=='>')t=t.substr(4,t.size()-5);if(t.rfind("const ",0)==0)t=t.substr(6);return t;}
 std::string safe_name(std::string s){for(char& c:s)if(!std::isalnum(static_cast<unsigned char>(c)))c='_';return s;}
+bool parse_i64(const std::string& text, long long& value){auto r=std::from_chars(text.data(),text.data()+text.size(),value);return r.ec==std::errc{}&&r.ptr==text.data()+text.size();}
+void fold_binary(IRExpr& out){
+    if(out.kind!=IRExpr::Kind::binary||!out.left||!out.right)return;
+    if(out.left->kind!=IRExpr::Kind::integer_literal||out.right->kind!=IRExpr::Kind::integer_literal)return;
+    long long a=0,b=0;if(!parse_i64(out.left->text,a)||!parse_i64(out.right->text,b))return;
+    long long v=0; bool is_bool=false; bool bv=false;
+    if(out.text=="+")v=a+b; else if(out.text=="-")v=a-b; else if(out.text=="*")v=a*b;
+    else if(out.text=="/"&&b!=0)v=a/b; else if(out.text=="%"&&b!=0)v=a%b;
+    else if(out.text=="=="){is_bool=true;bv=a==b;} else if(out.text=="!="){is_bool=true;bv=a!=b;}
+    else if(out.text=="<"){is_bool=true;bv=a<b;} else if(out.text=="<="){is_bool=true;bv=a<=b;}
+    else if(out.text==">"){is_bool=true;bv=a>b;} else if(out.text==">="){is_bool=true;bv=a>=b;} else return;
+    out.left.reset();out.right.reset();out.arguments.clear();
+    if(is_bool){out.kind=IRExpr::Kind::boolean_literal;out.text=bv?"true":"false";out.type_name="bool";}
+    else{out.kind=IRExpr::Kind::integer_literal;out.text=std::to_string(v);out.type_name=infer_integer_literal(out.text).name;}
+}
 
 class LoweringContext {
 public:
@@ -52,6 +69,7 @@ public:
             auto it = value_types_.find(expr->text); if (it != value_types_.end()) out->type_name = it->second; else { auto fn=function_types_.find(expr->text); if(fn!=function_types_.end()) out->type_name=fn->second; }
         }
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
+        fold_binary(*out);
         for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
         out->names = expr->names;
         if(expr->kind==Expr::Kind::lambda && expr->lambda){out->lambda_async=expr->lambda->is_async;out->lambda_parameters=expr->lambda->parameters;out->lambda_expression=expression(expr->lambda->expression_body.get());for(const auto& child:expr->lambda->body)out->lambda_body.push_back(statement(*child));}
