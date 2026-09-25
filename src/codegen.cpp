@@ -33,6 +33,11 @@ std::string cpp_type(std::string t){
     if(t=="bool") return "bool";
     if(t=="string") return "strut_string";
     if(t=="json") return "json::Document";
+    if(t=="istream") return "strut_istream";
+    if(t=="ostream") return "strut_ostream";
+    if(t=="sstream") return "strut_sstream";
+    if(t=="ifstream") return "strut_ifstream";
+    if(t=="ofstream") return "strut_ofstream";
     if(t=="int"||t=="int_32") return "std::int32_t";
     if(t=="int_8") return "std::int8_t";
     if(t=="int_16") return "std::int16_t";
@@ -100,7 +105,7 @@ std::string expr(const IRExpr& e){
                 if(m=="merge_deep"&&e.arguments.size()==1)return "strut_json_merge_deep("+base+","+expr(*e.arguments[0])+")";
             }
             std::string name=expr(*e.left); if(name=="ptr"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="weak"&&e.arguments.size()==1)return "strut_weak("+expr(*e.arguments[0])+")"; if(name=="raw"&&e.arguments.size()==1)return "strut_raw("+expr(*e.arguments[0])+")"; if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
-            if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls";
+            if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
@@ -108,7 +113,7 @@ std::string expr(const IRExpr& e){
 }
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
     switch(s.kind){
-        case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name<<" = ";if(!s.overload_name.empty())o<<s.overload_name<<"("<<expr(*s.value)<<")";else o<<expr(*s.value);o<<";\n";break;
+        case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name;if(s.value){o<<" = ";if(!s.overload_name.empty())o<<s.overload_name<<"("<<expr(*s.value)<<")";else o<<expr(*s.value);}else o<<"{}";o<<";\n";break;
         case IRStmt::Kind::assignment:if(!s.overload_name.empty())o<<pad<<s.overload_name<<"("<<(s.target?expr(*s.target):s.name)<<","<<expr(*s.value)<<");\n";else o<<pad<<(s.target?expr(*s.target):s.name)<<" "<<s.op<<" "<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::expression:o<<pad<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::return_stmt:o<<pad<<"return"<<(s.value?" "+expr(*s.value):"")<<";\n";break;
@@ -141,7 +146,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -193,6 +198,50 @@ inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<
 inline strut_string operator+(const strut_string&a,const strut_string&b){return a.v+b.v;}
 inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.v;}
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
+
+class strut_ostream {
+public:
+    strut_ostream()=default; explicit strut_ostream(std::ostream& s):p_(&s){}
+    template<class T> strut_ostream& write_value(const T& v){if(!p_)throw strut_checked_error("StreamError","output stream is not open");(*p_)<<v;return *this;}
+    void write(const strut_string& s){write_value(s);}
+    void flush(){if(p_)p_->flush();}
+protected: std::ostream* p_=nullptr;
+};
+class strut_istream {
+public:
+    strut_istream()=default; explicit strut_istream(std::istream& s):p_(&s){}
+    template<class T> strut_istream& read_value(T& v){if(!p_)throw strut_checked_error("StreamError","input stream is not open");(*p_)>>v;return *this;}
+protected: std::istream* p_=nullptr;
+};
+class strut_ofstream : public strut_ostream {
+public:
+    strut_ofstream()=default; explicit strut_ofstream(const strut_string& path){open(path);} strut_ofstream(const strut_string& path,bool binary){open(path,binary);}
+    void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::out|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ofstream.open failed");p_=&file_;}
+    void close(){if(file_.is_open()){file_.close();if(file_.fail())throw strut_checked_error("StreamError","ofstream.close failed");}p_=nullptr;}
+    bool is_open() const{return file_.is_open();}
+    ~strut_ofstream(){if(file_.is_open())file_.close();}
+private: std::ofstream file_;
+};
+class strut_ifstream : public strut_istream {
+public:
+    strut_ifstream()=default; explicit strut_ifstream(const strut_string& path){open(path);} strut_ifstream(const strut_string& path,bool binary){open(path,binary);}
+    void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::in|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ifstream.open failed");p_=&file_;}
+    void close(){if(file_.is_open())file_.close();p_=nullptr;}
+    bool is_open() const{return file_.is_open();}
+    strut_string read_all(){if(!file_.is_open())throw strut_checked_error("StreamError","ifstream.read_all on closed stream");std::ostringstream ss;ss<<file_.rdbuf();return ss.str();}
+    ~strut_ifstream(){if(file_.is_open())file_.close();}
+private: std::ifstream file_;
+};
+class strut_sstream : public strut_ostream {
+public:
+    strut_sstream(){p_=&stream_;}
+    void write(const strut_string& s){stream_<<s.v;}
+    strut_string str() const{return stream_.str();}
+    strut_string read_all() const{return stream_.str();}
+    bool is_open() const{return true;}
+    void close(){}
+private: std::stringstream stream_;
+};
 inline json::Document strut_json_value(const json::Document& d){return d;}
 inline json::Document strut_json_value(const strut_string& s){return json::Document(s.v);}
 inline json::Document strut_json_value(bool v){return json::Document(v);}

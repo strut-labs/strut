@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP55 complete; CP56 is next.**
+Current implementation progress: **CP0–CP56 complete; CP57 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -485,11 +485,11 @@ Current implementation progress: **CP0–CP55 complete; CP56 is next.**
 - [x] tests + regressions.
 
 ### CP56 — Stream type foundation
-- [ ] implement `istream`, `ostream`, `sstream`, `ifstream`, and `ofstream`.
-- [ ] constructors/open/close and deterministic resource cleanup.
-- [ ] text/binary read/write foundations.
-- [ ] buffering and error semantics.
-- [ ] tests + regressions.
+- [x] implement `istream`, `ostream`, `sstream`, `ifstream`, and `ofstream`.
+- [x] constructors/open/close and deterministic resource cleanup.
+- [x] text/binary read/write foundations.
+- [x] buffering and error semantics.
+- [x] tests + regressions.
 
 ### CP57 — Standard console streams and stream syntax
 - [ ] `in` standard input stream.
