@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP58 complete; CP59 is next.**
+Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -509,14 +509,14 @@ Current implementation progress: **CP0–CP58 complete; CP59 is next.**
 - [x] tests + docs.
 
 ### CP59 — Standard-library `exec`
-- [ ] argv-based `exec(program, args)` without requiring shell interpolation.
-- [ ] captured stdout/stderr and exit code.
-- [ ] inherited stdio mode.
-- [ ] cwd and environment overrides.
-- [ ] shell execution, if provided, must be an explicit opt-in path rather than the default `exec` behaviour.
-- [ ] typed launch/wait errors.
-- [ ] regression fixtures using small deterministic helper executables.
-- [ ] docs.
+- [x] argv-based `exec(program, args)` without requiring shell interpolation.
+- [x] captured stdout/stderr and exit code.
+- [x] inherited stdio mode.
+- [x] cwd and environment overrides.
+- [x] shell execution, if provided, must be an explicit opt-in path rather than the default `exec` behaviour.
+- [x] typed launch/wait errors.
+- [x] regression fixtures using small deterministic helper executables.
+- [x] docs.
 
 ### CP60 — Child-process/pipe API
 - [ ] spawn long-lived child processes.

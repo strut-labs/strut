@@ -161,6 +161,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "exists") return builtin_type("bool");
                 if (name == "ls") return {TypeKind::named,0,"string[]"};
                 if (name == "env") return {TypeKind::named,0,"string?"};
+                if (name == "exec" || name == "exec_shell") return {TypeKind::named,0,"exec_result"};
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
                 if (name == "make_dir" || name == "remove" || name == "copy" || name == "move" || name == "touch" || name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
@@ -372,9 +373,13 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); unsafe_depth_=0; catch_all_depth_=0;
-    named_types_.insert("FilesystemError"); named_types_.insert("StreamError");
+    named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result");
+    struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     for(const auto& t:{std::string("istream"),std::string("ostream"),std::string("sstream"),std::string("ifstream"),std::string("ofstream")})named_types_.insert(t);
     for(const auto& name:{std::string("exists"),std::string("make_dir"),std::string("remove"),std::string("copy"),std::string("move"),std::string("touch"),std::string("ls")})function_errors_[name].insert("FilesystemError");
+    for(const auto& name:{std::string("set_env"),std::string("unset_env")})function_errors_[name].insert("EnvironmentError");
+    function_errors_["sleep_ms"].insert("TimeError");
+    function_errors_["exec"].insert("ExecError"); function_errors_["exec_shell"].insert("ExecError");
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
