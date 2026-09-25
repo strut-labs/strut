@@ -266,6 +266,23 @@ StmtPtr Parser::parse_function(ParseResult& result) {
     auto body = parse_block(result); if (!body) return nullptr;
     st->has_body = true; st->body = std::move(body->body); st->span = join(begin.span, body->span); return st;
 }
+StmtPtr Parser::parse_include(ParseResult& result) {
+    const Token begin = previous();
+    auto st = std::make_unique<Stmt>(); st->kind = Stmt::Kind::include_stmt;
+    if (peek().kind == TokenKind::string_literal) {
+        std::string value = advance().lexeme;
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') value = value.substr(1, value.size()-2);
+        st->name = value; st->include_is_package = false;
+    } else if (match("<")) {
+        std::string value;
+        while (!at_end() && !check(">")) value += advance().lexeme;
+        if (!match(">")) { error(result, peek(), "expected '>' after package include"); return nullptr; }
+        if (value.empty()) { error(result, previous(), "package include may not be empty"); return nullptr; }
+        st->name = value; st->include_is_package = true;
+    } else { error(result, peek(), "expected local string or <package> after include"); return nullptr; }
+    match(";"); st->span = join(begin.span, previous().span); return st;
+}
+
 StmtPtr Parser::parse_struct(ParseResult& result) {
     const Token begin=previous();
     if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected struct name");return nullptr;}
@@ -307,6 +324,7 @@ StmtPtr Parser::parse_for(ParseResult& result){
     if(!check(")")){st->increment=parse_expression(result);if(!st->increment)return nullptr;}if(!match(")")){error(result,peek(),"expected ')' after for clauses");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after for clauses");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;
 }
 StmtPtr Parser::parse_statement(ParseResult& result){
+    if (match("include")) return parse_include(result);
     if (match("type")) return parse_type_alias(result);
     if (match("struct")) return parse_struct(result);
     if (match("unsafe")) { const Token kw=previous(); if(!match("{")){error(result,peek(),"expected '{' after unsafe");return nullptr;} auto block=parse_block(result); if(!block)return nullptr; block->kind=Stmt::Kind::unsafe_stmt; block->span=join(kw.span,block->span); return block; }

@@ -257,6 +257,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             }
             break;
         }
+        case Stmt::Kind::include_stmt: break;
         case Stmt::Kind::unsafe_stmt: ++unsafe_depth_; analyze_statements(result,st.body,true); --unsafe_depth_; break;
         case Stmt::Kind::block: analyze_statements(result, st.body, true); break;
         case Stmt::Kind::if_stmt: {

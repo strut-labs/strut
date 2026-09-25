@@ -44,6 +44,7 @@ private:
     StmtPtr parse_for(ParseResult& result);
     StmtPtr parse_function(ParseResult& result);
     StmtPtr parse_struct(ParseResult& result);
+    StmtPtr parse_include(ParseResult& result);
     TypeSyntax parse_type(ParseResult& result);
     StmtPtr parse_declaration_or_assignment(ParseResult& result);
 

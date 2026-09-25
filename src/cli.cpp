@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <iomanip>
+#include <unordered_set>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -72,48 +73,55 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     }
     return 0;
 }
+bool load_program_recursive(const std::filesystem::path& path, Program& combined, std::unordered_set<std::string>& loaded,
+                            std::unordered_set<std::string>& active, std::ostream& err) {
+    std::error_code ec;
+    const auto absolute = std::filesystem::absolute(path, ec).lexically_normal();
+    const std::string key = (ec ? path : absolute).string();
+    if (loaded.find(key) != loaded.end()) return true;
+    if (!active.insert(key).second) { err << path.string() << ": error: include cycle detected\n"; return false; }
+    std::string load_error; auto source = SourceFile::load(path, load_error);
+    if (!source) { err << path.string() << ": error: " << load_error << '\n'; active.erase(key); return false; }
+    Lexer lexer(*source); auto lexed=lexer.lex();
+    for(const auto& d:lexed.diagnostics) err << format_diagnostic(path.string(),d) << '\n';
+    if(!lexed.ok()){active.erase(key);return false;}
+    Parser parser(lexed.tokens); auto parsed=parser.parse();
+    for(const auto& d:parsed.diagnostics) err << format_diagnostic(path.string(),d) << '\n';
+    if(!parsed.ok()){active.erase(key);return false;}
+    std::vector<StmtPtr> own;
+    for (auto& st : parsed.program.statements) {
+        if (st->kind == Stmt::Kind::include_stmt) {
+            if (st->include_is_package) { own.push_back(std::move(st)); continue; }
+            auto dep = path.parent_path() / st->name;
+            if (!load_program_recursive(dep, combined, loaded, active, err)) { active.erase(key); return false; }
+        } else own.push_back(std::move(st));
+    }
+    for(auto& st:own) combined.statements.push_back(std::move(st));
+    active.erase(key); loaded.insert(key); return true;
+}
+
+bool load_program(const std::filesystem::path& path, Program& combined, std::ostream& err) {
+    std::unordered_set<std::string> loaded, active;
+    return load_program_recursive(path, combined, loaded, active, err);
+}
+
 int check_source(const std::filesystem::path& path, std::ostream& out, std::ostream& err) {
-    (void)out;
-    std::string load_error;
-    auto source = SourceFile::load(path, load_error);
-    if (!source) { err << path.string() << ": error: " << load_error << '\n'; return 2; }
-    Lexer lexer(*source);
-    auto lexed = lexer.lex();
-    for (const auto& diagnostic : lexed.diagnostics) {
-        err << format_diagnostic(path.string(), diagnostic) << '\n';
-    }
-    if (!lexed.ok()) return 1;
-    Parser parser(lexed.tokens);
-    auto parsed = parser.parse();
-    for (const auto& diagnostic : parsed.diagnostics) {
-        err << format_diagnostic(path.string(), diagnostic) << '\n';
-    }
-    if (!parsed.ok()) return 1;
-    SemanticAnalyzer sema;
-    auto checked = sema.analyze(parsed.program);
-    for (const auto& diagnostic : checked.diagnostics) err << format_diagnostic(path.string(), diagnostic) << '\n';
-    for (const auto& warning : checked.warnings) err << format_warning(path.string(), warning) << '\n';
-    return checked.ok() ? 0 : 1;
+    (void)out; Program program; if(!load_program(path,program,err)) return 1;
+    SemanticAnalyzer sema; auto checked=sema.analyze(program);
+    for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
+    for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
+    return checked.ok()?0:1;
 }
 
 int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, std::ostream& err) {
-    std::string load_error;
-    auto source = SourceFile::load(path, load_error);
-    if (!source) { err << path.string() << ": error: " << load_error << '\n'; return 2; }
-    Lexer lexer(*source); auto lexed = lexer.lex();
-    for (const auto& d : lexed.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
-    if (!lexed.ok()) return 1;
-    Parser parser(lexed.tokens); auto parsed = parser.parse();
-    for (const auto& d : parsed.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
-    if (!parsed.ok()) return 1;
-    SemanticAnalyzer sema; auto checked = sema.analyze(parsed.program);
-    for (const auto& d : checked.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
-    for (const auto& w : checked.warnings) err << format_warning(path.string(), w) << '\n';
-    if (!checked.ok()) return 1;
-    IRLowerer lowerer; auto lowered = lowerer.lower(parsed.program);
-    if (!lowered.ok()) return 1;
+    Program program; if(!load_program(path,program,err)) return 1;
+    SemanticAnalyzer sema; auto checked=sema.analyze(program);
+    for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
+    for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
+    if(!checked.ok())return 1;
+    IRLowerer lowerer; auto lowered=lowerer.lower(program); if(!lowered.ok())return 1;
     CppBackend backend; std::string backend_error;
-    if (!backend.compile(lowered.program, output, backend_error)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
+    if(!backend.compile(lowered.program,output,backend_error)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}
     return 0;
 }
 

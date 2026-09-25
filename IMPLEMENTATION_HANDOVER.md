@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP40 complete; CP41 is next.**
+Current implementation progress: **CP0–CP41 complete; CP42 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -366,11 +366,11 @@ Current implementation progress: **CP0–CP40 complete; CP41 is next.**
 ## Phase 8 — Includes/modules, structs-as-contracts, generics, enums, errors
 
 ### CP41 — Local/module include semantics
-- [ ] `include "foo.h"` / local dependency resolution.
-- [ ] one semantic load, no textual macro preprocessor behaviour.
-- [ ] include cycles/duplicate inclusion handling.
-- [ ] file/module symbol boundaries.
-- [ ] tests + regressions.
+- [x] `include "foo.h"` / local dependency resolution.
+- [x] one semantic load, no textual macro preprocessor behaviour.
+- [x] include cycles/duplicate inclusion handling.
+- [x] file/module symbol boundaries.
+- [x] tests + regressions.
 
 ### CP42 — Package include syntax
 - [ ] `include <package>` grammar/semantic placeholder.
