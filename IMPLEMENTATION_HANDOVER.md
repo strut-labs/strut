@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP37 complete; CP38 is next.**
+Current implementation progress: **CP0–CP38 complete; CP39 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -338,12 +338,12 @@ Current implementation progress: **CP0–CP37 complete; CP38 is next.**
 - [x] tests + compile-fail regressions.
 
 ### CP38 — `weak_ptr<T>` and cycle strategy
-- [ ] weak-control-block/runtime mechanics.
-- [ ] safe upgrade/lock semantics.
-- [ ] destruction behaviour.
-- [ ] obvious reference-cycle warning prototype where practical.
-- [ ] parent/child back-reference fixtures.
-- [ ] tests + regressions.
+- [x] weak-control-block/runtime mechanics.
+- [x] safe upgrade/lock semantics.
+- [x] destruction behaviour.
+- [x] obvious reference-cycle warning prototype where practical.
+- [x] parent/child back-reference fixtures.
+- [x] tests + regressions.
 
 ### CP39 — `unsafe` and `raw_ptr<T>`
 - [ ] `unsafe { ... }`.

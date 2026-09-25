@@ -8,5 +8,6 @@
 namespace strut {
 
 std::string format_diagnostic(std::string_view path, const Diagnostic& diagnostic);
+std::string format_warning(std::string_view path, const Diagnostic& diagnostic);
 
 } // namespace strut

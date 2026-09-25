@@ -798,3 +798,7 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 ## Borrow baseline
 
 `ref<T>` is a safe non-owning non-null borrow. `ref<const T>` prevents mutation through the borrow, reference bindings cannot be reseated, and `ref(...)` requires an lvalue. The first lifetime validator is deliberately conservative: ref fields and ref returns are rejected until the compiler can prove those escapes safe. Passing `ref<T>` does not change a `ptr<T>` reference count.
+
+## Weak ownership baseline
+
+`weak_ptr<T>` is the non-owning counterpart to reference-counted `ptr<T>`. Construct it with `weak(ptr_value)`, use `.lock()` to obtain a safe `ptr<T>` when the object is still alive, and `.expired()` to query liveness. The compiler emits a non-fatal warning for obvious two-struct strong reference cycles and recommends a weak back-reference.

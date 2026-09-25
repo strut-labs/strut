@@ -92,6 +92,7 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
     SemanticAnalyzer sema;
     auto checked = sema.analyze(parsed.program);
     for (const auto& diagnostic : checked.diagnostics) err << format_diagnostic(path.string(), diagnostic) << '\n';
+    for (const auto& warning : checked.warnings) err << format_warning(path.string(), warning) << '\n';
     return checked.ok() ? 0 : 1;
 }
 
@@ -107,6 +108,7 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     if (!parsed.ok()) return 1;
     SemanticAnalyzer sema; auto checked = sema.analyze(parsed.program);
     for (const auto& d : checked.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
+    for (const auto& w : checked.warnings) err << format_warning(path.string(), w) << '\n';
     if (!checked.ok()) return 1;
     IRLowerer lowerer; auto lowered = lowerer.lower(parsed.program);
     if (!lowered.ok()) return 1;

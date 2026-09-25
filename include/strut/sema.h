@@ -23,6 +23,7 @@ struct Symbol {
 
 struct SemanticResult {
     std::vector<Diagnostic> diagnostics;
+    std::vector<Diagnostic> warnings;
     bool ok() const { return diagnostics.empty(); }
 };
 
