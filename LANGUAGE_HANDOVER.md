@@ -645,7 +645,7 @@ Executable size is a first-class benchmark dimension alongside speed, memory and
 
 ## 21. Concurrency
 
-Strut should provide real OS/native threading, not a JavaScript-style single-threaded event loop pretending to be parallelism.
+Strut should provide real OS/native threading, not a JavaScript-style single-threaded event loop pretending to be parallelism. Async functions and async lambdas are scheduled on a shared multithreaded executor with a blocking work queue and worker wakeups. Long-running blocking operations should use explicit threads or purpose-built blocking APIs rather than monopolising executor workers.
 
 Explicit threads:
 

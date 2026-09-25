@@ -1,0 +1,4 @@
+tasks=10000
+total_ns=52737877
+ns_per_task=5273
+sum=50005000

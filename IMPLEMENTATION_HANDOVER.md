@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP66 complete; CP67 is next.**
+Current implementation progress: **CP0–CP67 complete; CP68 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -570,12 +570,12 @@ Current implementation progress: **CP0–CP66 complete; CP67 is next.**
 - [x] tests + regressions.
 
 ### CP67 — Multithreaded async executor
-- [ ] implement real multithreaded executor.
-- [ ] work scheduling/wakeup.
-- [ ] blocking-operation policy.
-- [ ] interaction with explicit threads.
-- [ ] stress and race testing.
-- [ ] benchmark scheduler overhead.
+- [x] implement real multithreaded executor.
+- [x] work scheduling/wakeup.
+- [x] blocking-operation policy.
+- [x] interaction with explicit threads.
+- [x] stress and race testing.
+- [x] benchmark scheduler overhead.
 
 ## Phase 12 — FFI and package foundation
 
