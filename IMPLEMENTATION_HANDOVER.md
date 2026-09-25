@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP87 complete; CP88 is next.**
+Current implementation progress: **CP0–CP88 complete; CP89 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -750,12 +750,12 @@ Current implementation progress: **CP0–CP87 complete; CP88 is next.**
 - [x] docs.
 
 ### CP88 — `strut test`
-- [ ] native Strut test convention/API.
-- [ ] test discovery.
-- [ ] filtering.
-- [ ] failure output.
-- [ ] parallelism policy.
-- [ ] self-host Strut package tests with it where possible.
+- [x] native Strut test convention/API.
+- [x] test discovery.
+- [x] filtering.
+- [x] failure output.
+- [x] parallelism policy.
+- [x] self-host Strut package tests with it where possible.
 
 ### CP89 — Formatter
 - [ ] define canonical formatting.

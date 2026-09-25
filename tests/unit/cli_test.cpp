@@ -59,5 +59,21 @@ int main() {
         std::filesystem::current_path(old); std::filesystem::remove_all(root, ec);
     }
 
+
+    {
+        const auto old = std::filesystem::current_path();
+        auto root = std::filesystem::temp_directory_path() / "strut-cli-test-command";
+        std::error_code ec; std::filesystem::remove_all(root, ec); std::filesystem::create_directories(root / ".strut", ec); std::filesystem::create_directories(root / "tests", ec);
+        std::ofstream(root / "main.p") << "function main() -> void { return; }\n";
+        std::ofstream(root / "tests/smoke_test.p") << "function main() -> void { print(\"test-ok\"); return; }\n";
+        std::ofstream(root / ".strut/config.json") << R"({"entrypoint":"main.p","output":"app","target":"native","mode":"debug","linking":"dynamic","incremental":"modified"})";
+        std::filesystem::current_path(root);
+        char arg0[] = "strut"; char arg1[] = "test"; char arg2[] = "smoke"; char* argv[] = {arg0,arg1,arg2};
+        std::ostringstream out; std::ostringstream err;
+        require(strut::run_cli(3, argv, out, err) == 0, "test command");
+        require(out.str().find("1/1 tests passed") != std::string::npos, "test summary");
+        std::filesystem::current_path(old); std::filesystem::remove_all(root, ec);
+    }
+
     return 0;
 }

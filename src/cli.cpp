@@ -9,6 +9,7 @@
 #include <regex>
 #include <algorithm>
 #include <fstream>
+#include <cstdlib>
 
 #include "json.h"
 #include "strut/lexer.h"
@@ -45,6 +46,7 @@ void print_help(std::ostream& out) {
         << "      --verbose        Explain object rebuild/reuse decisions\n"
         << "      compile         Optional explicit compile command alias\n"
         << "      make            Build the current Strut project\n"
+        << "      test [filter]   Build and run tests/**/*_test.p\n"
         << "      add <path>      Add a local package checkout to this project\n"
         << "      remove <name>   Remove a package dependency\n"
         << "      list            List project dependencies\n"
@@ -215,6 +217,54 @@ int run_make_command(bool release_override, bool verbose, std::ostream& out, std
     return compile_source(source, output, link, out, err, verbose);
 }
 
+
+std::string shell_quote_path(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return std::string("\"") + path.string() + "\"";
+#else
+    std::string q = "'";
+    for (char c : path.string()) q += c == '\'' ? "'\\''" : std::string(1, c);
+    q += "'"; return q;
+#endif
+}
+
+int run_test_command(const std::string& filter, bool verbose, std::ostream& out, std::ostream& err) {
+    const auto root = find_project_root(std::filesystem::current_path());
+    const auto tests_root = root / "tests";
+    if (!std::filesystem::exists(tests_root)) { err << "strut: no tests directory found\n"; return 2; }
+    std::vector<std::filesystem::path> tests;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(tests_root, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+        const auto p = entry.path(); const auto name = p.filename().string();
+        if (p.extension() != ".p" || name.size() < 7 || name.substr(name.size()-7) != "_test.p") continue;
+        const auto rel = std::filesystem::relative(p, root, ec).generic_string(); ec.clear();
+        if (!filter.empty() && rel.find(filter) == std::string::npos) continue;
+        tests.push_back(p);
+    }
+    std::sort(tests.begin(), tests.end());
+    if (tests.empty()) { err << "strut: no tests matched" << (filter.empty() ? "" : " filter '" + filter + "'") << "\n"; return 2; }
+    std::size_t passed = 0;
+    for (const auto& test : tests) {
+        auto rel = std::filesystem::relative(test, tests_root, ec); ec.clear();
+        auto exe = root / ".strut" / "tests" / rel; exe.replace_extension("");
+#ifdef _WIN32
+        exe += ".exe";
+#endif
+        std::filesystem::create_directories(exe.parent_path(), ec); ec.clear();
+        NativeLinkOptions link;
+        if (verbose) out << "build " << rel.generic_string() << '\n';
+        if (compile_source(test, exe, link, out, err, verbose) != 0) { err << "FAIL " << rel.generic_string() << " (compile)\n"; continue; }
+        if (verbose) out << "run " << rel.generic_string() << '\n';
+        const int rc = std::system(shell_quote_path(exe).c_str());
+        if (rc == 0) { ++passed; out << "PASS " << rel.generic_string() << '\n'; }
+        else err << "FAIL " << rel.generic_string() << " (exit " << rc << ")\n";
+    }
+    out << passed << "/" << tests.size() << " tests passed\n";
+    return passed == tests.size() ? 0 : 1;
+}
+
 int run_package_command(const std::string& command, const std::string& argument, std::ostream& out, std::ostream& err) {
     const auto root = std::filesystem::current_path(); PackageManifest project; std::string error;
     if (!load_package_manifest_file(root / "strut.json", project, error)) { err << "strut: " << error << '\n'; return 2; }
@@ -250,6 +300,17 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             std::string init_error;
             if (!init_project_build_state(std::filesystem::current_path(), init_error)) { err << "strut: " << init_error << '\n'; return 1; }
             out << "created .strut/config.json\n"; return 0;
+        }
+        if (command == "test") {
+            std::string filter; bool test_verbose = false;
+            for (int i = 2; i < argc; ++i) {
+                const std::string_view arg(argv[i]);
+                if (arg == "--verbose") test_verbose = true;
+                else if (!arg.empty() && arg.front() == '-') { err << "strut: unsupported test option '" << arg << "'\n"; return 2; }
+                else if (filter.empty()) filter = std::string(arg);
+                else { err << "strut: test accepts at most one filter\n"; return 2; }
+            }
+            return run_test_command(filter, test_verbose, out, err);
         }
         if (command == "make") {
             bool release = false; bool make_verbose = false;
