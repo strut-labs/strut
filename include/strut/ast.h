@@ -40,7 +40,7 @@ struct Expr {
 struct SwitchCase { ExprPtr value; bool is_default = false; SourceSpan span; std::vector<StmtPtr> body; };
 
 struct Stmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, switch_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl, enum_decl, unsafe_stmt, include_stmt };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, switch_stmt, match_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl, enum_decl, unsafe_stmt, include_stmt };
     Kind kind;
     SourceSpan span;
     std::string name;

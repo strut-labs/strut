@@ -56,6 +56,7 @@ private:
     std::unordered_map<std::string, std::unordered_set<std::string>> abstract_methods_;
     std::unordered_map<std::string, std::vector<std::string>> struct_bases_;
     std::unordered_map<std::string, std::unordered_set<std::string>> enum_members_;
+    std::unordered_set<std::string> named_types_;
     std::vector<Scope> scopes_;
     std::string current_function_return_type_;
     int unsafe_depth_ = 0;

@@ -333,6 +333,23 @@ StmtPtr Parser::parse_if(ParseResult& result){
     if(match("else")){if(match("if")){auto nested=parse_if(result);if(!nested)return nullptr;st->else_body.push_back(std::move(nested));st->span.end=st->else_body.back()->span.end;}else{if(!match("{")){error(result,peek(),"expected '{' after 'else'");return nullptr;}auto eb=parse_block(result);if(!eb)return nullptr;st->else_body=std::move(eb->body);st->span.end=eb->span.end;}}return st;
 }
 StmtPtr Parser::parse_while(ParseResult& result){const Token begin=previous();if(!match("(")){error(result,peek(),"expected '(' after 'while'");return nullptr;}auto cond=parse_expression(result);if(!cond)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after while condition");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after while condition");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::while_stmt;st->condition=std::move(cond);st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;}
+StmtPtr Parser::parse_match(ParseResult& result){
+    const Token begin=previous(); if(!match("(")){error(result,peek(),"expected '(' after match");return nullptr;}
+    auto value=parse_expression(result);if(!value)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after match expression");return nullptr;}
+    if(!match("{")){error(result,peek(),"expected '{' after match expression");return nullptr;}
+    auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::match_stmt;st->condition=std::move(value);bool wildcard=false;
+    while(!at_end()&&!check("}")){
+        SwitchCase c; const Token cb=peek();
+        if(peek().kind==TokenKind::identifier&&peek().lexeme=="_"){advance();if(wildcard){error(result,previous(),"duplicate match wildcard");return nullptr;}wildcard=true;c.is_default=true;}
+        else {c.value=parse_expression(result);if(!c.value)return nullptr;}
+        if(!match("=>")){error(result,peek(),"expected '=>' after match pattern");return nullptr;}
+        if(!match("{")){error(result,peek(),"match arms require a braced block");return nullptr;}
+        auto block=parse_block(result);if(!block)return nullptr;c.body=std::move(block->body);c.span=join(cb.span,block->span);st->switch_cases.push_back(std::move(c));
+        match(",");
+    }
+    if(!match("}")){error(result,peek(),"expected '}' after match");return nullptr;}st->span=join(begin.span,previous().span);return st;
+}
+
 StmtPtr Parser::parse_switch(ParseResult& result){
     const Token begin=previous(); if(!match("(")){error(result,peek(),"expected '(' after switch");return nullptr;}
     auto value=parse_expression(result);if(!value)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after switch expression");return nullptr;}
@@ -371,6 +388,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("if")) return parse_if(result);
     if (match("while")) return parse_while(result);
     if (match("switch")) return parse_switch(result);
+    if (match("match")) return parse_match(result);
     if (match("for")) return parse_for(result);
     if (match("return")) {
         const Token kw = previous();

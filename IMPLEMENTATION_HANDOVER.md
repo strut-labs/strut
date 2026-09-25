@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP46 complete; CP47 is next.**
+Current implementation progress: **CP0–CP47 complete; CP48 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -407,11 +407,11 @@ Current implementation progress: **CP0–CP46 complete; CP47 is next.**
 - [x] tests + regressions.
 
 ### CP47 — `match`
-- [ ] basic enum matching.
-- [ ] wildcard/default pattern.
-- [ ] payload/destructuring support only when corresponding types exist.
-- [ ] exhaustiveness checking where possible.
-- [ ] tests + regressions.
+- [x] basic enum matching.
+- [x] wildcard/default pattern.
+- [x] payload/destructuring is deferred until payload-carrying enum/data variants exist.
+- [x] exhaustiveness checking where possible.
+- [x] tests + regressions.
 
 ### CP48 — Generics/templates
 - [ ] square-bracket declaration parameters: `function name[T]`, `struct Name[T]`, `operator[T]`.

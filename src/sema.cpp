@@ -52,6 +52,7 @@ TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
     if (type.valid()) return type;
     if (resolved == "null") return {TypeKind::null_type, 0, "null"};
     if (resolved == "opaque") return {TypeKind::named, 0, "opaque"};
+    if (named_types_.find(resolved) != named_types_.end()) return {TypeKind::named,0,resolved};
     if (resolved.find('<') != std::string::npos || resolved.find('[') != std::string::npos ||
         (!resolved.empty() && std::all_of(resolved.begin(), resolved.end(), [](unsigned char c){ return !std::islower(c); }))) {
         return {TypeKind::named, 0, std::string(name)};
@@ -292,6 +293,12 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             if(!has_default && subject.valid() && enum_members_.find(subject.name)!=enum_members_.end()) result.warnings.push_back(Diagnostic{st.span,"enum switch has no default; exhaustiveness is checked more strictly by match"});
             break;
         }
+        case Stmt::Kind::match_stmt: {
+            auto subject=st.condition?infer_expression(result,*st.condition):TypeInfo{};bool wildcard=false;std::unordered_set<std::string> matched;
+            for(const auto& c:st.switch_cases){if(c.is_default){wildcard=true;}else if(c.value){auto pt=infer_expression(result,*c.value);if(subject.valid()&&pt.valid()&&!compatible(pt,subject))result.diagnostics.push_back(Diagnostic{c.value->span,"match pattern type is incompatible with subject"});if(c.value->kind==Expr::Kind::member&&c.value->text.rfind("::",0)==0)matched.insert(c.value->text.substr(2));}analyze_statements(result,c.body,true);}
+            auto eit=enum_members_.find(subject.name);if(!wildcard&&eit!=enum_members_.end()){std::vector<std::string> missing;for(const auto& n:eit->second)if(matched.find(n)==matched.end())missing.push_back(n);if(!missing.empty()){std::string list;for(const auto& n:missing){if(!list.empty())list+=", ";list+=n;}result.diagnostics.push_back(Diagnostic{st.span,"non-exhaustive enum match; missing: "+list});}}
+            break;
+        }
         case Stmt::Kind::for_stmt:
             push_scope(); if (st.initializer) analyze_statement(result, *st.initializer); if (st.condition) infer_expression(result,*st.condition); if(st.increment) infer_expression(result,*st.increment); analyze_statements(result, st.body, false); pop_scope(); break;
         case Stmt::Kind::range_for:
@@ -315,8 +322,9 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
