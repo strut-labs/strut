@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP85 complete; CP86 is next.**
+Current implementation progress: **CP0–CP86 complete; CP87 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -731,13 +731,13 @@ Current implementation progress: **CP0–CP85 complete; CP86 is next.**
 - [x] tests + docs.
 
 ### CP86 — Measure first serious app
-- [ ] executable size.
-- [ ] cold startup.
-- [ ] idle memory.
-- [ ] simple HTTP throughput/latency.
-- [ ] compile time.
-- [ ] compare debug vs release.
-- [ ] save reproducible methodology/results.
+- [x] executable size.
+- [x] cold startup.
+- [x] idle memory.
+- [x] simple HTTP throughput/latency.
+- [x] compile time.
+- [x] compare debug vs release.
+- [x] save reproducible methodology/results.
 
 ## Phase 15 — Project CLI, formatter, tests, docs maintenance
 

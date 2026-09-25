@@ -1,0 +1,30 @@
+{
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "machine": "x86_64",
+  "python": "3.13.5",
+  "compiler": "/mnt/data/strut-work/strut/build/strut",
+  "modes": {
+    "debug": {
+      "cold_start_ms": 11.433037999950102,
+      "idle_rss_kib": 7232,
+      "requests": 100,
+      "throughput_req_s": 4647.569894909872,
+      "latency_mean_ms": 0.21469025000101283,
+      "latency_p50_ms": 0.19234999990658252,
+      "latency_p95_ms": 0.3291259999969043,
+      "cold_compile_s": 3.3410904119999714,
+      "executable_bytes": 2039648
+    },
+    "release": {
+      "cold_start_ms": 5.7663540000021385,
+      "idle_rss_kib": 2840,
+      "requests": 100,
+      "throughput_req_s": 4814.303410975532,
+      "latency_mean_ms": 0.20724366999502308,
+      "latency_p50_ms": 0.18338699999276287,
+      "latency_p95_ms": 0.3304990000287944,
+      "cold_compile_s": 3.860385468000004,
+      "executable_bytes": 97424
+    }
+  }
+}

@@ -44,7 +44,7 @@ When a design decision changes, update these documents before or alongside imple
 
 ## Current status
 
-CP0–CP81 are complete. Strut now has a working native compiler bootstrap, type system and memory model, concurrency/async support, packages, TCP/TLS/HTTP client support, a plain HTTP server, external/system SQLite integration, compile-time embedded resources, and the first production-ish one-binary web-app fixture. CP82 starts the persistent `.strut` project/object-cache work.
+CP0–CP86 are complete. Strut now has a working native compiler bootstrap, type system and memory model, concurrency/async support, packages, TCP/TLS/HTTP support, external/system SQLite integration, compile-time embedded resources, the first production-ish one-binary web-app fixture, and Nift-style incremental native object caching under `.strut`. CP87 is the project-level `strut make` workflow.
 
 ## Major acceptance target
 
@@ -85,11 +85,9 @@ Prefer allocation-light standard-library conversion primitives such as `std::fro
 
 ## Bootstrap implementation standard
 
-The compiler/runtime bootstrap targets portable C++20. JSONIC is verified header-only C++20. The bootstrap moved to C++20 when the pre-approved libcurl-backed TLS/HTTP layer was integrated. JSONIC itself remains verified C++17-compatible; do not regress that independent compatibility.
+The compiler/runtime bootstrap targets portable C++20 because of the pre-approved libcurl-backed networking layer and current backend integration. JSONIC itself remains independently verified C++17-compatible; do not regress that compatibility.
 
 ## Embedded third-party dependency policy
-
-Only JSONIC and libcurl are pre-approved for embedding in the Strut toolchain/runtime. Prefer the standard library and Strut-owned code otherwise. Do not vendor or embed any additional third-party library without discussing it with the maintainer first. Packages may depend on external system libraries later, but that is separate from silently embedding another dependency into Strut itself.
 
 
 ## Approved third-party foundations
