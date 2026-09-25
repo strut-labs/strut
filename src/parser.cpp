@@ -220,6 +220,24 @@ StmtPtr Parser::parse_operator(ParseResult& result) {
         do{if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected generic parameter");return nullptr;}auto g=advance();bool upper=!g.lexeme.empty();for(unsigned char c:g.lexeme)if(std::islower(c))upper=false;if(!upper){error(result,g,"generic type parameters must use uppercase names");return nullptr;}st->generic_parameters.push_back(g.lexeme);}while(match(","));
         if(!match("]")){error(result,peek(),"expected ']' after operator generics");return nullptr;}
     }
+    if(match("<")){
+        if(!match("(")){error(result,peek(),"expected '(' in operator callable signature");return nullptr;}
+        std::vector<TypeSyntax> types;
+        if(!check(")")){do{auto t=parse_type(result);if(t.name.empty())return nullptr;types.push_back(std::move(t));}while(match(","));}
+        if(!match(")")){error(result,peek(),"expected ')' in operator callable signature");return nullptr;}
+        if(!match("->")){error(result,peek(),"expected '->' in operator callable signature");return nullptr;}
+        st->return_type=parse_type(result);if(!st->return_type||st->return_type->name.empty())return nullptr;
+        if(!match(">")){error(result,peek(),"expected '>' after operator callable signature");return nullptr;}
+        if(peek().kind!=TokenKind::op){error(result,peek(),"expected overloadable operator token");return nullptr;}const Token op=advance();st->op=op.lexeme;
+        const OperatorFixity fixity=types.size()==1?OperatorFixity::prefix:OperatorFixity::infix;
+        if(!overloadable_operator(st->op,fixity)){error(result,op,"operator does not support this arity/fixity");return nullptr;}
+        if(!match(":=")){error(result,peek(),"expected ':=' before operator lambda");return nullptr;}
+        st->value=parse_expression(result);if(!st->value||st->value->kind!=Expr::Kind::lambda){error(result,peek(),"operator lambda declaration requires a lambda expression");return nullptr;}
+        if(!match(";")){error(result,peek(),"expected ';' after operator lambda declaration");return nullptr;}
+        if(!st->value->lambda || st->value->lambda->parameters.size()!=types.size()){error(result,op,"operator lambda parameter count does not match signature");return nullptr;}
+        for(std::size_t i=0;i<types.size();++i){auto name=st->value->lambda->parameters[i].name;st->parameters.push_back(Parameter{std::move(types[i]),name,st->value->lambda->parameters[i].span});}
+        st->has_body=true;st->span=join(begin.span,previous().span);return st;
+    }
     if(peek().kind!=TokenKind::op){error(result,peek(),"expected overloadable operator after 'operator'");return nullptr;}
     const Token op=advance(); st->op=op.lexeme;
     if(!overloadable_operator(st->op,OperatorFixity::prefix) && !overloadable_operator(st->op,OperatorFixity::infix) && !overloadable_operator(st->op,OperatorFixity::postfix)){error(result,op,"operator is not overloadable in Strut");return nullptr;}
@@ -227,8 +245,7 @@ StmtPtr Parser::parse_operator(ParseResult& result) {
     if(!check(")")){do{auto type=parse_type(result);if(type.name.empty())return nullptr;if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected operator parameter name");return nullptr;}auto name=advance();st->parameters.push_back(Parameter{std::move(type),name.lexeme,name.span});}while(match(","));}
     if(!match(")")){error(result,peek(),"expected ')' after operator parameters");return nullptr;}
     if(!match("->")){error(result,peek(),"expected '->' and operator return type");return nullptr;}st->return_type=parse_type(result);if(!st->return_type||st->return_type->name.empty())return nullptr;
-    const std::size_t arity=st->parameters.size();
-    const OperatorFixity fixity=arity==1?OperatorFixity::prefix:OperatorFixity::infix;
+    const std::size_t arity=st->parameters.size();const OperatorFixity fixity=arity==1?OperatorFixity::prefix:OperatorFixity::infix;
     if(!overloadable_operator(st->op,fixity)){error(result,op,"operator does not support this arity/fixity");return nullptr;}
     if(match(";")){st->has_body=false;st->span=join(begin.span,previous().span);return st;}
     if(!match("{")){error(result,peek(),"expected operator body or ';'");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->has_body=true;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;

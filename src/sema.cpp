@@ -262,7 +262,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             std::string signature;for(std::size_t i=0;i<st.parameters.size();++i){if(i)signature+=",";signature+=resolved_type_name(st.parameters[i].type.name);}
             const std::string fixity=st.parameters.size()==1?"prefix":"infix";const std::string key=fixity+":"+st.op;
             auto& seen=operator_signatures_[key];if(!seen.insert(signature).second)result.diagnostics.push_back(Diagnostic{st.span,"ambiguous duplicate operator overload for '"+st.op+"' with signature ("+signature+")"});
-            if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,false,resolved_type_name(p.type.name)});analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
+            if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,false,resolved_type_name(p.type.name)});if(st.value)infer_expression(result,*st.value);else analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
             break;
         }
         case Stmt::Kind::function_decl: {

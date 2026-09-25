@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP52 complete; CP53 is next.**
+Current implementation progress: **CP0–CP53 complete; CP54 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -460,11 +460,11 @@ Current implementation progress: **CP0–CP52 complete; CP53 is next.**
 - [x] tests + docs.
 
 ### CP53 — Lambda operator declarations
-- [ ] `operator<(A, B) -> R> + := (a, b) => ...;`.
-- [ ] `operator[T]<(A<T>, A<T>) -> R<T>> + := ...;`.
-- [ ] use exactly the same callable signature grammar as lambda function declarations.
-- [ ] accept visually repetitive operator tokens (`:= :=`, etc.) rather than adding special-case grammar.
-- [ ] tests + formatter/regression fixtures.
+- [x] `operator<(A, B) -> R> + := (a, b) => ...;`.
+- [x] `operator[T]<(A<T>, A<T>) -> R<T>> + := ...;`.
+- [x] use exactly the same callable signature grammar as lambda function declarations.
+- [x] accept visually repetitive operator tokens (`:= :=`, etc.) rather than adding special-case grammar.
+- [x] tests + formatter/regression fixtures.
 
 ### CP54 — Assignment and initialization overloading
 - [ ] overload `=` for existing destination values.
