@@ -31,7 +31,7 @@ const limit := 10;
 const int answer := 42;
 ```
 
-Type aliases are first-class and should be used to implement ergonomic default numeric names rather than giving those names unnecessary compiler magic. Exact alias keyword syntax is **provisional**, but conceptually:
+Type aliases are first-class and should be used to implement ergonomic default numeric names rather than giving those names unnecessary compiler magic. The canonical alias spelling is:
 
 ```strut
 type int := int_32;
@@ -113,7 +113,7 @@ for (User user : users) {
 
 Support `break`, `continue`, and `return`.
 
-`switch` and `match` are both planned. `switch` handles ordinary C-like branching; `match` handles richer pattern/destructuring cases.
+`switch` and `match` are both implemented. `switch` handles ordinary C-like branching; `match` handles richer pattern/destructuring cases.
 
 ## 5. Functions, function types, and templates
 
@@ -329,7 +329,7 @@ struct User : Serializable, Printable {
 }
 ```
 
-Inheritance semantics are **provisional**. In particular, unrestricted C++-style multiple inheritance of data-bearing concrete bases should not be accepted blindly. A likely rule to prototype is one concrete/data-bearing base plus multiple abstract contract bases.
+Inheritance uses one concrete/data-bearing base plus any number of abstract contract bases. Multiple data-bearing concrete bases are rejected.
 
 Struct literal/construction syntax currently remains:
 
@@ -417,7 +417,7 @@ Safe Strut must prevent use-after-free, dangling safe references, double free, i
 
 ## 12. Errors
 
-Current proposed checked-error signature syntax:
+The canonical checked-error signature syntax is:
 
 ```strut
 function load(string path) -> Config : IOError {
@@ -452,7 +452,7 @@ catch {
 }
 ```
 
-The compiler should know which checked error types a function may throw from its signature. Exact propagation shorthand is still **provisional** and should be prototyped against filesystem, JSON, networking, and database code before freezing.
+The compiler tracks checked error types from the function signature. Calls that may propagate an undeclared checked error are rejected; `try`/typed `catch`/catch-all handling is the canonical local handling model.
 
 ## 13. Enums
 
@@ -467,7 +467,7 @@ enum Status {
 }
 ```
 
-Explicit enum representation rules and richer algebraic/payload enum syntax are **provisional**.
+Enums currently use an `int_32` representation. Rich algebraic/payload enums are not part of the frozen core language surface.
 
 ## 14. Switch and match
 
@@ -523,19 +523,19 @@ If compile-time code generation/metaprogramming is added, design it deliberately
 
 ## 16. Modules/includes and source organisation
 
-Current direction is C++-familiar syntax with modern semantic inclusion rather than textual preprocessing:
+Strut uses C++-familiar include syntax with semantic inclusion rather than textual preprocessing:
 
 ```strut
-include <http>
-include <sqlite>
-include "auth.h"
+include <http>;
+include <sqlite>;
+include "auth.h";
 ```
 
 `<...>` denotes packages/system modules; quoted includes denote local/project files.
 
 Includes should behave as language/module dependencies, not C preprocessor text pasting.
 
-Source extensions are **provisional**, but the leading candidate is:
+Canonical source extensions are:
 
 ```text
 .h   optional header/declaration file
@@ -558,7 +558,7 @@ out << "hello, " << name << endl;
 err << "warning" << endl;
 ```
 
-Planned stream types include:
+Implemented stream types include:
 
 ```text
 istream
@@ -715,7 +715,7 @@ Expected stdlib/core territory includes:
 - threading/synchronization primitives that require runtime integration;
 - memory/runtime facilities intrinsic to the language.
 
-Broader facilities should live in packages, ideally curated under a dedicated `strut-packages` GitHub organisation. Examples:
+Broader facilities live in packages, ideally curated under a dedicated `strut-packages` GitHub organisation. Examples:
 
 - HTTP;
 - TLS;
@@ -725,27 +725,27 @@ Broader facilities should live in packages, ideally curated under a dedicated `s
 - JSON Schema;
 - higher-level frameworks and integrations.
 
-SQLite should be an official/first-class package used very early for dogfooding, not necessarily compiled into the minimal stdlib.
+SQLite is treated as an official/first-class package surface and may use the external/system SQLite library rather than being embedded into the minimal stdlib.
 
-## 25. CLI direction
+## 24. CLI
 
-The CLI should remain small and direct.
+The CLI remains small and direct.
 
-Single-file compile direction:
+Single-file compile:
 
 ```sh
 strut hello.p
 ```
 
-This compiles `hello.p` to a native executable (exact output naming/options to be defined).
+This compiles `hello.p` to a native executable using deterministic output naming; `-o` selects an explicit output path.
 
-Project compilation direction:
+Project compilation:
 
 ```sh
 strut make
 ```
 
-Potential explicit/secondary commands may include:
+Implemented project/tooling commands include:
 
 ```sh
 strut compile hello.p
@@ -756,7 +756,7 @@ strut --help
 strut --version
 ```
 
-`strut run file` is not a preferred baseline. Compile-and-execute, if added, should have an intentional name/semantics rather than being assumed.
+`strut run file` is not part of the baseline CLI. Direct compilation and `strut make` remain the canonical build workflows.
 
 Release and target flags should eventually support optimized builds and cross compilation.
 

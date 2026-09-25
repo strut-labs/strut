@@ -937,15 +937,15 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 ## Phase 19 — Stability and release readiness
 
 ### CP112 — Language design audit
-- [ ] review every provisional decision in `LANGUAGE_HANDOVER.md`.
-- [ ] remove dead syntax/features.
-- [ ] resolve extension/header/source conventions.
-- [ ] resolve package manifest/CLI conventions.
-- [ ] resolve error propagation and inheritance/contracts.
-- [ ] ensure one canonical spelling for core constructs.
-- [ ] audit fixed operator set/overload semantics and confirm no parser-extension creep.
-- [ ] audit stream/process APIs against real systems programs.
-- [ ] audit static/dynamic linking and executable-size goals against real programs.
+- [x] review every provisional decision in `LANGUAGE_HANDOVER.md`.
+- [x] remove dead syntax/features.
+- [x] resolve extension/header/source conventions.
+- [x] resolve package manifest/CLI conventions.
+- [x] resolve error propagation and inheritance/contracts.
+- [x] ensure one canonical spelling for core constructs.
+- [x] audit fixed operator set/overload semantics and confirm no parser-extension creep.
+- [x] audit stream/process APIs against real systems programs.
+- [x] audit static/dynamic linking and executable-size goals against real programs.
 
 ### CP113 — Compatibility/versioning policy
 - [ ] semantic/versioning strategy for compiler/language/packages.
