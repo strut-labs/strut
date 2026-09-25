@@ -76,6 +76,7 @@ public:
         for (const auto& child : st.body) out->body.push_back(statement(*child));
         for (const auto& child : st.else_body) out->else_body.push_back(statement(*child));
         for (const auto& c : st.switch_cases) { IRSwitchCase ic; ic.is_default=c.is_default; ic.span=c.span; ic.value=expression(c.value.get()); for(const auto& child:c.body) ic.body.push_back(statement(*child)); out->switch_cases.push_back(std::move(ic)); }
+        for (const auto& c : st.catches) { IRCatchClause ic; ic.catch_all=!c.type.has_value(); ic.type_name=c.type?c.type->name:""; ic.name=c.name; ic.span=c.span; for(const auto& child:c.body) ic.body.push_back(statement(*child)); out->catches.push_back(std::move(ic)); }
         return out;
     }
 private:

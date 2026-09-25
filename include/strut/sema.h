@@ -62,6 +62,7 @@ private:
     std::unordered_set<std::string> current_function_errors_;
     std::unordered_map<std::string, std::unordered_set<std::string>> function_errors_;
     int unsafe_depth_ = 0;
+    int catch_all_depth_ = 0;
 };
 
 } // namespace strut

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP49 complete; CP50 is next.**
+Current implementation progress: **CP0–CP50 complete; CP51 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -433,12 +433,12 @@ Current implementation progress: **CP0–CP49 complete; CP50 is next.**
 - [x] tests + regressions.
 
 ### CP50 — Try/catch
-- [ ] `try { ... }`.
-- [ ] typed `catch (Error err)`.
-- [ ] catch-all `catch { ... }`.
-- [ ] propagation behaviour/shorthand prototyped and deliberately chosen.
-- [ ] interaction with destructors/resource cleanup certified.
-- [ ] tests + regressions.
+- [x] `try { ... }`.
+- [x] typed `catch (Error err)`.
+- [x] catch-all `catch { ... }`.
+- [x] propagation behaviour/shorthand prototyped and deliberately chosen.
+- [x] interaction with destructors/resource cleanup certified.
+- [x] tests + regressions.
 
 ## Phase 9 — Operator overloading
 

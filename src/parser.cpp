@@ -30,7 +30,7 @@ int Parser::precedence(std::string_view op) {
     if (op=="^") return 4;
     if (op=="&") return 5;
     if (op=="=="||op=="!=") return 6;
-    if (op=="<"||op=="<="||op==">"||op==">=") return 7;
+    if (op=="<"||op=="<="||op==">"||op==">") return 7;
     if (op=="<<"||op==">>") return 8;
     if (op=="+"||op=="-") return 9;
     if (op=="*"||op=="/"||op=="%") return 10;
@@ -381,6 +381,28 @@ StmtPtr Parser::parse_for(ParseResult& result){
     if(!check(";")){st->condition=parse_expression(result);if(!st->condition)return nullptr;}if(!match(";")){error(result,peek(),"expected ';' after for condition");return nullptr;}
     if(!check(")")){st->increment=parse_expression(result);if(!st->increment)return nullptr;}if(!match(")")){error(result,peek(),"expected ')' after for clauses");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after for clauses");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;
 }
+
+StmtPtr Parser::parse_try(ParseResult& result){
+    const Token begin=previous();
+    if(!match("{")){error(result,peek(),"expected '{' after try");return nullptr;}
+    auto body=parse_block(result);if(!body)return nullptr;
+    auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::try_stmt;st->body=std::move(body->body);
+    bool any=false;
+    while(match("catch")){
+        any=true;CatchClause c;const Token cb=previous();
+        if(match("(")){
+            auto t=parse_type(result);if(t.name.empty())return nullptr;c.type=std::move(t);
+            if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected catch variable name");return nullptr;}
+            c.name=advance().lexeme;
+            if(!match(")")){error(result,peek(),"expected ')' after catch binding");return nullptr;}
+        }
+        if(!match("{")){error(result,peek(),"expected '{' after catch");return nullptr;}
+        auto block=parse_block(result);if(!block)return nullptr;c.body=std::move(block->body);c.span=join(cb.span,block->span);st->catches.push_back(std::move(c));
+    }
+    if(!any){error(result,peek(),"try requires at least one catch");return nullptr;}
+    st->span=join(begin.span,st->catches.back().span);return st;
+}
+
 StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("include")) return parse_include(result);
     if (match("type")) return parse_type_alias(result);
@@ -395,6 +417,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("switch")) return parse_switch(result);
     if (match("match")) return parse_match(result);
     if (match("for")) return parse_for(result);
+    if (match("try")) return parse_try(result);
     if (match("throw")) { const Token kw=previous(); auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::throw_stmt;st->value=parse_expression(result);if(!st->value)return nullptr;if(!match(";")){error(result,peek(),"expected ';' after throw");return nullptr;}st->span=join(kw.span,previous().span);return st; }
     if (match("return")) {
         const Token kw = previous();

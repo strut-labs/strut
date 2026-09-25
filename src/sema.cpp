@@ -138,7 +138,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::call: {
             for (const auto& arg : expr.arguments) infer_expression(result, *arg);
-            if(expr.left && expr.left->kind==Expr::Kind::identifier){auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end())result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
+            if(expr.left && expr.left->kind==Expr::Kind::identifier){auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
                 if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
@@ -309,7 +309,18 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::return_stmt: if (st.value) { infer_expression(result,*st.value); if(current_function_return_type_.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"returning ref<T> is not permitted until lifetime proof can establish a safe escape"}); } break;
         case Stmt::Kind::throw_stmt: {
             std::string thrown; if(st.value){if(st.value->kind==Expr::Kind::call&&st.value->left&&st.value->left->kind==Expr::Kind::identifier){thrown=st.value->left->text;for(const auto& a:st.value->arguments)infer_expression(result,*a);}else if(st.value->kind==Expr::Kind::struct_literal)thrown=st.value->text;else {auto t=infer_expression(result,*st.value);thrown=t.name;}}
-            thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end())result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in function signature"});break;
+            thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in function signature"});break;
+        }
+        case Stmt::Kind::try_stmt: {
+            const auto saved_errors=current_function_errors_;
+            bool has_catch_all=false;
+            for(const auto& c:st.catches){if(!c.type){has_catch_all=true;}else current_function_errors_.insert(resolved_type_name(c.type->name));}
+            if(has_catch_all)++catch_all_depth_;
+            analyze_statements(result,st.body,true);
+            if(has_catch_all)--catch_all_depth_;
+            current_function_errors_=saved_errors;
+            for(const auto& c:st.catches){push_scope();if(c.type && !c.name.empty())declare(result,Symbol{c.name,SymbolNamespace::value,c.span,true,resolved_type_name(c.type->name)});analyze_statements(result,c.body,false);pop_scope();}
+            break;
         }
         default: break;
     }
@@ -327,7 +338,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); unsafe_depth_=0;
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); unsafe_depth_=0; catch_all_depth_=0;
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
