@@ -1,7 +1,9 @@
 #include "strut/package.h"
 
 #include <charconv>
+#include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <string_view>
 
 #include "json.h"
@@ -31,6 +33,23 @@ bool valid_semver(std::string_view value) {
 }
 }
 
+
+bool valid_package_name(const std::string& value) {
+    if (value.empty()) return false;
+    for (const unsigned char c : value) {
+        if (!(std::islower(c) || std::isdigit(c) || c == '-' || c == '_')) return false;
+    }
+    return value.front() != '-' && value.front() != '_' && value.back() != '-' && value.back() != '_';
+}
+
+bool valid_package_relative_path(const std::string& value) {
+    if (value.empty()) return false;
+    const std::filesystem::path path(value);
+    if (path.is_absolute()) return false;
+    for (const auto& part : path) if (part == "..") return false;
+    return true;
+}
+
 bool valid_version_requirement(const std::string& value) {
     if (value == "*") return true;
     std::string_view requirement(value);
@@ -54,7 +73,23 @@ bool parse_package_manifest(const std::string& text, PackageManifest& out, std::
     };
     PackageManifest parsed;
     if (!string_field("name", true, parsed.name) || !string_field("version", true, parsed.version) || !string_field("entry", false, parsed.entry)) return false;
+    if (!valid_package_name(parsed.name)) { error = "manifest package name must use lowercase letters, digits, hyphens or underscores"; return false; }
     if (!valid_semver(parsed.version)) { error = "manifest version must use MAJOR.MINOR.PATCH"; return false; }
+    string_field("description", false, parsed.description);
+    string_field("license", false, parsed.license);
+    string_field("repository", false, parsed.repository);
+    auto path_array = [&](const char* name, std::vector<std::string>& target) -> bool {
+        if (!document.has(name)) return true;
+        const auto& value = document[name];
+        if (value.type != json::Type::Array) { error = std::string("manifest field ") + name + " must be an array"; return false; }
+        for (const auto& item : value.array) {
+            if (item.type != json::Type::String || !valid_package_relative_path(item.string)) { error = std::string("invalid package path in ") + name; return false; }
+            target.push_back(item.string);
+        }
+        return true;
+    };
+    if (!path_array("sources", parsed.sources) || !path_array("include_dirs", parsed.include_dirs)) return false;
+    if (!parsed.entry.empty() && !valid_package_relative_path(parsed.entry)) { error = "manifest entry must be a relative package path"; return false; }
     if (document.has("dependencies")) {
         const auto& dependencies = document["dependencies"];
         if (dependencies.type != json::Type::Object) { error = "manifest dependencies must be a JSON object"; return false; }

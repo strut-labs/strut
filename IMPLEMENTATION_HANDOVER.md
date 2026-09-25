@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP71 complete; CP72 is next.**
+Current implementation progress: **CP0–CP72 complete; CP73 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -612,11 +612,11 @@ Current implementation progress: **CP0–CP71 complete; CP72 is next.**
 - [x] docs.
 
 ### CP72 — Dedicated `strut-packages` ecosystem contract
-- [ ] establish expected GitHub organisation/repository convention.
-- [ ] define official package quality/test/docs expectations.
-- [ ] package source/build metadata.
-- [ ] local package development workflow.
-- [ ] security/reproducibility expectations.
+- [x] establish expected GitHub organisation/repository convention.
+- [x] define official package quality/test/docs expectations.
+- [x] package source/build metadata.
+- [x] local package development workflow.
+- [x] security/reproducibility expectations.
 
 ### CP73 — Package CLI
 - [ ] settle `strut add <package>` or equivalent.
