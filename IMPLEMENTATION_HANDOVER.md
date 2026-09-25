@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP54 complete; CP55 is next.**
+Current implementation progress: **CP0–CP55 complete; CP56 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -477,12 +477,12 @@ Current implementation progress: **CP0–CP54 complete; CP55 is next.**
 ## Phase 10 — Core IO/runtime facilities
 
 ### CP55 — Filesystem basics
-- [ ] paths.
-- [ ] exists/create/remove/copy/move.
-- [ ] directories/listing.
-- [ ] typed errors.
-- [ ] cross-platform abstractions.
-- [ ] tests + regressions.
+- [x] paths.
+- [x] exists/create/remove/copy/move.
+- [x] directories/listing.
+- [x] typed errors.
+- [x] cross-platform abstractions.
+- [x] tests + regressions.
 
 ### CP56 — Stream type foundation
 - [ ] implement `istream`, `ostream`, `sstream`, `ifstream`, and `ofstream`.
