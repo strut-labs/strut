@@ -551,10 +551,10 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 - [x] tests + stress regressions.
 
 ### CP64 — Data-race safety policy
-- [ ] define what the compiler/runtime promises.
-- [ ] decide which sharing patterns require synchronization.
-- [ ] diagnostics where statically feasible.
-- [ ] document unsafe escape hatches honestly.
+- [x] define what the compiler/runtime promises.
+- [x] decide which sharing patterns require synchronization.
+- [x] diagnostics where statically feasible.
+- [x] document unsafe escape hatches honestly.
 
 ### CP65 — Async functions/futures
 - [ ] `async function`.
