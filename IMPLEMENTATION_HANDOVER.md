@@ -228,12 +228,12 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] tests + regressions.
 
 ### CP25 — Strings
-- [ ] owned string representation.
-- [ ] UTF-8 policy.
-- [ ] indexing/slicing policy.
-- [ ] starts_with/ends_with/contains/trim/replace/split/join/substr or equivalent curated API.
-- [ ] formatting/conversion basics.
-- [ ] tests + regressions.
+- [x] owned string representation.
+- [x] UTF-8 policy.
+- [x] indexing/slicing policy.
+- [x] starts_with/ends_with/contains/trim/replace/split/join/substr or equivalent curated API.
+- [x] formatting/conversion basics.
+- [x] tests + regressions.
 
 ### CP26 — Maps
 - [ ] `map<K, V>`.
