@@ -519,12 +519,12 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 - [x] docs.
 
 ### CP60 — Child-process/pipe API
-- [ ] spawn long-lived child processes.
-- [ ] stream child stdin/stdout/stderr.
-- [ ] wait/status/terminate semantics.
-- [ ] pipe composition without requiring a shell.
-- [ ] interaction with async/blocking IO documented.
-- [ ] tests + regressions.
+- [x] spawn long-lived child processes.
+- [x] stream child stdin/stdout/stderr.
+- [x] wait/status/terminate semantics.
+- [x] pipe composition without requiring a shell.
+- [x] interaction with async/blocking IO documented.
+- [x] tests + regressions.
 
 ## Phase 11 — Threads, mutexes, channels, async
 
