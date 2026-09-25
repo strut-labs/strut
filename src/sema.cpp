@@ -1,4 +1,5 @@
 #include "strut/sema.h"
+#include "strut/type.h"
 
 namespace strut {
 
@@ -24,8 +25,19 @@ void SemanticAnalyzer::analyze_statements(SemanticResult& result, const std::vec
 }
 void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st) {
     switch (st.kind) {
-        case Stmt::Kind::declaration:
-            declare(result, Symbol{st.name, SymbolNamespace::value, st.span, st.is_const}); break;
+        case Stmt::Kind::declaration: {
+            declare(result, Symbol{st.name, SymbolNamespace::value, st.span, st.is_const});
+            if (st.declared_type && st.value) {
+                const auto destination = builtin_type(st.declared_type->name);
+                if (destination.numeric() && st.value->kind == Expr::Kind::integer_literal && !integer_literal_fits(st.value->text, destination)) {
+                    result.diagnostics.push_back(Diagnostic{st.value->span, "integer literal does not fit " + st.declared_type->name});
+                }
+                if (destination.kind == TypeKind::signed_int || destination.kind == TypeKind::unsigned_int) {
+                    if (st.value->kind == Expr::Kind::floating_literal) result.diagnostics.push_back(Diagnostic{st.value->span, "narrowing floating-to-integer initialization requires an explicit conversion"});
+                }
+            }
+            break;
+        }
         case Stmt::Kind::function_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true});
             if (st.has_body) {

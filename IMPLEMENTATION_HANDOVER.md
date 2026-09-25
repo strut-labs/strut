@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP16 complete; CP17 is next.**
+Current implementation progress: **CP0–CP17 complete; CP18 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -163,12 +163,12 @@ Current implementation progress: **CP0–CP16 complete; CP17 is next.**
 - [x] Tests + regressions.
 
 ### CP17 — Numeric type family
-- [ ] implement `int_8/int_16/int_32/int_64`.
-- [ ] implement `uint_8/uint_16/uint_32/uint_64`.
-- [ ] implement `double_32/double_64`.
-- [ ] define literal inference/conversion rules.
-- [ ] define overflow/narrowing diagnostics.
-- [ ] Tests + regressions.
+- [x] implement `int_8/int_16/int_32/int_64`.
+- [x] implement `uint_8/uint_16/uint_32/uint_64`.
+- [x] implement `double_32/double_64`.
+- [x] define literal inference/conversion rules.
+- [x] define overflow/narrowing diagnostics.
+- [x] Tests + regressions.
 
 ### CP18 — Type aliases
 - [ ] settle alias declaration syntax.
