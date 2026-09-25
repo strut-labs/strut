@@ -117,7 +117,7 @@ std::string expr(const IRExpr& e){
             if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
-        case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
+        case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return std::async(std::launch::async, [=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
     } return {};
 }
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
@@ -248,7 +248,7 @@ public:
     strut_string str() const{return stream_.str();}
     strut_string read_all() const{return stream_.str();}
     bool is_open() const{return true;}
-    void close(){}
+    void close() const{}
 private: std::stringstream stream_;
 };
 
@@ -373,19 +373,22 @@ inline void strut_await(std::future<void>& f){f.get();}
 
 class strut_mutex {
 public:
-    void lock(){m_.lock();}
-    void unlock(){m_.unlock();}
-    template<class F> auto lock(F&& f) -> decltype(f()) { std::lock_guard<std::mutex> guard(m_); return f(); }
-private: std::mutex m_;
+    strut_mutex():m_(std::make_shared<std::mutex>()){}
+    void lock() const{m_->lock();}
+    void unlock() const{m_->unlock();}
+    template<class F> auto lock(F&& f) const -> decltype(f()) { std::lock_guard<std::mutex> guard(*m_); return f(); }
+private: std::shared_ptr<std::mutex> m_;
 };
 
 template<class T> class strut_channel {
+    struct state { mutable std::mutex m; std::condition_variable cv; std::queue<T> q; bool closed=false; };
 public:
-    void send(T value){std::lock_guard<std::mutex> g(m_);if(closed_)throw std::runtime_error("send on closed channel");q_.push(std::move(value));cv_.notify_one();}
-    std::optional<T> receive(){std::unique_lock<std::mutex> g(m_);cv_.wait(g,[&]{return closed_||!q_.empty();});if(q_.empty())return std::nullopt;T value=std::move(q_.front());q_.pop();return value;}
-    void close(){std::lock_guard<std::mutex> g(m_);closed_=true;cv_.notify_all();}
-    bool closed() const{std::lock_guard<std::mutex> g(m_);return closed_;}
-private: mutable std::mutex m_;std::condition_variable cv_;std::queue<T> q_;bool closed_=false;
+    strut_channel():s_(std::make_shared<state>()){}
+    void send(T value) const{std::lock_guard<std::mutex> g(s_->m);if(s_->closed)throw std::runtime_error("send on closed channel");s_->q.push(std::move(value));s_->cv.notify_one();}
+    std::optional<T> receive() const{std::unique_lock<std::mutex> g(s_->m);s_->cv.wait(g,[&]{return s_->closed||!s_->q.empty();});if(s_->q.empty())return std::nullopt;T value=std::move(s_->q.front());s_->q.pop();return value;}
+    void close() const{std::lock_guard<std::mutex> g(s_->m);s_->closed=true;s_->cv.notify_all();}
+    bool closed() const{std::lock_guard<std::mutex> g(s_->m);return s_->closed;}
+private: std::shared_ptr<state> s_;
 };
 
 class strut_thread {
@@ -423,7 +426,7 @@ public:
     void write_line(const strut_string& s){write(strut_string(s.v+"\n"));}
     void close(){
 #ifdef _WIN32
-        if(h){CloseHandle(h);h=nullptr;}
+        if(h{CloseHandle(h);h=nullptr;}
 #else
         if(fd>=0){::close(fd);fd=-1;}
 #endif
@@ -450,7 +453,7 @@ public:
     bool eof() const{return ended;}
     void close(){
 #ifdef _WIN32
-        if(h){CloseHandle(h);h=nullptr;}
+        if(h{CloseHandle(h);h=nullptr;}
 #else
         if(fd>=0){::close(fd);fd=-1;}
 #endif

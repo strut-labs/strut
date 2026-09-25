@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP59 complete; CP60 is next.**
+Current implementation progress: **CP0–CP66 complete; CP67 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -564,10 +564,10 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 - [x] tests + regressions.
 
 ### CP66 — Async lambdas
-- [ ] `async (args) => expr`.
-- [ ] async block lambda.
-- [ ] capture/lifetime correctness.
-- [ ] tests + regressions.
+- [x] `async (args) => expr`.
+- [x] async block lambda.
+- [x] capture/lifetime correctness.
+- [x] tests + regressions.
 
 ### CP67 — Multithreaded async executor
 - [ ] implement real multithreaded executor.
