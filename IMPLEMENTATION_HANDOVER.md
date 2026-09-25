@@ -948,10 +948,10 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] audit static/dynamic linking and executable-size goals against real programs.
 
 ### CP113 — Compatibility/versioning policy
-- [ ] semantic/versioning strategy for compiler/language/packages.
-- [ ] deprecation policy.
-- [ ] regression-suite compatibility baselines.
-- [ ] package compatibility expectations.
+- [x] semantic/versioning strategy for compiler/language/packages.
+- [x] deprecation policy.
+- [x] regression-suite compatibility baselines.
+- [x] package compatibility expectations.
 
 ### CP114 — Security/reliability review
 - [ ] safe memory guarantee audit.
