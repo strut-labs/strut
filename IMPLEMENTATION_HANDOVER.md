@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP92 complete; CP93 is next.**
+Current implementation progress: **CP0–CP93 complete; CP94 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -792,20 +792,20 @@ Current implementation progress: **CP0–CP92 complete; CP93 is next.**
 ## Phase 16 — Optimisation, tooling, platforms
 
 ### CP93 — Baseline benchmark suite
-- [ ] compiler compile time.
-- [ ] generated program startup.
-- [ ] stripped hello-world executable size.
-- [ ] static vs dynamic executable size.
-- [ ] static vs dynamic startup time and runtime memory overhead on representative programs.
-- [ ] static vs dynamic runtime performance where meaningful.
-- [ ] runtime/package size contribution and dead-code elimination effectiveness.
-- [ ] arithmetic/loops.
-- [ ] strings/collections/JSON.
-- [ ] ptr/ref-count overhead.
-- [ ] lambda/call overhead.
-- [ ] threading/async.
-- [ ] HTTP/SQLite representative tasks.
-- [ ] reproducible benchmark docs.
+- [x] compiler compile time.
+- [x] generated program startup.
+- [x] stripped hello-world executable size.
+- [x] static vs dynamic executable size.
+- [x] static vs dynamic startup time and runtime memory overhead on representative programs.
+- [x] static vs dynamic runtime performance where meaningful.
+- [x] runtime/package size contribution and dead-code elimination effectiveness.
+- [x] arithmetic/loops.
+- [x] strings/collections/JSON.
+- [x] ptr/ref-count overhead.
+- [x] lambda/call overhead.
+- [x] threading/async.
+- [x] HTTP/SQLite representative tasks.
+- [x] reproducible benchmark docs.
 
 ### CP94 — Optimisation pipeline
 - [ ] dead-code elimination.
