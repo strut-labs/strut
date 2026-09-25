@@ -88,11 +88,12 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     return 0;
 }
 bool load_program_recursive(const std::filesystem::path& path, const std::filesystem::path& project_root, Program& combined, std::unordered_set<std::string>& loaded,
-                            std::unordered_set<std::string>& active, std::ostream& err) {
+                            std::unordered_set<std::string>& active, std::ostream& err, std::vector<std::filesystem::path>* dependencies = nullptr) {
     std::error_code ec;
     const auto absolute = std::filesystem::absolute(path, ec).lexically_normal();
     const std::string key = (ec ? path : absolute).string();
     if (loaded.find(key) != loaded.end()) return true;
+    if (dependencies) dependencies->push_back(absolute);
     if (!active.insert(key).second) { err << path.string() << ": error: include cycle detected\n"; return false; }
     std::string load_error; auto source = SourceFile::load(path, load_error);
     if (!source) { err << path.string() << ": error: " << load_error << '\n'; active.erase(key); return false; }
@@ -108,27 +109,28 @@ bool load_program_recursive(const std::filesystem::path& path, const std::filesy
             if (st->include_is_package) {
                 const auto slash = st->name.find('/'); const std::string package_name = st->name.substr(0, slash);
                 PackageManifest project; std::string package_error;
+                if (dependencies) dependencies->push_back(project_root / "strut.json");
                 if (!load_package_manifest_file(project_root / "strut.json", project, package_error)) { err << path.string() << ": error: package include requires project strut.json: " << package_error << '\n'; active.erase(key); return false; }
                 const auto requirement = project.dependencies.find(package_name); if (requirement == project.dependencies.end()) { err << path.string() << ": error: package '" << package_name << "' is not a project dependency\n"; active.erase(key); return false; }
                 auto package_root = resolve_cached_package(package_name, requirement->second); if (!package_root) { err << path.string() << ": error: package '" << package_name << "' is not installed in the shared cache\n"; active.erase(key); return false; }
-                PackageManifest package; if (!load_package_manifest_file(*package_root / "strut.json", package, package_error)) { err << path.string() << ": error: " << package_error << '\n'; active.erase(key); return false; }
+                PackageManifest package; if (dependencies) dependencies->push_back(*package_root / "strut.json"); if (!load_package_manifest_file(*package_root / "strut.json", package, package_error)) { err << path.string() << ": error: " << package_error << '\n'; active.erase(key); return false; }
                 std::filesystem::path dep = *package_root; if (slash == std::string::npos) { if (package.entry.empty()) { err << path.string() << ": error: package '" << package_name << "' has no entry\n"; active.erase(key); return false; } dep /= package.entry; } else dep /= st->name.substr(slash + 1);
-                if (!load_program_recursive(dep, project_root, combined, loaded, active, err)) { active.erase(key); return false; }
+                if (!load_program_recursive(dep, project_root, combined, loaded, active, err, dependencies)) { active.erase(key); return false; }
                 continue;
             }
             auto dep = path.parent_path() / st->name;
-            if (!load_program_recursive(dep, project_root, combined, loaded, active, err)) { active.erase(key); return false; }
+            if (!load_program_recursive(dep, project_root, combined, loaded, active, err, dependencies)) { active.erase(key); return false; }
         } else own.push_back(std::move(st));
     }
     for(auto& st:own) combined.statements.push_back(std::move(st));
     active.erase(key); loaded.insert(key); return true;
 }
 
-bool load_program(const std::filesystem::path& path, Program& combined, std::ostream& err) {
+bool load_program(const std::filesystem::path& path, Program& combined, std::ostream& err, std::vector<std::filesystem::path>* dependencies = nullptr) {
     std::unordered_set<std::string> loaded, active;
     std::filesystem::path root = path.parent_path().empty() ? std::filesystem::current_path() : std::filesystem::absolute(path.parent_path());
     for (auto probe = root; !probe.empty(); probe = probe.parent_path()) { if (std::filesystem::exists(probe / "strut.json")) { root = probe; break; } if (probe == probe.root_path()) break; }
-    return load_program_recursive(path, root, combined, loaded, active, err);
+    return load_program_recursive(path, root, combined, loaded, active, err, dependencies);
 }
 
 int check_source(const std::filesystem::path& path, std::ostream& out, std::ostream& err) {
@@ -140,7 +142,7 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
 }
 
 int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& err) {
-    Program program; if(!load_program(path,program,err)) return 1;
+    Program program; std::vector<std::filesystem::path> dependencies; if(!load_program(path,program,err,&dependencies)) return 1;
     SemanticAnalyzer sema; auto checked=sema.analyze(program);
     for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
     for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
@@ -165,6 +167,9 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
             const auto object = root / ".strut" / "obj" / config.target / mode / (path.stem().string() + object_ext);
             const auto generated = root / ".strut" / "gen" / config.target / mode / (path.stem().string() + ".cpp");
             if (!backend.compile_object(lowered.program, object, generated, backend_error, link)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
+            ObjectBuildInfo info; info.source = std::filesystem::relative(std::filesystem::absolute(path), root, ec).generic_string(); info.object = std::filesystem::relative(object, root, ec).generic_string(); info.compiler_version = std::string(version); info.target = config.target; info.mode = mode; info.fingerprint = build_fingerprint(config, link.release);
+            for (const auto& dep : dependencies) { auto relative = std::filesystem::relative(dep, root, ec); info.dependencies.push_back(ec ? dep.generic_string() : relative.generic_string()); ec.clear(); }
+            const auto info_path = root / ".strut" / "info" / config.target / mode / (path.stem().string() + ".info.json"); std::string info_error; if (!write_object_build_info(info_path, info, info_error)) { err << path.string() << ": error: " << info_error << '\n'; return 1; }
             if (!backend.link_objects(lowered.program, {object}, output, backend_error, link)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
             return 0;
         }

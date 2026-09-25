@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP83 complete; CP84 is next.**
+Current implementation progress: **CP0–CP84 complete; CP85 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -712,13 +712,13 @@ Current implementation progress: **CP0–CP83 complete; CP84 is next.**
 - [x] tests + docs.
 
 ### CP84 — Per-object dependency `.info.json` metadata
-- [ ] follow Nift's proven per-output metadata model, adapted for compilation units.
-- [ ] write `.strut/info/<target>/<mode>/<unit>.info.json` after a successful object build.
-- [ ] record source path, resulting object path, direct/transitive local includes, package source/header dependencies, generated/embedded resource dependencies, compiler/version/target/mode fingerprints, and relevant config.
-- [ ] metadata missing, malformed, old-format, or referring to removed dependencies forces recompilation.
-- [ ] write metadata only after the corresponding `.o`/`.obj` build succeeds.
-- [ ] use JSONIC.
-- [ ] tests + docs.
+- [x] follow Nift's proven per-output metadata model, adapted for compilation units.
+- [x] write `.strut/info/<target>/<mode>/<unit>.info.json` after a successful object build.
+- [x] record source path, resulting object path, direct/transitive local includes, package source/header dependencies, generated/embedded resource dependencies, compiler/version/target/mode fingerprints, and relevant config.
+- [x] metadata missing, malformed, old-format, or referring to removed dependencies forces recompilation.
+- [x] write metadata only after the corresponding `.o`/`.obj` build succeeds.
+- [x] use JSONIC.
+- [x] tests + docs.
 
 ### CP85 — Incremental dependency invalidation
 - [ ] compare each recorded dependency mtime against its `.info.json` mtime to decide whether its object must be rebuilt.
