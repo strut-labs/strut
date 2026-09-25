@@ -46,6 +46,7 @@ std::string cpp_type(std::string t){
     if(t=="thread") return "strut_thread";
     if(t=="tcp_socket") return "strut_tcp_socket";
     if(t=="tcp_listener") return "strut_tcp_listener";
+    if(t=="tls_stream") return "strut_tls_stream";
     if(t=="mutex") return "strut_mutex";
     if(t.rfind("future<",0)==0&&t.back()=='>') return "strut_future<"+cpp_type(t.substr(7,t.size()-8))+">";
     if(t.rfind("channel<",0)==0&&t.back()=='>') return "strut_channel<"+cpp_type(t.substr(8,t.size()-9))+">";
@@ -157,7 +158,10 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#endif\n";
+bool expr_uses_curl(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text.rfind("tls_",0)==0||e->text.rfind("http_",0)==0))return true;if(expr_uses_curl(e->left.get())||expr_uses_curl(e->right.get())||expr_uses_curl(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_curl(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_curl(st->value.get()))return true;}return false;}
+bool stmt_uses_curl(const IRStmt* s){if(!s)return false;if(expr_uses_curl(s->value.get())||expr_uses_curl(s->target.get())||expr_uses_curl(s->condition.get())||expr_uses_curl(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_curl(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_curl(c.get()))return true;return false;}
+bool program_uses_curl(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_curl(s.get()))return true;return false;}
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;const bool use_curl=program_uses_curl(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -564,6 +568,25 @@ private: std::shared_ptr<strut_socket_state> s_;
 };
 inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed");return strut_tcp_listener(h);}
 
+
+#ifdef STRUT_USE_CURL
+struct strut_curl_global{strut_curl_global(){if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw strut_checked_error("TlsError","libcurl global initialization failed");}~strut_curl_global(){curl_global_cleanup();}};
+inline void strut_curl_init(){static strut_curl_global g;(void)g;}
+class strut_tls_stream {
+public:
+    strut_tls_stream()=default;
+    explicit strut_tls_stream(CURL* c):curl_(c){}
+    strut_tls_stream(const strut_tls_stream&)=delete;strut_tls_stream& operator=(const strut_tls_stream&)=delete;
+    strut_tls_stream(strut_tls_stream&& o) noexcept:curl_(o.curl_){o.curl_=nullptr;} strut_tls_stream& operator=(strut_tls_stream&& o) noexcept{if(this!=&o){close();curl_=o.curl_;o.curl_=nullptr;}return *this;}
+    bool is_open() const{return curl_!=nullptr;} void close(){if(curl_){curl_easy_cleanup(curl_);curl_=nullptr;}}
+    void write(const strut_string& data){if(!curl_)throw strut_checked_error("TlsError","write on closed TLS stream");size_t off=0;while(off<data.v.size()){size_t sent=0;auto rc=curl_easy_send(curl_,data.v.data()+off,data.v.size()-off,&sent);if(rc!=CURLE_OK)throw strut_checked_error("TlsError",curl_easy_strerror(rc));off+=sent;}}
+    strut_string read(std::int64_t max_bytes=4096){if(!curl_)throw strut_checked_error("TlsError","read on closed TLS stream");std::string out(static_cast<std::size_t>(max_bytes),'\0');size_t got=0;auto rc=curl_easy_recv(curl_,out.data(),out.size(),&got);if(rc!=CURLE_OK&&rc!=CURLE_AGAIN)throw strut_checked_error("TlsError",curl_easy_strerror(rc));out.resize(got);return strut_string(std::move(out));}
+    ~strut_tls_stream(){close();}
+private:CURL* curl_=nullptr;
+};
+inline strut_tls_stream tls_connect(const strut_string& host,std::int32_t port){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("TlsError","curl_easy_init failed");const std::string url="https://"+host.v+":"+std::to_string(port)+"/";curl_easy_setopt(c,CURLOPT_URL,url.c_str());curl_easy_setopt(c,CURLOPT_CONNECT_ONLY,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_CONNECTTIMEOUT_MS,30000L);auto rc=curl_easy_perform(c);if(rc!=CURLE_OK){curl_easy_cleanup(c);throw strut_checked_error("TlsError",curl_easy_strerror(rc));}return strut_tls_stream(c);}
+#endif
+
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
 )CPP";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
@@ -574,7 +597,7 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++17 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ cmd=cxx+" /nologo /std:c++20 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
  bool link_section=false;
  for(const auto& d:link.search_paths){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}
@@ -584,7 +607,7 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
  #ifdef __APPLE__
  if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";std::error_code ec;std::filesystem::remove(tmp,ec);return false;}
  #endif
- cmd=cxx+" -std=c++17 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O2 ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
+ cmd=cxx+" -std=c++20 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O2 ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
  if(link.fully_static)cmd+=" -static";
  for(const auto& d:link.search_paths)cmd+=" -L\""+d.string()+"\"";
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);if(lp.has_extension()||lib.value.find('/')!=std::string::npos){cmd+=" \""+lib.value+"\"";continue;}
@@ -602,5 +625,12 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
  #endif
  }
 #endif
+ if(g.cpp.find("#define STRUT_USE_CURL 1")!=std::string::npos){
+#ifdef _WIN32
+ cmd+=" libcurl.lib";
+#else
+ cmd+=" -lcurl";
+#endif
+ }
  int rc=std::system(cmd.c_str());std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error="native C++ compiler/linker failed";return false;}return true;}
 }

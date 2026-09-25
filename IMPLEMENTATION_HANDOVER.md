@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP74 complete; CP75 is next.**
+Current implementation progress: **CP0–CP75 complete; CP76 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -635,10 +635,10 @@ Current implementation progress: **CP0–CP74 complete; CP75 is next.**
 - [x] tests.
 
 ### CP75 — Official TLS package
-- [ ] choose dependency/implementation strategy.
-- [ ] safe certificate verification defaults.
-- [ ] client/server support needed by HTTP.
-- [ ] regression/integration tests.
+- [x] choose dependency/implementation strategy: pre-approved libcurl for verified client TLS.
+- [x] safe certificate verification defaults.
+- [x] client TLS support required by the HTTP client; server TLS is explicitly deferred until an approved server-side TLS backend exists.
+- [x] regression/integration tests for generated TLS support and verification policy.
 
 ### CP76 — Official HTTP package: client
 - [ ] requests/methods/headers/body.
