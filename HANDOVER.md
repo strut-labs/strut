@@ -44,13 +44,13 @@ When a design decision changes, update these documents before or alongside imple
 
 ## Current status
 
-CP0–CP86 are complete. Strut now has a working native compiler bootstrap, type system and memory model, concurrency/async support, packages, TCP/TLS/HTTP support, external/system SQLite integration, compile-time embedded resources, the first production-ish one-binary web-app fixture, and Nift-style incremental native object caching under `.strut`. CP87 is the project-level `strut make` workflow.
+Local implementation is complete through CP114 except for the platform-certification checkpoints CP98–CP100, which are intentionally left open until their GitHub Actions runners and independent regressions are recorded green. CP115 release-candidate certification is therefore blocked, and CP116 remains an explicit release decision. Strut now includes the compiler/type/memory model, native code generation, concurrency/async, packages, networking/HTTP, external/system SQLite, embedding, incremental object builds, project tooling, LSP, hardening/fuzzing, dogfood programs/packages, compatibility/security policies, and cross-compilation architecture.
 
 ## Major acceptance target
 
 The first major usefulness milestone is not a toy expression evaluator. Strut should be able to build a production-ish HTTP service that uses JSON, async/concurrency, an official SQLite package, and embedded frontend assets, and compile the entire application into one native executable.
 
-A later major dogfood target is to investigate and, if practical, rewrite Nift in Strut.
+Nift rewrite feasibility has been investigated. A rewrite is technically plausible but deliberately deferred until larger dogfood, cross-platform certification, profiling, and measurable maintenance/performance/safety benefits justify it.
 
 ## Working rules
 
