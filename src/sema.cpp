@@ -160,7 +160,9 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "istream" || name == "ostream" || name == "sstream" || name == "ifstream" || name == "ofstream") return {TypeKind::named,0,name};
                 if (name == "exists") return builtin_type("bool");
                 if (name == "ls") return {TypeKind::named,0,"string[]"};
-                if (name == "make_dir" || name == "remove" || name == "copy" || name == "move" || name == "touch") return {TypeKind::void_type,0,"void"};
+                if (name == "env") return {TypeKind::named,0,"string?"};
+                if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
+                if (name == "make_dir" || name == "remove" || name == "copy" || name == "move" || name == "touch" || name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value); value && value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name));
             }

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP57 complete; CP58 is next.**
+Current implementation progress: **CP0–CP58 complete; CP59 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -503,10 +503,10 @@ Current implementation progress: **CP0–CP57 complete; CP58 is next.**
 - [x] tests + regressions + docs.
 
 ### CP58 — Time/environment foundation
-- [ ] environment access.
-- [ ] clocks/durations.
-- [ ] platform abstractions and typed errors.
-- [ ] tests + docs.
+- [x] environment access.
+- [x] clocks/durations.
+- [x] platform abstractions and typed errors.
+- [x] tests + docs.
 
 ### CP59 — Standard-library `exec`
 - [ ] argv-based `exec(program, args)` without requiring shell interpolation.
