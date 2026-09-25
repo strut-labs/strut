@@ -916,11 +916,11 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] commit.
 
 ### CP109 — Regression-suite maintenance audit 2
-- [ ] full feature matrix.
-- [ ] real-project fixtures.
-- [ ] package fixtures.
-- [ ] cross-platform CI matrix where practical.
-- [ ] compatibility policy for releases.
+- [x] full feature matrix.
+- [x] real-project fixtures.
+- [x] package fixtures.
+- [x] cross-platform CI matrix where practical.
+- [x] compatibility policy for releases.
 
 ### CP110 — Investigate rewriting Nift in Strut
 - [ ] map Nift requirements against Strut capabilities.
