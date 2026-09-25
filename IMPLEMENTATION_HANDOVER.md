@@ -545,10 +545,10 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 - [x] tests + regressions.
 
 ### CP63 — Channels/queues
-- [ ] typed channel primitive if design still justified.
-- [ ] send/receive/close semantics.
-- [ ] blocking/wakeup correctness.
-- [ ] tests + stress regressions.
+- [x] typed channel primitive if design still justified.
+- [x] send/receive/close semantics.
+- [x] blocking/wakeup correctness.
+- [x] tests + stress regressions.
 
 ### CP64 — Data-race safety policy
 - [ ] define what the compiler/runtime promises.

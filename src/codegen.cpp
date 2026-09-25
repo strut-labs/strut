@@ -45,6 +45,7 @@ std::string cpp_type(std::string t){
     if(t=="process_out") return "strut_process_out";
     if(t=="thread") return "strut_thread";
     if(t=="mutex") return "strut_mutex";
+    if(t.rfind("channel<",0)==0&&t.back()=='>') return "strut_channel<"+cpp_type(t.substr(8,t.size()-9))+">";
     if(t=="int"||t=="int_32") return "std::int32_t";
     if(t=="int_8") return "std::int8_t";
     if(t=="int_16") return "std::int16_t";
@@ -153,7 +154,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <unistd.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <unistd.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -372,6 +373,15 @@ public:
     void unlock(){m_.unlock();}
     template<class F> auto lock(F&& f) -> decltype(f()) { std::lock_guard<std::mutex> guard(m_); return f(); }
 private: std::mutex m_;
+};
+
+template<class T> class strut_channel {
+public:
+    void send(T value){std::lock_guard<std::mutex> g(m_);if(closed_)throw std::runtime_error("send on closed channel");q_.push(std::move(value));cv_.notify_one();}
+    std::optional<T> receive(){std::unique_lock<std::mutex> g(m_);cv_.wait(g,[&]{return closed_||!q_.empty();});if(q_.empty())return std::nullopt;T value=std::move(q_.front());q_.pop();return value;}
+    void close(){std::lock_guard<std::mutex> g(m_);closed_=true;cv_.notify_all();}
+    bool closed() const{std::lock_guard<std::mutex> g(m_);return closed_;}
+private: mutable std::mutex m_;std::condition_variable cv_;std::queue<T> q_;bool closed_=false;
 };
 
 class strut_thread {
