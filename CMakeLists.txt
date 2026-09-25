@@ -11,6 +11,9 @@ enable_testing()
 
 add_library(strut_compiler STATIC
     src/cli.cpp
+    src/source.cpp
+    src/token.cpp
+    src/lexer.cpp
 )
 target_include_directories(strut_compiler
     PUBLIC
@@ -37,3 +40,7 @@ target_link_libraries(strut PRIVATE strut_compiler)
 add_executable(strut_unit_tests tests/unit/cli_test.cpp)
 target_link_libraries(strut_unit_tests PRIVATE strut_compiler)
 add_test(NAME strut_unit_tests COMMAND strut_unit_tests)
+
+add_executable(strut_lexer_tests tests/unit/lexer_test.cpp)
+target_link_libraries(strut_lexer_tests PRIVATE strut_compiler)
+add_test(NAME strut_lexer_tests COMMAND strut_lexer_tests)
