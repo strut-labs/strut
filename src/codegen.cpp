@@ -95,6 +95,9 @@ std::string compile_embed_dir(const std::string& quoted){
     return o.str();
 }
 
+thread_local std::string strut_codegen_source_path;
+std::string escaped_line_path(const std::string& value){std::string out;for(char c:value){if(c=='\\'||c=='"')out.push_back('\\');out.push_back(c);}return out;}
+void emit_source_line(std::ostringstream& o,const IRStmt& s){if(!strut_codegen_source_path.empty()&&s.span.begin.line>0)o<<"#line "<<s.span.begin.line<<" \""<<escaped_line_path(strut_codegen_source_path)<<"\"\n";}
 std::string expr(const IRExpr& e);
 void stmt(std::ostringstream& o,const IRStmt& s,int n);
 
@@ -136,7 +139,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::json_object:return json_expr(e);
         case IRExpr::Kind::struct_literal:{std::string out="[&](){"+e.text+" value{};";for(std::size_t i=0;i<e.names.size();++i)out+="value."+e.names[i]+"="+expr(*e.arguments[i])+";";return out+"return value;}()";}
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
-        case IRExpr::Kind::unary:if(e.text=="await")return "strut_await("+expr(*e.right)+")";if(e.text=="*"&&e.right&&e.right->type_name.rfind("ptr<",0)==0)return "strut_deref("+expr(*e.right)+")";return e.text+expr(*e.right);
+        case IRExpr::Kind::unary:if(e.text=="await")return "strut_await("+expr(*e.right)+")";if(e.text=="*"&&e.right&&e.right->type_name.rfind("ptr<",0)==0)return "strut_deref("+expr(*e.right)+",\""+escaped_line_path(strut_codegen_source_path)+"\","+std::to_string(e.span.begin.line)+")";return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
@@ -171,7 +174,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
     } return {};
 }
-void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
+void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');emit_source_line(o,s);
     switch(s.kind){
         case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name;if(s.value){o<<" = ";if(!s.overload_name.empty())o<<s.overload_name<<"("<<expr(*s.value)<<")";else o<<expr(*s.value);}else o<<"{}";o<<";\n";break;
         case IRStmt::Kind::assignment:if(!s.overload_name.empty())o<<pad<<s.overload_name<<"("<<(s.target?expr(*s.target):s.name)<<","<<expr(*s.value)<<");\n";else o<<pad<<(s.target?expr(*s.target):s.name)<<" "<<s.op<<" "<<expr(*s.value)<<";\n";break;
@@ -213,7 +216,7 @@ bool program_uses_curl(const IRProgram& p){for(const auto& s:p.statements)if(stm
 bool expr_uses_sqlite(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&e->text.rfind("sqlite_",0)==0)return true;if(expr_uses_sqlite(e->left.get())||expr_uses_sqlite(e->right.get())||expr_uses_sqlite(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_sqlite(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_sqlite(st->value.get()))return true;}return false;}
 bool stmt_uses_sqlite(const IRStmt* s){if(!s)return false;if(expr_uses_sqlite(s->value.get())||expr_uses_sqlite(s->target.get())||expr_uses_sqlite(s->condition.get())||expr_uses_sqlite(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_sqlite(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_sqlite(c.get()))return true;return false;}
 bool program_uses_sqlite(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_sqlite(s.get()))return true;return false;}
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -245,7 +248,15 @@ template<class T> bool operator!=(strut_null_t,const std::shared_ptr<T>& v){retu
 template<class T> std::shared_ptr<typename std::decay<T>::type> strut_ptr(T&& value){using U=typename std::decay<T>::type;return std::make_shared<U>(std::forward<T>(value));}
 template<class T> std::weak_ptr<T> strut_weak(const std::shared_ptr<T>& value){return std::weak_ptr<T>(value);}
 template<class T> T* strut_raw(const std::shared_ptr<T>& value){return value.get();}
-template<class T> T& strut_deref(const std::shared_ptr<T>& value){if(!value)throw std::runtime_error("null ptr<T> dereference");return *value;}
+inline void strut_print_stack_trace(){
+#ifdef _WIN32
+    void* frames[48]; const auto n=CaptureStackBackTrace(0,48,frames,nullptr); std::cerr<<"stack trace:\n"; for(unsigned short i=0;i<n;++i)std::cerr<<"  "<<frames[i]<<"\n";
+#else
+    void* frames[48]; const int n=backtrace(frames,48); std::cerr<<"stack trace:\n"; char** symbols=backtrace_symbols(frames,n); if(symbols){for(int i=0;i<n;++i)std::cerr<<"  "<<symbols[i]<<"\n";std::free(symbols);}
+#endif
+}
+[[noreturn]] inline void strut_panic(const std::string& message){std::cerr<<"Strut panic: "<<message<<"\n";strut_print_stack_trace();throw std::runtime_error(message);}
+template<class T> T& strut_deref(const std::shared_ptr<T>& value,const char* file,std::size_t line){if(!value){std::cerr<<"at "<<file<<":"<<line<<"\n";strut_panic("null ptr<T> dereference");}return *value;}
 template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f) -> std::optional<typename std::decay<decltype(f(*value))>::type> { if(!value)return std::nullopt; return f(*value); }
 template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback);}
 
@@ -713,7 +724,7 @@ bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& 
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy /GL ":"")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
+ cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy /GL ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
 #else
  cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
 #endif
@@ -729,7 +740,7 @@ bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesyst
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd=cxx;
 #ifdef _WIN32
- cmd+=" /nologo "+std::string(link.fully_static?"/MT ":"/MD ");for(const auto&o:objects)cmd+=" \""+o.string()+"\"";cmd+=" /Fe:\""+output.string()+"\"";bool ls=false;for(const auto&d:link.search_paths){if(!ls){cmd+=" /link";ls=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}for(const auto&lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}if(!ls)cmd+=" /link";cmd+=" ws2_32.lib";if(link.release)cmd+=" /OPT:REF /OPT:ICF /LTCG";
+ cmd+=" /nologo "+std::string(link.fully_static?"/MT ":"/MD ");for(const auto&o:objects)cmd+=" \""+o.string()+"\"";cmd+=" /Fe:\""+output.string()+"\"";bool ls=false;for(const auto&d:link.search_paths){if(!ls){cmd+=" /link";ls=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}for(const auto&lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}if(!ls)cmd+=" /link";cmd+=" ws2_32.lib";if(link.release)cmd+=" /OPT:REF /OPT:ICF /LTCG";else cmd+=" /DEBUG";
 #else
 #ifdef __APPLE__
  if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";return false;}
@@ -743,6 +754,10 @@ bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesyst
  if(lib.mode==NativeLinkMode::static_link){error="macOS static native libraries must be supplied as an explicit .a path";return false;}cmd+=" -l"+lib.value;
 #else
  if(lib.mode==NativeLinkMode::static_link)cmd+=" -Wl,-Bstatic -l"+lib.value+" -Wl,-Bdynamic";else cmd+=" -l"+lib.value;
+#endif
+ }if(!link.release){
+#ifndef __APPLE__
+ cmd+=" -rdynamic";
 #endif
  }if(link.release){cmd+=" -flto";
 #ifdef __APPLE__
@@ -777,17 +792,17 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++20 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy /GL ":"")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ cmd=cxx+" /nologo /std:c++20 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy /GL ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
  bool link_section=false;
  for(const auto& d:link.search_paths){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}
  if(!link_section){cmd+=" /link";link_section=true;}cmd+=" ws2_32.lib";
- if(link.release){cmd+=" /OPT:REF /OPT:ICF /LTCG";}
+ if(link.release){cmd+=" /OPT:REF /OPT:ICF /LTCG";}else{cmd+=" /DEBUG";}
 #else
  #ifdef __APPLE__
  if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";std::error_code ec;std::filesystem::remove(tmp,ec);return false;}
  #endif
- cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O2 ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
+ cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
  if(link.fully_static)cmd+=" -static";
  for(const auto& d:link.search_paths)cmd+=" -L\""+d.string()+"\"";
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);if(lp.has_extension()||lib.value.find('/')!=std::string::npos){cmd+=" \""+lib.value+"\"";continue;}
@@ -795,6 +810,11 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
  if(lib.mode==NativeLinkMode::static_link){error="macOS static native libraries must be supplied as an explicit .a path";std::error_code ec;std::filesystem::remove(tmp,ec);return false;}cmd+=" -l"+lib.value;
  #else
  if(lib.mode==NativeLinkMode::static_link)cmd+=" -Wl,-Bstatic -l"+lib.value+" -Wl,-Bdynamic";else if(lib.mode==NativeLinkMode::dynamic_link)cmd+=" -Wl,-Bdynamic -l"+lib.value;else cmd+=" -l"+lib.value;
+ #endif
+ }
+ if(!link.release){
+ #ifndef __APPLE__
+ cmd+=" -rdynamic";
  #endif
  }
  if(link.release){

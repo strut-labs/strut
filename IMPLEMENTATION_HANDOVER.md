@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP95 complete; CP96 is next.**
+Current implementation progress: **CP0–CP96 complete; CP97 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -822,9 +822,9 @@ Current implementation progress: **CP0–CP95 complete; CP96 is next.**
 - [x] verify memory semantics unchanged with regression suite/sanitizers.
 
 ### CP96 — Debug information and stack traces
-- [ ] useful source-level debug metadata.
-- [ ] runtime panic/error stack traces where appropriate.
-- [ ] symbol handling debug vs release.
+- [x] useful source-level debug metadata.
+- [x] runtime panic/error stack traces where appropriate.
+- [x] symbol handling debug vs release.
 
 ### CP97 — Language server/editor support
 - [ ] parser/typechecker reuse.

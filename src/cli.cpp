@@ -181,7 +181,7 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
     for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
     if(!checked.ok())return 1;
-    IRLowerer lowerer; auto lowered=lowerer.lower(program); if(!lowered.ok())return 1;
+    IRLowerer lowerer; auto lowered=lowerer.lower(program); if(!lowered.ok())return 1; lowered.program.source_path=std::filesystem::absolute(path).generic_string();
     CppBackend backend; std::string backend_error;
     const auto root = find_project_root(path);
     const auto config_path = root / ".strut" / "config.json";
