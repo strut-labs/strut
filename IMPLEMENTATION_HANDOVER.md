@@ -675,11 +675,11 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [x] tests.
 
 ### CP80 — Static asset serving helpers
-- [ ] official HTTP integration for embedded assets.
-- [ ] index/fallback support.
-- [ ] ETag/cache headers.
-- [ ] precompressed variants if justified.
-- [ ] safe path handling.
+- [x] official HTTP integration for embedded assets.
+- [x] index/fallback support.
+- [x] ETag/cache headers.
+- [x] precompressed variants evaluated; deferred until content-encoding negotiation is part of the HTTP server API.
+- [x] safe path handling.
 - [x] tests.
 
 ### CP81 — Build the first production-ish one-binary app
