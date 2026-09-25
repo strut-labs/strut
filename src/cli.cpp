@@ -11,6 +11,7 @@
 #include "strut/diagnostic.h"
 #include "strut/parser.h"
 #include "strut/source.h"
+#include "strut/sema.h"
 #include "strut/token.h"
 #include "strut/version.h"
 
@@ -83,7 +84,11 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
     for (const auto& diagnostic : parsed.diagnostics) {
         err << format_diagnostic(path.string(), diagnostic) << '\n';
     }
-    return parsed.ok() ? 0 : 1;
+    if (!parsed.ok()) return 1;
+    SemanticAnalyzer sema;
+    auto checked = sema.analyze(parsed.program);
+    for (const auto& diagnostic : checked.diagnostics) err << format_diagnostic(path.string(), diagnostic) << '\n';
+    return checked.ok() ? 0 : 1;
 }
 
 }

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP15 complete; CP16 is next.**
+Current implementation progress: **CP0–CP16 complete; CP17 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -155,12 +155,12 @@ Current implementation progress: **CP0–CP15 complete; CP16 is next.**
 ## Phase 4 — Semantic analysis, types, aliases, first codegen
 
 ### CP16 — Symbol tables and scopes
-- [ ] lexical scopes.
-- [ ] symbol declarations/lookups.
-- [ ] duplicate definitions.
-- [ ] shadowing policy.
-- [ ] function/struct namespaces.
-- [ ] Tests + regressions.
+- [x] lexical scopes.
+- [x] symbol declarations/lookups.
+- [x] duplicate definitions.
+- [x] shadowing policy.
+- [x] function/struct namespaces.
+- [x] Tests + regressions.
 
 ### CP17 — Numeric type family
 - [ ] implement `int_8/int_16/int_32/int_64`.
