@@ -883,10 +883,10 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] document guarantees/limitations honestly.
 
 ### CP105 — FFI/unsafe hardening
-- [ ] ABI torture fixtures.
-- [ ] raw-pointer escape cases.
-- [ ] clear boundary between safe guarantees and unsafe responsibility.
-- [ ] docs/security guidance.
+- [x] ABI torture fixtures.
+- [x] raw-pointer escape cases.
+- [x] clear boundary between safe guarantees and unsafe responsibility.
+- [x] docs/security guidance.
 
 ## Phase 18 — Serious dogfooding and ecosystem
 

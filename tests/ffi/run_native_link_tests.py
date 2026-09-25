@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-") as td:
     exe_static = td / "ffi-static"
     subprocess.run([str(compiler), str(root / "ffi.p"), "-o", str(exe_static), "--static-lib", str(static)], check=True)
     out = subprocess.check_output([str(exe_static)], text=True)
-    if out != "42\n7\n": raise SystemExit(f"unexpected static FFI output: {out!r}")
+    if out != "42\n7\n11\n3\n9\n10\n": raise SystemExit(f"unexpected static FFI output: {out!r}")
 
     exe_dynamic = td / "ffi-dynamic"
     subprocess.run([str(compiler), str(root / "ffi.p"), "-o", str(exe_dynamic), "--dynamic-lib", str(dynamic)], check=True)
@@ -30,5 +30,5 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-") as td:
     key = "DYLD_LIBRARY_PATH" if platform.system() == "Darwin" else "LD_LIBRARY_PATH"
     env[key] = str(td) + (os.pathsep + env[key] if env.get(key) else "")
     out = subprocess.check_output([str(exe_dynamic)], text=True, env=env)
-    if out != "42\n7\n": raise SystemExit(f"unexpected dynamic FFI output: {out!r}")
+    if out != "42\n7\n11\n3\n9\n10\n": raise SystemExit(f"unexpected dynamic FFI output: {out!r}")
     print("native static/dynamic FFI linkage passed")
