@@ -236,12 +236,12 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] tests + regressions.
 
 ### CP26 — Maps
-- [ ] `map<K, V>`.
-- [ ] keyed `[...]` literal syntax.
-- [ ] lookup/insert/remove/contains.
-- [ ] deterministic iteration policy documented.
-- [ ] equality semantics.
-- [ ] tests + regressions.
+- [x] `map<K, V>`.
+- [x] keyed `[...]` literal syntax.
+- [x] lookup/insert/remove/contains.
+- [x] deterministic iteration policy documented.
+- [x] equality semantics.
+- [x] tests + regressions.
 
 ### CP27 — Built-in JSON type
 - [ ] JSON value representation.

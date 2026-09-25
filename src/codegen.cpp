@@ -6,6 +6,7 @@
 #include <string>
 namespace strut { namespace {
 std::string cpp_type(std::string t){
+    if(t.rfind("map<",0)==0 && t.back()=='>'){auto inner=t.substr(4,t.size()-5);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}if(comma!=std::string::npos)return "std::map<"+cpp_type(inner.substr(0,comma))+","+cpp_type(inner.substr(comma+1))+">";}
     if(t.size()>2 && t.ends_with("[]")) return "std::vector<"+cpp_type(t.substr(0,t.size()-2))+">";
     if (auto extent = array_extent(t)) { const auto open=t.rfind('['); return "std::array<"+cpp_type(t.substr(0,open))+","+std::to_string(*extent)+">"; }
     if(t=="void") return "void";
@@ -30,11 +31,12 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::string_literal: return "strut_string("+e.text+")";
         case IRExpr::Kind::null_literal:return "nullptr";
         case IRExpr::Kind::array_literal:{std::string out="{";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+"}";}
+        case IRExpr::Kind::map_literal:{std::string out="{";for(size_t i=0;i+1<e.arguments.size();i+=2){if(i)out+=",";out+="{"+expr(*e.arguments[i])+","+expr(*e.arguments[i+1])+"}";}return out+"}";}
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
         case IRExpr::Kind::unary:return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
-        case IRExpr::Kind::member:{std::string m=e.text;if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";return expr(*e.left)+"."+m;}
+        case IRExpr::Kind::member:{std::string m=e.text;if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";return expr(*e.left)+"."+m;}
         case IRExpr::Kind::index:return expr(*e.left)+".at("+expr(*e.right)+")";
         case IRExpr::Kind::call:{
             std::string name=expr(*e.left); if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
@@ -59,7 +61,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n";
 o<<R"CPP(
 struct strut_string {
     std::string v;
@@ -76,6 +78,7 @@ struct strut_string {
 inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<<s.v;}
 inline strut_string operator+(const strut_string&a,const strut_string&b){return a.v+b.v;}
 inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.v;}
+inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
 inline strut_string strut_join(const std::vector<strut_string>& xs,const strut_string& sep){std::string r;for(std::size_t i=0;i<xs.size();++i){if(i)r+=sep.v;r+=xs[i].v;}return r;}
 inline std::int32_t strut_to_int(const strut_string& s){std::int32_t x{};auto [p,e]=std::from_chars(s.v.data(),s.v.data()+s.v.size(),x);if(e!=std::errc{}||p!=s.v.data()+s.v.size())throw std::runtime_error("invalid int");return x;}
 inline float strut_to_double(const strut_string& s){float x{};auto [p,e]=std::from_chars(s.v.data(),s.v.data()+s.v.size(),x);if(e!=std::errc{}||p!=s.v.data()+s.v.size())throw std::runtime_error("invalid double");return x;}

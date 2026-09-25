@@ -17,6 +17,10 @@ std::string literal_type(const Expr& expr) {
             if (expr.arguments.empty()) return "opaque[]";
             return literal_type(*expr.arguments.front()) + "[]";
         }
+        case Expr::Kind::map_literal: {
+            if (expr.arguments.size() < 2) return "map<opaque,opaque>";
+            return "map<" + literal_type(*expr.arguments[0]) + "," + literal_type(*expr.arguments[1]) + ">";
+        }
         case Expr::Kind::lambda: return "function";
         default: return "opaque";
     }

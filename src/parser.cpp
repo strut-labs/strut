@@ -73,9 +73,19 @@ ExprPtr Parser::parse_primary(ParseResult& result) {
         case TokenKind::null_literal: kind=Expr::Kind::null_literal; break;
         default:
             if (match("[")) {
-                auto e=std::make_unique<Expr>();e->kind=Expr::Kind::array_literal;const Token open=previous();
-                if(!check("]")){do{auto item=parse_expression(result);if(!item)return nullptr;e->arguments.push_back(std::move(item));}while(match(","));}
-                if(!match("]")){error(result,peek(),"expected ']' after array literal");return nullptr;}e->span=join(open.span,previous().span);return e;
+                const Token open=previous();
+                auto e=std::make_unique<Expr>();
+                if(check("]")){e->kind=Expr::Kind::array_literal;advance();e->span=join(open.span,previous().span);return e;}
+                auto first=parse_expression(result);if(!first)return nullptr;
+                if(match(":")){
+                    e->kind=Expr::Kind::map_literal;e->arguments.push_back(std::move(first));
+                    auto value=parse_expression(result);if(!value)return nullptr;e->arguments.push_back(std::move(value));
+                    while(match(",")){auto key=parse_expression(result);if(!key)return nullptr;if(!match(":")){error(result,peek(),"expected ':' in map literal");return nullptr;}auto val=parse_expression(result);if(!val)return nullptr;e->arguments.push_back(std::move(key));e->arguments.push_back(std::move(val));}
+                } else {
+                    e->kind=Expr::Kind::array_literal;e->arguments.push_back(std::move(first));
+                    while(match(",")){auto item=parse_expression(result);if(!item)return nullptr;e->arguments.push_back(std::move(item));}
+                }
+                if(!match("]")){error(result,peek(),"expected ']' after collection literal");return nullptr;}e->span=join(open.span,previous().span);return e;
             }
             if(match("(")){auto inner=parse_expression(result);if(!match(")")){error(result,peek(),"expected ')' after expression");return nullptr;}auto e=std::make_unique<Expr>();e->kind=Expr::Kind::grouping;e->span=join(token.span,previous().span);e->left=std::move(inner);return e;}
             error(result,token,"expected expression");return nullptr;
@@ -112,7 +122,7 @@ ExprPtr Parser::parse_expression(ParseResult& result,int minp){
 StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     const Token begin=peek();bool is_const=match("const");if(at_end()){error(result,peek(),"expected declaration after 'const'");return nullptr;}
     std::optional<TypeSyntax> type;Token name;
-    if(is_type_token(peek())){std::size_t i=1;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&peek(i+1).lexeme==":="){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
+    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&peek(i+1).lexeme==":="){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
     if(name.lexeme.empty() && peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
     if(name.lexeme.empty()) { // expression statement
         if(is_const){error(result,begin,"'const' may only be used on a declaration");return nullptr;}
