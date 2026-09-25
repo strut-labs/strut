@@ -6,6 +6,9 @@
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <regex>
+#include <algorithm>
+#include <fstream>
 
 #include "json.h"
 #include "strut/lexer.h"
@@ -39,6 +42,7 @@ void print_help(std::ostream& out) {
         << "      --static         Request a fully static final link where supported\n"
         << "      --dynamic        Prefer an ordinary dynamically linked final binary\n"
         << "      --release        Optimise, strip and enable dead-code elimination\n"
+        << "      --verbose        Explain object rebuild/reuse decisions\n"
         << "      compile         Optional explicit compile command alias\n"
         << "      add <path>      Add a local package checkout to this project\n"
         << "      remove <name>   Remove a package dependency\n"
@@ -141,8 +145,15 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
     return checked.ok()?0:1;
 }
 
-int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& err) {
+void collect_embed_dependencies(const std::filesystem::path& source_path,std::vector<std::filesystem::path>& dependencies){
+    std::ifstream f(source_path);if(!f)return;std::ostringstream ss;ss<<f.rdbuf();const std::string text=ss.str();const std::regex pattern("(embed_file|embed_dir)\\s*\\(\\s*\"([^\"]+)\"");
+    for(std::sregex_iterator it(text.begin(),text.end(),pattern),end;it!=end;++it){std::filesystem::path p=(*it)[2].str();if(p.is_relative())p=std::filesystem::current_path()/p;std::error_code ec;if(std::filesystem::is_directory(p,ec)){for(const auto&e:std::filesystem::recursive_directory_iterator(p,ec)){if(ec)break;if(e.is_regular_file())dependencies.push_back(std::filesystem::absolute(e.path()));}}else dependencies.push_back(std::filesystem::absolute(p));}
+}
+
+int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& out, std::ostream& err, bool verbose) {
     Program program; std::vector<std::filesystem::path> dependencies; if(!load_program(path,program,err,&dependencies)) return 1;
+    for (const auto& dep : std::vector<std::filesystem::path>(dependencies)) collect_embed_dependencies(dep, dependencies);
+    std::sort(dependencies.begin(), dependencies.end()); dependencies.erase(std::unique(dependencies.begin(), dependencies.end()), dependencies.end());
     SemanticAnalyzer sema; auto checked=sema.analyze(program);
     for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
     for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
@@ -152,26 +163,27 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     const auto root = find_project_root(path);
     const auto config_path = root / ".strut" / "config.json";
     if (std::filesystem::exists(config_path)) {
-        BuildConfig config;
-        std::string config_error;
+        BuildConfig config; std::string config_error;
         if (!load_build_config(config_path, config, config_error)) { err << path.string() << ": error: " << config_error << '\n'; return 1; }
-        std::error_code ec;
-        auto rel = std::filesystem::relative(std::filesystem::absolute(path), root, ec);
-        if (!ec && rel.lexically_normal() == std::filesystem::path(config.entrypoint).lexically_normal()) {
+        std::error_code ec; auto rel = std::filesystem::relative(std::filesystem::absolute(path), root, ec);
+        if (!ec && rel.extension() == ".p") {
 #ifdef _WIN32
             const char* object_ext = ".obj";
 #else
             const char* object_ext = ".o";
 #endif
             const std::string mode = link.release ? "release" : config.mode;
-            const auto object = root / ".strut" / "obj" / config.target / mode / (path.stem().string() + object_ext);
-            const auto generated = root / ".strut" / "gen" / config.target / mode / (path.stem().string() + ".cpp");
-            if (!backend.compile_object(lowered.program, object, generated, backend_error, link)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
-            ObjectBuildInfo info; info.source = std::filesystem::relative(std::filesystem::absolute(path), root, ec).generic_string(); info.object = std::filesystem::relative(object, root, ec).generic_string(); info.compiler_version = std::string(version); info.target = config.target; info.mode = mode; info.fingerprint = build_fingerprint(config, link.release);
-            for (const auto& dep : dependencies) { auto relative = std::filesystem::relative(dep, root, ec); info.dependencies.push_back(ec ? dep.generic_string() : relative.generic_string()); ec.clear(); }
-            const auto info_path = root / ".strut" / "info" / config.target / mode / (path.stem().string() + ".info.json"); std::string info_error; if (!write_object_build_info(info_path, info, info_error)) { err << path.string() << ": error: " << info_error << '\n'; return 1; }
-            if (!backend.link_objects(lowered.program, {object}, output, backend_error, link)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
-            return 0;
+            auto unit = rel; unit.replace_extension("");
+            const auto object = root / ".strut" / "obj" / config.target / mode / unit; auto object_with_ext=object; object_with_ext += object_ext;
+            auto generated = root / ".strut" / "gen" / config.target / mode / unit; generated += ".cpp";
+            auto info_path = root / ".strut" / "info" / config.target / mode / unit; info_path += ".info.json";
+            ObjectBuildInfo info; info.source=rel.generic_string(); info.object=std::filesystem::relative(object_with_ext,root,ec).generic_string(); info.compiler_version=std::string(version); info.target=config.target; info.mode=mode; info.fingerprint=build_fingerprint(config,link.release);
+            for(const auto& dep:dependencies){auto relative=std::filesystem::relative(dep,root,ec);info.dependencies.push_back(ec?dep.generic_string():relative.generic_string());ec.clear();}
+            std::vector<std::string> reasons;const bool current=object_build_is_current(root,info_path,info,reasons);
+            if(!current){if(verbose){out<<"rebuild "<<rel.generic_string();for(const auto&r:reasons)out<<"\n  - "<<r;out<<'\n';}if(!backend.compile_object(lowered.program,object_with_ext,generated,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}std::string info_error;if(!write_object_build_info(info_path,info,info_error)){err<<path.string()<<": error: "<<info_error<<'\n';return 1;}}
+            else if(verbose) out<<"reuse "<<info.object<<'\n';
+            if(current && std::filesystem::exists(output)){std::error_code time_ec;const auto out_time=std::filesystem::last_write_time(output,time_ec);const auto obj_time=std::filesystem::last_write_time(object_with_ext,time_ec);if(!time_ec&&out_time>=obj_time){if(verbose)out<<"output up to date "<<output.generic_string()<<'\n';return 0;}}
+            if(!backend.link_objects(lowered.program,{object_with_ext},output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}return 0;
         }
     }
     if(!backend.compile(lowered.program,output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}
@@ -198,6 +210,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     std::filesystem::path source_path;
     std::filesystem::path output_path;
     bool explicit_compile = false;
+    bool verbose = false;
     NativeLinkOptions link_options;
 
     if (argc == 1) {
@@ -240,6 +253,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         if (arg == "--static") { link_options.fully_static = true; link_options.prefer_dynamic = false; continue; }
         if (arg == "--dynamic") { link_options.prefer_dynamic = true; link_options.fully_static = false; continue; }
         if (arg == "--release") { link_options.release = true; continue; }
+        if (arg == "--verbose") { verbose = true; continue; }
         if (arg == "--lib" || arg == "--static-lib" || arg == "--dynamic-lib") {
             if (i + 1 >= argc) { err << "strut: " << arg << " requires a library name or path\n"; return 2; }
             NativeLinkMode mode = NativeLinkMode::platform_default; if(arg=="--static-lib")mode=NativeLinkMode::static_link;else if(arg=="--dynamic-lib")mode=NativeLinkMode::dynamic_link;
@@ -303,7 +317,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             output_path += ".exe";
 #endif
         }
-        return compile_source(source_path, output_path, link_options, err);
+        return compile_source(source_path, output_path, link_options, out, err, verbose);
     }
 
     (void)explicit_compile;

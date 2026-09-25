@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP84 complete; CP85 is next.**
+Current implementation progress: **CP0–CP85 complete; CP86 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -721,14 +721,14 @@ Current implementation progress: **CP0–CP84 complete; CP85 is next.**
 - [x] tests + docs.
 
 ### CP85 — Incremental dependency invalidation
-- [ ] compare each recorded dependency mtime against its `.info.json` mtime to decide whether its object must be rebuilt.
-- [ ] as in Nift modified mode, treat dependency mtime equal to metadata mtime as potentially stale to avoid coarse-timestamp false negatives.
-- [ ] rebuild if object output is missing, metadata is missing/invalid, dependency is missing/changed, config/compiler/target fingerprint changed, or dependency graph changed.
-- [ ] reuse unchanged `.o`/`.obj` files and relink only what is necessary.
-- [ ] track dependency reasons for `strut status`/verbose builds.
-- [ ] leave room for a later hash/hybrid mode analogous to Nift without requiring hashes for the initial implementation.
-- [ ] multi-file regression fixtures proving one changed header/source recompiles only affected objects.
-- [ ] tests + docs.
+- [x] compare each recorded dependency mtime against its `.info.json` mtime to decide whether its object must be rebuilt.
+- [x] as in Nift modified mode, treat dependency mtime equal to metadata mtime as potentially stale to avoid coarse-timestamp false negatives.
+- [x] rebuild if object output is missing, metadata is missing/invalid, dependency is missing/changed, config/compiler/target fingerprint changed, or dependency graph changed.
+- [x] reuse unchanged `.o`/`.obj` files and relink only what is necessary.
+- [x] track dependency reasons for `strut status`/verbose builds.
+- [x] leave room for a later hash/hybrid mode analogous to Nift without requiring hashes for the initial implementation.
+- [x] multi-file regression fixtures proving one changed header/source recompiles only affected objects.
+- [x] tests + docs.
 
 ### CP86 — Measure first serious app
 - [ ] executable size.

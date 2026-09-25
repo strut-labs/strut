@@ -35,4 +35,5 @@ struct ObjectBuildInfo {
 bool load_object_build_info(const std::filesystem::path& path, ObjectBuildInfo& out, std::string& error);
 bool write_object_build_info(const std::filesystem::path& path, const ObjectBuildInfo& info, std::string& error);
 std::string build_fingerprint(const BuildConfig& config, bool release);
+bool object_build_is_current(const std::filesystem::path& project_root, const std::filesystem::path& info_path, const ObjectBuildInfo& expected, std::vector<std::string>& reasons);
 } // namespace strut
