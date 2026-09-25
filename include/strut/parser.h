@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <vector>
 
 #include "strut/ast.h"
@@ -26,12 +27,19 @@ private:
     const Token& advance();
     bool check(std::string_view lexeme) const;
     bool match(std::string_view lexeme);
-    bool check_kind(TokenKind kind) const;
     void error(ParseResult& result, const Token& token, std::string message);
     void synchronize();
+
+    ExprPtr parse_expression(ParseResult& result, int min_precedence = 0);
+    ExprPtr parse_unary(ParseResult& result);
+    ExprPtr parse_postfix(ParseResult& result);
     ExprPtr parse_primary(ParseResult& result);
     StmtPtr parse_statement(ParseResult& result);
     StmtPtr parse_declaration_or_assignment(ParseResult& result);
+
+    static int precedence(std::string_view op);
+    static bool is_binary_operator(std::string_view op);
+    static bool is_assignment_operator(std::string_view op);
 
     const std::vector<Token>& tokens_;
     std::size_t current_ = 0;

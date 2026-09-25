@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP10 complete; CP11 is next.**
+Current implementation progress: **CP0–CP11 complete; CP12 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -106,14 +106,14 @@ Current implementation progress: **CP0–CP10 complete; CP11 is next.**
 - [x] Tests + regressions + syntax docs update.
 
 ### CP11 — Expressions and operators
-- [ ] Arithmetic.
-- [ ] comparison/equality.
-- [ ] logical operators.
-- [ ] precedence/associativity.
-- [ ] member/index access.
-- [ ] increment/decrement if retained after design review.
-- [ ] compound assignment if retained.
-- [ ] Tests + regressions.
+- [x] Arithmetic.
+- [x] comparison/equality.
+- [x] logical operators.
+- [x] precedence/associativity.
+- [x] member/index access.
+- [x] increment/decrement if retained after design review.
+- [x] compound assignment if retained.
+- [x] Tests + regressions.
 
 ### CP12 — Control-flow parser
 - [ ] `if` / `else`.

@@ -15,27 +15,33 @@ struct TypeSyntax {
     bool is_const = false;
 };
 
+struct Expr;
+using ExprPtr = std::unique_ptr<Expr>;
 struct Expr {
-    enum class Kind { identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal };
+    enum class Kind {
+        identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal,
+        unary, binary, grouping, member, index, postfix
+    };
     Kind kind;
     std::string text;
     SourceSpan span;
+    ExprPtr left;
+    ExprPtr right;
 };
-using ExprPtr = std::unique_ptr<Expr>;
 
+struct Stmt;
+using StmtPtr = std::unique_ptr<Stmt>;
 struct Stmt {
-    enum class Kind { declaration, assignment };
+    enum class Kind { declaration, assignment, expression };
     Kind kind;
     SourceSpan span;
     std::string name;
+    std::string op;
     std::optional<TypeSyntax> declared_type;
     bool is_const = false;
     ExprPtr value;
 };
-using StmtPtr = std::unique_ptr<Stmt>;
 
-struct Program {
-    std::vector<StmtPtr> statements;
-};
+struct Program { std::vector<StmtPtr> statements; };
 
 } // namespace strut
