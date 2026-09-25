@@ -8,6 +8,7 @@
 
 #include "json.h"
 #include "strut/lexer.h"
+#include "strut/parser.h"
 #include "strut/source.h"
 #include "strut/token.h"
 #include "strut/version.h"
@@ -21,7 +22,8 @@ void print_help(std::ostream& out) {
         << "  -h, --help          Show this help\n"
         << "  -v, --version       Show compiler version\n"
         << "      --json          With --version, emit JSON metadata\n"
-        << "      --dump-tokens   Lex a .p/.h file and print its token stream\n";
+        << "      --dump-tokens   Lex a .p/.h file and print its token stream\n"
+        << "      --check         Parse/check a .p/.h file without code generation\n";
 }
 
 std::string escaped_lexeme(std::string_view value) {
@@ -65,12 +67,34 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     }
     return 0;
 }
+int check_source(const std::filesystem::path& path, std::ostream& out, std::ostream& err) {
+    (void)out;
+    std::string load_error;
+    auto source = SourceFile::load(path, load_error);
+    if (!source) { err << path.string() << ": error: " << load_error << '\n'; return 2; }
+    Lexer lexer(*source);
+    auto lexed = lexer.lex();
+    for (const auto& diagnostic : lexed.diagnostics) {
+        err << path.string() << ':' << diagnostic.span.begin.line << ':' << diagnostic.span.begin.column
+            << ": error: " << diagnostic.message << '\n';
+    }
+    if (!lexed.ok()) return 1;
+    Parser parser(lexed.tokens);
+    auto parsed = parser.parse();
+    for (const auto& diagnostic : parsed.diagnostics) {
+        err << path.string() << ':' << diagnostic.span.begin.line << ':' << diagnostic.span.begin.column
+            << ": error: " << diagnostic.message << '\n';
+    }
+    return parsed.ok() ? 0 : 1;
+}
+
 }
 
 int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     bool want_version = false;
     bool want_json = false;
     bool want_dump_tokens = false;
+    bool want_check = false;
     std::filesystem::path source_path;
 
     if (argc == 1) {
@@ -92,10 +116,8 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             want_json = true;
             continue;
         }
-        if (arg == "--dump-tokens") {
-            want_dump_tokens = true;
-            continue;
-        }
+        if (arg == "--dump-tokens") { want_dump_tokens = true; continue; }
+        if (arg == "--check") { want_check = true; continue; }
         if (!arg.empty() && arg.front() == '-') {
             err << "strut: unsupported option '" << arg << "'\n";
             return 2;
@@ -123,6 +145,10 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     if (want_json) {
         err << "strut: --json currently requires --version\n";
         return 2;
+    }
+    if (want_check) {
+        if (source_path.empty()) { err << "strut: --check requires a .p or .h source file\n"; return 2; }
+        return check_source(source_path, out, err);
     }
     if (want_dump_tokens) {
         if (source_path.empty()) {

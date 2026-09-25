@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP9 complete; CP10 is next.**
+Current implementation progress: **CP0–CP10 complete; CP11 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -97,13 +97,13 @@ Current implementation progress: **CP0–CP9 complete; CP10 is next.**
 - [x] Tests + regression fixtures.
 
 ### CP10 — Declaration and assignment grammar
-- [ ] `x := value;`.
-- [ ] `Type x := value;`.
-- [ ] `x = value;`.
-- [ ] `const x := value;` and typed const form.
-- [ ] Mandatory semicolons.
-- [ ] Reject duplicate/ambiguous C/C++-style declarator spellings.
-- [ ] Tests + regressions + syntax docs update.
+- [x] `x := value;`.
+- [x] `Type x := value;`.
+- [x] `x = value;`.
+- [x] `const x := value;` and typed const form.
+- [x] Mandatory semicolons.
+- [x] Reject duplicate/ambiguous C/C++-style declarator spellings.
+- [x] Tests + regressions + syntax docs update.
 
 ### CP11 — Expressions and operators
 - [ ] Arithmetic.
