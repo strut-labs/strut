@@ -22,6 +22,7 @@ void Parser::error(ParseResult& r,const Token&t,std::string m){r.diagnostics.pus
 void Parser::synchronize(){while(!at_end()){if(current_>0&&previous().lexeme==";")return;if(peek().lexeme=="const"||peek().kind==TokenKind::identifier)return;advance();}}
 
 int Parser::precedence(std::string_view op) {
+    if (op=="??") return 0;
     if (op=="||") return 1;
     if (op=="&&") return 2;
     if (op=="|") return 3;
@@ -112,6 +113,7 @@ ExprPtr Parser::parse_postfix(ParseResult& result){
             if(!match(")")){error(result,peek(),"expected ')' after call arguments");return nullptr;}
             n->span=join(n->left->span,previous().span);expr=std::move(n);continue;
         }
+        if(match("?.")){if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected member name after '?.'");return nullptr;}const Token member=advance();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::safe_member;n->text=member.lexeme;n->span=join(expr->span,member.span);n->left=std::move(expr);expr=std::move(n);continue;}
         if(match(".")){if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected member name after '.'");return nullptr;}const Token member=advance();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::member;n->text=member.lexeme;n->span=join(expr->span,member.span);n->left=std::move(expr);expr=std::move(n);continue;}
         if(match("[")){auto idx=parse_expression(result);if(!idx)return nullptr;if(!match("]")){error(result,peek(),"expected ']' after index");return nullptr;}auto n=std::make_unique<Expr>();n->kind=Expr::Kind::index;n->span=join(expr->span,previous().span);n->left=std::move(expr);n->right=std::move(idx);expr=std::move(n);continue;}
         if(match("++")||match("--")){const Token op=previous();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::postfix;n->text=op.lexeme;n->span=join(expr->span,op.span);n->left=std::move(expr);expr=std::move(n);continue;}
@@ -132,7 +134,7 @@ ExprPtr Parser::parse_expression(ParseResult& result,int minp){
 StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     const Token begin=peek();bool is_const=match("const");if(at_end()){error(result,peek(),"expected declaration after 'const'");return nullptr;}
     std::optional<TypeSyntax> type;Token name;
-    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&peek(i+1).lexeme==":="){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
+    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}if(peek(i).lexeme=="?")++i;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&peek(i+1).lexeme==":="){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
     if(name.lexeme.empty() && peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
     if(name.lexeme.empty()) { // expression statement
         if(is_const){error(result,begin,"'const' may only be used on a declaration");return nullptr;}
@@ -185,6 +187,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         }
         if (depth != 0) { error(result, peek(), "unterminated generic type"); return TypeSyntax{"", begin.span, false}; }
     }
+    if (match("?")) { text += "?"; span.end = previous().span.end; }
     while (match("[")) {
         text += "[";
         if (!check("]")) { if (peek().kind != TokenKind::integer_literal) { error(result, peek(), "expected array size or ']'"); return TypeSyntax{"", begin.span, false}; } text += advance().lexeme; }

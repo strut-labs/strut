@@ -26,7 +26,7 @@ using ExprPtr = std::unique_ptr<Expr>;
 struct Expr {
     enum class Kind {
         identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object,
-        unary, binary, grouping, member, index, postfix, call, struct_literal, lambda
+        unary, binary, grouping, member, safe_member, index, postfix, call, struct_literal, lambda
     };
     Kind kind;
     std::string text;

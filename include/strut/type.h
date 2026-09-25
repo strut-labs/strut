@@ -23,5 +23,7 @@ TypeInfo infer_floating_literal(std::string_view text);
 bool integer_literal_fits(std::string_view text, const TypeInfo& destination);
 bool can_implicitly_convert(const TypeInfo& from, const TypeInfo& to);
 std::optional<std::size_t> array_extent(std::string_view type_name);
+bool is_nullable_type(std::string_view type_name);
+std::string strip_nullable(std::string_view type_name);
 
 } // namespace strut

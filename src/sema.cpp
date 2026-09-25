@@ -14,7 +14,7 @@ void SemanticAnalyzer::push_scope() { scopes_.push_back(Scope{}); }
 void SemanticAnalyzer::pop_scope() { scopes_.pop_back(); }
 bool SemanticAnalyzer::declare(SemanticResult& result, Symbol symbol) {
     auto& map = namespace_map(scopes_.back(), symbol.name_space);
-    if (map.contains(symbol.name)) {
+    if (map.find(symbol.name) != map.end()) {
         result.diagnostics.push_back(Diagnostic{symbol.span, "duplicate definition of '" + symbol.name + "' in the same scope"});
         return false;
     }
@@ -31,16 +31,18 @@ Symbol* SemanticAnalyzer::lookup(std::string_view name, SymbolNamespace ns) {
 }
 
 std::string SemanticAnalyzer::resolved_type_name(std::string_view name) const {
-    std::string current(name);
+    const bool nullable = is_nullable_type(name);
+    std::string current = strip_nullable(name);
     std::unordered_set<std::string> seen;
-    while (aliases_.contains(current) && !seen.contains(current)) {
+    while (aliases_.find(current) != aliases_.end() && seen.find(current) == seen.end()) {
         seen.insert(current);
         current = aliases_.at(current);
     }
-    return current;
+    return nullable ? current + "?" : current;
 }
 TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
     const std::string resolved = resolved_type_name(name);
+    if (is_nullable_type(resolved)) return {TypeKind::named, 0, resolved};
     auto type = builtin_type(resolved);
     if (type.valid()) return type;
     if (resolved == "null") return {TypeKind::null_type, 0, "null"};
@@ -54,7 +56,9 @@ TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
 bool SemanticAnalyzer::compatible(const TypeInfo& from, const TypeInfo& to) const {
     if (!from.valid() || !to.valid()) return true; // later phases refine currently opaque compound/user types
     if (from.kind == TypeKind::named && from.name == "opaque") return true;
-    if (from.kind == TypeKind::null_type) return to.kind == TypeKind::null_type || to.kind == TypeKind::named;
+    if (from.kind == TypeKind::null_type) return to.kind == TypeKind::null_type || is_nullable_type(to.name);
+    if (is_nullable_type(to.name) && !is_nullable_type(from.name)) return compatible(from, resolve_type(strip_nullable(to.name)));
+    if (is_nullable_type(from.name) && is_nullable_type(to.name)) return strip_nullable(from.name) == strip_nullable(to.name);
     if (from.kind == to.kind && from.bits == to.bits) return true;
     if (from.kind == TypeKind::string_type && to.kind == TypeKind::string_type) return true;
     if (from.kind == TypeKind::bool_type && to.kind == TypeKind::bool_type) return true;
@@ -86,7 +90,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::struct_literal: {
             auto* type_symbol=lookup(expr.text,SymbolNamespace::type);if(!type_symbol){result.diagnostics.push_back(Diagnostic{expr.span,"unknown struct type '"+expr.text+"'"});return {};}
-            auto fit=struct_fields_.find(expr.text);if(fit!=struct_fields_.end()){std::unordered_set<std::string> seen;for(std::size_t i=0;i<expr.names.size();++i){auto field=fit->second.find(expr.names[i]);if(field==fit->second.end()){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"unknown field '"+expr.names[i]+"' for struct "+expr.text});continue;}if(!seen.insert(expr.names[i]).second)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"duplicate struct field '"+expr.names[i]+"'"});auto value=infer_expression(result,*expr.arguments[i]);auto dest=resolve_type(field->second);if(value.valid()&&dest.valid()&&!compatible(value,dest))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"incompatible value for field '"+expr.names[i]+"'"});}for(const auto& field:fit->second)if(!seen.contains(field.first))result.diagnostics.push_back(Diagnostic{expr.span,"missing field '"+field.first+"' for struct "+expr.text});}
+            auto fit=struct_fields_.find(expr.text);if(fit!=struct_fields_.end()){std::unordered_set<std::string> seen;for(std::size_t i=0;i<expr.names.size();++i){auto field=fit->second.find(expr.names[i]);if(field==fit->second.end()){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"unknown field '"+expr.names[i]+"' for struct "+expr.text});continue;}if(!seen.insert(expr.names[i]).second)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"duplicate struct field '"+expr.names[i]+"'"});auto value=infer_expression(result,*expr.arguments[i]);auto dest=resolve_type(field->second);if(value.valid()&&dest.valid()&&!compatible(value,dest))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"incompatible value for field '"+expr.names[i]+"'"});}for(const auto& field:fit->second)if(seen.find(field.first)==seen.end())result.diagnostics.push_back(Diagnostic{expr.span,"missing field '"+field.first+"' for struct "+expr.text});}
             return {TypeKind::named,0,expr.text};
         }
         case Expr::Kind::identifier: {
@@ -107,6 +111,12 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::binary: {
             auto left = infer_expression(result, *expr.left);
             auto right = infer_expression(result, *expr.right);
+            if (expr.text == "??") {
+                if (!is_nullable_type(left.name)) result.diagnostics.push_back(Diagnostic{expr.left->span, "left operand of ?? must be nullable"});
+                auto inner = resolve_type(strip_nullable(left.name));
+                if (right.valid() && inner.valid() && !compatible(right, inner)) result.diagnostics.push_back(Diagnostic{expr.right->span, "fallback value is incompatible with nullable type"});
+                return inner;
+            }
             if (expr.text == "==" || expr.text == "!=" || expr.text == "<" || expr.text == "<=" || expr.text == ">" || expr.text == ">=" || expr.text == "&&" || expr.text == "||") {
                 return {TypeKind::bool_type, 0, "bool"};
             }
@@ -133,8 +143,16 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::lambda: return {TypeKind::named, 0, "function"};
         case Expr::Kind::member: {
-            auto base=infer_expression(result,*expr.left);auto sit=struct_fields_.find(base.name);if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end())return resolve_type(f->second);}
+            auto base=infer_expression(result,*expr.left);
+            if (is_nullable_type(base.name)) { result.diagnostics.push_back(Diagnostic{expr.span,"cannot access member of nullable value without ?. or null check"}); return {}; }
+            auto sit=struct_fields_.find(base.name);if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end())return resolve_type(f->second);}
             return {TypeKind::named,0,"opaque"};
+        }
+        case Expr::Kind::safe_member: {
+            auto base=infer_expression(result,*expr.left);
+            if (!is_nullable_type(base.name)) result.diagnostics.push_back(Diagnostic{expr.span,"?. requires a nullable value"});
+            auto sit=struct_fields_.find(strip_nullable(base.name));if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end()){auto t=resolved_type_name(f->second);return {TypeKind::named,0,is_nullable_type(t)?t:t+"?"};}}
+            return {TypeKind::named,0,"opaque?"};
         }
         case Expr::Kind::index: return {TypeKind::named, 0, "opaque"};
     }
@@ -197,7 +215,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::struct_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, st.name});
             auto& fields=struct_fields_[st.name];
-            for(const auto& field:st.fields){if(fields.contains(field.name))result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else fields[field.name]=resolved_type_name(field.type.name);}
+            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else fields[field.name]=resolved_type_name(field.type.name);}
             for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:st.fields)declare(result,Symbol{field.name,SymbolNamespace::value,field.span,false,resolved_type_name(field.type.name)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
             break;
         }
@@ -213,9 +231,18 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             break;
         }
         case Stmt::Kind::block: analyze_statements(result, st.body, true); break;
-        case Stmt::Kind::if_stmt:
+        case Stmt::Kind::if_stmt: {
             if (st.condition) infer_expression(result, *st.condition);
-            analyze_statements(result, st.body, true); analyze_statements(result, st.else_body, true); break;
+            Symbol* narrowed = nullptr; std::string original;
+            if (st.condition && st.condition->kind==Expr::Kind::binary && st.condition->text=="!=" &&
+                st.condition->left && st.condition->left->kind==Expr::Kind::identifier && st.condition->right && st.condition->right->kind==Expr::Kind::null_literal) {
+                narrowed=lookup(st.condition->left->text,SymbolNamespace::value);
+                if(narrowed && is_nullable_type(narrowed->type_name)){original=narrowed->type_name;narrowed->type_name=strip_nullable(original);}
+            }
+            analyze_statements(result, st.body, true);
+            if(narrowed) narrowed->type_name=original;
+            analyze_statements(result, st.else_body, true); break;
+        }
         case Stmt::Kind::while_stmt:
             if (st.condition) infer_expression(result, *st.condition);
             analyze_statements(result, st.body, true); break;
@@ -232,10 +259,10 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
 
 bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting) {
     auto it = aliases_.find(name); if (it == aliases_.end()) return builtin_type(name).valid();
-    if (visiting.contains(name)) { result.diagnostics.push_back(Diagnostic{{}, "cyclic type alias involving '" + name + "'"}); return false; }
+    if (visiting.find(name) != visiting.end()) { result.diagnostics.push_back(Diagnostic{{}, "cyclic type alias involving '" + name + "'"}); return false; }
     visiting.insert(name); const std::string target = it->second;
-    bool ok = builtin_type(target).valid() || aliases_.contains(target);
-    if (aliases_.contains(target)) ok = resolve_alias(result, target, visiting);
+    bool ok = builtin_type(target).valid() || aliases_.find(target) != aliases_.end();
+    if (aliases_.find(target) != aliases_.end()) ok = resolve_alias(result, target, visiting);
     if (!ok && (target.find('<') != std::string::npos || target.find('[') != std::string::npos || target.rfind("function",0)==0)) ok = true;
     if (!ok) result.diagnostics.push_back(Diagnostic{{}, "unknown type '" + target + "' in alias '" + name + "'"});
     visiting.erase(name); return ok;

@@ -82,3 +82,7 @@ Server-side/Nift-style templating has been removed from the active roadmap for n
 ## Performance implementation rule
 
 Prefer allocation-light standard-library conversion primitives such as `std::from_chars` / `std::to_chars` where they fit, following the performance lessons from JSONIC, rather than stream-based or exception-heavy conversions. Preserve correctness and useful diagnostics first, then benchmark.
+
+## Bootstrap implementation standard
+
+The compiler/runtime bootstrap targets portable C++17. JSONIC is verified header-only C++17. libcurl does not require Strut itself to use C++20. Do not raise the bootstrap language standard without a demonstrated need.

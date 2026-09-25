@@ -6,8 +6,9 @@
 #include <string>
 namespace strut { namespace {
 std::string cpp_type(std::string t){
+    if(!t.empty() && t.back()=='?') return "std::optional<"+cpp_type(t.substr(0,t.size()-1))+">";
     if(t.rfind("map<",0)==0 && t.back()=='>'){auto inner=t.substr(4,t.size()-5);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}if(comma!=std::string::npos)return "std::map<"+cpp_type(inner.substr(0,comma))+","+cpp_type(inner.substr(comma+1))+">";}
-    if(t.size()>2 && t.ends_with("[]")) return "std::vector<"+cpp_type(t.substr(0,t.size()-2))+">";
+    if(t.size()>2 && t.compare(t.size()-2,2,"[]")==0) return "std::vector<"+cpp_type(t.substr(0,t.size()-2))+">";
     if (auto extent = array_extent(t)) { const auto open=t.rfind('['); return "std::array<"+cpp_type(t.substr(0,open))+","+std::to_string(*extent)+">"; }
     if(t=="void") return "void";
     if(t=="bool") return "bool";
@@ -44,7 +45,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::identifier: if(e.text=="this") return "(*this)"; return e.text;
         case IRExpr::Kind::integer_literal: case IRExpr::Kind::floating_literal: case IRExpr::Kind::boolean_literal: return e.text;
         case IRExpr::Kind::string_literal: return "strut_string("+e.text+")";
-        case IRExpr::Kind::null_literal:return "nullptr";
+        case IRExpr::Kind::null_literal:return "strut_null";
         case IRExpr::Kind::array_literal:{std::string out="{";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+"}";}
         case IRExpr::Kind::map_literal:{std::string out="{";for(size_t i=0;i+1<e.arguments.size();i+=2){if(i)out+=",";out+="{"+expr(*e.arguments[i])+","+expr(*e.arguments[i+1])+"}";}return out+"}";}
         case IRExpr::Kind::json_object:return json_expr(e);
@@ -52,11 +53,13 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
         case IRExpr::Kind::unary:return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
-        case IRExpr::Kind::binary:return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
-        case IRExpr::Kind::member:{if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";return expr(*e.left)+"."+m;}
+        case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
+        case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
+        case IRExpr::Kind::member:{if(e.left && !e.left->type_name.empty() && e.left->type_name.back()=='?') return "(*"+expr(*e.left)+")."+e.text; if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";return expr(*e.left)+"."+m;}
         case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?e.right->text:expr(*e.right);return expr(*e.left)+"["+k+"]";}return expr(*e.left)+".at("+expr(*e.right)+")";}
         case IRExpr::Kind::call:{
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="insert" && e.left->left && e.arguments.size()==2){return "strut_map_insert("+expr(*e.left->left)+","+expr(*e.arguments[0])+","+expr(*e.arguments[1])+")";}
+            if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="contains" && e.left->left && e.arguments.size()==1){return "strut_contains("+expr(*e.left->left)+","+expr(*e.arguments[0])+")";}
             std::string name=expr(*e.left); if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
@@ -80,13 +83,26 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n";
 o<<R"CPP(
+struct strut_null_t {
+    template<class T> operator std::optional<T>() const { return std::nullopt; }
+    template<class T> operator std::shared_ptr<T>() const { return {}; }
+    template<class T> operator T*() const { return nullptr; }
+};
+constexpr strut_null_t strut_null{};
+template<class T> bool operator==(const std::optional<T>& v,strut_null_t){return !v;}
+template<class T> bool operator!=(const std::optional<T>& v,strut_null_t){return static_cast<bool>(v);}
+template<class T> bool operator==(strut_null_t,const std::optional<T>& v){return !v;}
+template<class T> bool operator!=(strut_null_t,const std::optional<T>& v){return static_cast<bool>(v);}
+template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f) -> std::optional<typename std::decay<decltype(f(*value))>::type> { if(!value)return std::nullopt; return f(*value); }
+template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback);}
+
 struct strut_string {
     std::string v;
     strut_string() = default; strut_string(const char* s):v(s){} strut_string(std::string s):v(std::move(s)){}
-    bool starts_with(const strut_string& s) const { return v.starts_with(s.v); }
-    bool ends_with(const strut_string& s) const { return v.ends_with(s.v); }
+    bool starts_with(const strut_string& s) const { return v.size()>=s.v.size() && v.compare(0,s.v.size(),s.v)==0; }
+    bool ends_with(const strut_string& s) const { return v.size()>=s.v.size() && v.compare(v.size()-s.v.size(),s.v.size(),s.v)==0; }
     bool contains(const strut_string& s) const { return v.find(s.v)!=std::string::npos; }
     strut_string trim() const { auto b=v.begin(),e=v.end();while(b!=e&&std::isspace((unsigned char)*b))++b;while(e!=b&&std::isspace((unsigned char)*(e-1)))--e;return std::string(b,e); }
     strut_string replace(const strut_string& from,const strut_string& to) const { std::string r=v;if(from.v.empty())return r;std::size_t p=0;while((p=r.find(from.v,p))!=std::string::npos){r.replace(p,from.v.size(),to.v);p+=to.v.size();}return r; }
@@ -115,6 +131,8 @@ inline strut_string strut_join(const std::vector<strut_string>& xs,const strut_s
 inline std::int32_t strut_to_int(const strut_string& s){std::int32_t x{};auto [p,e]=std::from_chars(s.v.data(),s.v.data()+s.v.size(),x);if(e!=std::errc{}||p!=s.v.data()+s.v.size())throw std::runtime_error("invalid int");return x;}
 inline float strut_to_double(const strut_string& s){float x{};auto [p,e]=std::from_chars(s.v.data(),s.v.data()+s.v.size(),x);if(e!=std::errc{}||p!=s.v.data()+s.v.size())throw std::runtime_error("invalid double");return x;}
 template<class T> strut_string strut_to_string(T x){return std::to_string(x);}
+inline bool strut_contains(const strut_string& s,const strut_string& x){return s.contains(x);}
+template<class M,class K> bool strut_contains(const M& m,const K& k){return m.find(k)!=m.end();}
 template<class M,class K,class V> void strut_map_insert(M& m,K&& k,V&& v){m[std::forward<K>(k)]=std::forward<V>(v);}
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
 )CPP";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
@@ -126,9 +144,9 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++20 /EHsc /I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ cmd=cxx+" /nologo /std:c++17 /EHsc /I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
 #else
- cmd=cxx+" -std=c++20 -O2 -I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
+ cmd=cxx+" -std=c++17 -O2 -I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
 #endif
  int rc=std::system(cmd.c_str());std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error="native C++ compiler failed";return false;}return true;}
 }

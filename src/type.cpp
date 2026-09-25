@@ -69,6 +69,9 @@ std::optional<std::size_t> array_extent(std::string_view name) {
     return value;
 }
 
+bool is_nullable_type(std::string_view name) { return !name.empty() && name.back() == '?'; }
+std::string strip_nullable(std::string_view name) { return is_nullable_type(name) ? std::string(name.substr(0, name.size()-1)) : std::string(name); }
+
 bool can_implicitly_convert(const TypeInfo& from, const TypeInfo& to) {
     if (!from.valid() || !to.valid()) return false;
     if (from.kind == to.kind && from.bits <= to.bits) return true;

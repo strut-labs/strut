@@ -13,7 +13,7 @@ namespace strut {
 struct IRExpr;
 using IRExprPtr = std::unique_ptr<IRExpr>;
 struct IRExpr {
-    enum class Kind { identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object, unary, binary, grouping, member, index, postfix, call, struct_literal, lambda };
+    enum class Kind { identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object, unary, binary, grouping, member, safe_member, index, postfix, call, struct_literal, lambda };
     Kind kind = Kind::identifier;
     std::string text;
     std::string type_name;
