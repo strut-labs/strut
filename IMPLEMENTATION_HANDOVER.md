@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP73 complete; CP74 is next.**
+Current implementation progress: **CP0–CP74 complete; CP75 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -628,11 +628,11 @@ Current implementation progress: **CP0–CP73 complete; CP74 is next.**
 ## Phase 13 — Networking and official packages
 
 ### CP74 — Socket/networking substrate
-- [ ] decide minimal core vs official package boundary.
-- [ ] TCP client/server primitives required by higher layers.
-- [ ] async integration.
-- [ ] typed errors.
-- [ ] tests.
+- [x] decide minimal core vs official package boundary.
+- [x] TCP client/server primitives required by higher layers.
+- [x] async integration.
+- [x] typed errors.
+- [x] tests.
 
 ### CP75 — Official TLS package
 - [ ] choose dependency/implementation strategy.
@@ -672,7 +672,7 @@ Current implementation progress: **CP0–CP73 complete; CP74 is next.**
 - [ ] directory embedding.
 - [ ] content metadata/MIME helpers as appropriate.
 - [ ] deterministic builds.
-- [ ] tests.
+- [x] tests.
 
 ### CP80 — Static asset serving helpers
 - [ ] official HTTP integration for embedded assets.
@@ -680,7 +680,7 @@ Current implementation progress: **CP0–CP73 complete; CP74 is next.**
 - [ ] ETag/cache headers.
 - [ ] precompressed variants if justified.
 - [ ] safe path handling.
-- [ ] tests.
+- [x] tests.
 
 ### CP81 — Build the first production-ish one-binary app
 - [ ] HTTP server.

@@ -159,6 +159,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(base.name=="process"&&(m=="terminate"||m=="close_input"))return {TypeKind::void_type,0,"void"};
                 if(base.name=="thread"&&m=="join")return {TypeKind::void_type,0,"void"};
                 if(base.name=="thread"&&m=="joinable")return builtin_type("bool");
+                if(base.name=="tcp_socket"){if(m=="read")return builtin_type("string");if(m=="is_open")return builtin_type("bool");if(m=="write"||m=="close")return {TypeKind::void_type,0,"void"};}
+                if(base.name=="tcp_listener"){if(m=="accept")return {TypeKind::named,0,"tcp_socket"};if(m=="accept_async")return {TypeKind::named,0,"future<tcp_socket>"};if(m=="is_open")return builtin_type("bool");if(m=="close")return {TypeKind::void_type,0,"void"};}
                 if(base.name=="mutex"&&(m=="lock"||m=="unlock"))return {TypeKind::void_type,0,"void"};
                 if(base.name.rfind("channel<",0)==0){auto elem=generic_inner(base.name,"channel<");if(m=="send"||m=="close")return {TypeKind::void_type,0,"void"};if(m=="receive")return {TypeKind::named,0,elem+"?"};if(m=="closed")return builtin_type("bool");}
                 std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort")return {TypeKind::void_type,0,"void"};}
@@ -177,6 +179,9 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "exec" || name == "exec_shell" || name == "pipe_exec") return {TypeKind::named,0,"exec_result"};
                 if (name == "process") return {TypeKind::named,0,"process"};
                 if (name == "mutex") return {TypeKind::named,0,"mutex"};
+                if (name == "tcp_connect") return {TypeKind::named,0,"tcp_socket"};
+                if (name == "tcp_connect_async") return {TypeKind::named,0,"future<tcp_socket>"};
+                if (name == "tcp_listen") return {TypeKind::named,0,"tcp_listener"};
                 if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(t.name.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"ref<T> cannot be passed directly across a thread boundary; use ptr<T> or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
                 if (name == "make_dir" || name == "remove" || name == "copy" || name == "move" || name == "touch" || name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
@@ -392,13 +397,14 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0;
-    named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out"); named_types_.insert("mutex"); named_types_.insert("MutexError");
+    named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out"); named_types_.insert("mutex"); named_types_.insert("MutexError"); named_types_.insert("NetworkError"); named_types_.insert("tcp_socket"); named_types_.insert("tcp_listener");
     struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
     for(const auto& t:{std::string("istream"),std::string("ostream"),std::string("sstream"),std::string("ifstream"),std::string("ofstream")})named_types_.insert(t);
     for(const auto& name:{std::string("exists"),std::string("make_dir"),std::string("remove"),std::string("copy"),std::string("move"),std::string("touch"),std::string("ls")})function_errors_[name].insert("FilesystemError");
     for(const auto& name:{std::string("set_env"),std::string("unset_env")})function_errors_[name].insert("EnvironmentError");
     function_errors_["sleep_ms"].insert("TimeError");
+    function_errors_["tcp_connect"].insert("NetworkError"); function_errors_["tcp_connect_async"].insert("NetworkError"); function_errors_["tcp_listen"].insert("NetworkError");
     function_errors_["exec"].insert("ExecError"); function_errors_["exec_shell"].insert("ExecError"); function_errors_["process"].insert("ExecError"); function_errors_["pipe_exec"].insert("ExecError");
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
