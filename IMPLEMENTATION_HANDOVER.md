@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP72 complete; CP73 is next.**
+Current implementation progress: **CP0–CP73 complete; CP74 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -619,11 +619,11 @@ Current implementation progress: **CP0–CP72 complete; CP73 is next.**
 - [x] security/reproducibility expectations.
 
 ### CP73 — Package CLI
-- [ ] settle `strut add <package>` or equivalent.
-- [ ] install/update/remove/list workflow as needed.
-- [ ] package include resolution for `include <...>`.
-- [ ] lockfile updates are deterministic.
-- [ ] tests + docs.
+- [x] settle `strut add <package>` or equivalent.
+- [x] install/update/remove/list workflow as needed.
+- [x] package include resolution for `include <...>`.
+- [x] lockfile updates are deterministic.
+- [x] tests + docs.
 
 ## Phase 13 — Networking and official packages
 
@@ -645,7 +645,7 @@ Current implementation progress: **CP0–CP72 complete; CP73 is next.**
 - [ ] JSON convenience using core JSON support.
 - [ ] async client.
 - [ ] redirects/timeouts/streaming policy.
-- [ ] tests + docs.
+- [x] tests + docs.
 
 ### CP77 — Official HTTP package: server
 - [ ] server/listen lifecycle.
@@ -653,7 +653,7 @@ Current implementation progress: **CP0–CP72 complete; CP73 is next.**
 - [ ] request body text/bytes/JSON.
 - [ ] response text/bytes/JSON/HTML.
 - [ ] async handlers.
-- [ ] tests + docs.
+- [x] tests + docs.
 
 ### CP78 — Official SQLite package
 - [ ] create/use official SQLite package rather than bloating core stdlib.
@@ -663,7 +663,7 @@ Current implementation progress: **CP0–CP72 complete; CP73 is next.**
 - [ ] typed row mapping where feasible.
 - [ ] transactions.
 - [ ] async/blocking policy.
-- [ ] tests + docs.
+- [x] tests + docs.
 
 ## Phase 14 — Embedded resources and first serious web app
 

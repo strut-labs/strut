@@ -13,6 +13,7 @@
 #include "strut/codegen.h"
 #include "strut/diagnostic.h"
 #include "strut/parser.h"
+#include "strut/package.h"
 #include "strut/source.h"
 #include "strut/sema.h"
 #include "strut/token.h"
@@ -37,7 +38,11 @@ void print_help(std::ostream& out) {
         << "      --static         Request a fully static final link where supported\n"
         << "      --dynamic        Prefer an ordinary dynamically linked final binary\n"
         << "      --release        Optimise, strip and enable dead-code elimination\n"
-        << "      compile         Optional explicit compile command alias\n";
+        << "      compile         Optional explicit compile command alias\n"
+        << "      add <path>      Add a local package checkout to this project\n"
+        << "      remove <name>   Remove a package dependency\n"
+        << "      list            List project dependencies\n"
+        << "      install         Resolve dependencies from the shared cache\n";
 }
 
 std::string escaped_lexeme(std::string_view value) {
@@ -80,7 +85,7 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     }
     return 0;
 }
-bool load_program_recursive(const std::filesystem::path& path, Program& combined, std::unordered_set<std::string>& loaded,
+bool load_program_recursive(const std::filesystem::path& path, const std::filesystem::path& project_root, Program& combined, std::unordered_set<std::string>& loaded,
                             std::unordered_set<std::string>& active, std::ostream& err) {
     std::error_code ec;
     const auto absolute = std::filesystem::absolute(path, ec).lexically_normal();
@@ -98,9 +103,19 @@ bool load_program_recursive(const std::filesystem::path& path, Program& combined
     std::vector<StmtPtr> own;
     for (auto& st : parsed.program.statements) {
         if (st->kind == Stmt::Kind::include_stmt) {
-            if (st->include_is_package) { own.push_back(std::move(st)); continue; }
+            if (st->include_is_package) {
+                const auto slash = st->name.find('/'); const std::string package_name = st->name.substr(0, slash);
+                PackageManifest project; std::string package_error;
+                if (!load_package_manifest_file(project_root / "strut.json", project, package_error)) { err << path.string() << ": error: package include requires project strut.json: " << package_error << '\n'; active.erase(key); return false; }
+                const auto requirement = project.dependencies.find(package_name); if (requirement == project.dependencies.end()) { err << path.string() << ": error: package '" << package_name << "' is not a project dependency\n"; active.erase(key); return false; }
+                auto package_root = resolve_cached_package(package_name, requirement->second); if (!package_root) { err << path.string() << ": error: package '" << package_name << "' is not installed in the shared cache\n"; active.erase(key); return false; }
+                PackageManifest package; if (!load_package_manifest_file(*package_root / "strut.json", package, package_error)) { err << path.string() << ": error: " << package_error << '\n'; active.erase(key); return false; }
+                std::filesystem::path dep = *package_root; if (slash == std::string::npos) { if (package.entry.empty()) { err << path.string() << ": error: package '" << package_name << "' has no entry\n"; active.erase(key); return false; } dep /= package.entry; } else dep /= st->name.substr(slash + 1);
+                if (!load_program_recursive(dep, project_root, combined, loaded, active, err)) { active.erase(key); return false; }
+                continue;
+            }
             auto dep = path.parent_path() / st->name;
-            if (!load_program_recursive(dep, combined, loaded, active, err)) { active.erase(key); return false; }
+            if (!load_program_recursive(dep, project_root, combined, loaded, active, err)) { active.erase(key); return false; }
         } else own.push_back(std::move(st));
     }
     for(auto& st:own) combined.statements.push_back(std::move(st));
@@ -109,7 +124,9 @@ bool load_program_recursive(const std::filesystem::path& path, Program& combined
 
 bool load_program(const std::filesystem::path& path, Program& combined, std::ostream& err) {
     std::unordered_set<std::string> loaded, active;
-    return load_program_recursive(path, combined, loaded, active, err);
+    std::filesystem::path root = path.parent_path().empty() ? std::filesystem::current_path() : std::filesystem::absolute(path.parent_path());
+    for (auto probe = root; !probe.empty(); probe = probe.parent_path()) { if (std::filesystem::exists(probe / "strut.json")) { root = probe; break; } if (probe == probe.root_path()) break; }
+    return load_program_recursive(path, root, combined, loaded, active, err);
 }
 
 int check_source(const std::filesystem::path& path, std::ostream& out, std::ostream& err) {
@@ -132,6 +149,16 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     return 0;
 }
 
+int run_package_command(const std::string& command, const std::string& argument, std::ostream& out, std::ostream& err) {
+    const auto root = std::filesystem::current_path(); PackageManifest project; std::string error;
+    if (!load_package_manifest_file(root / "strut.json", project, error)) { err << "strut: " << error << '\n'; return 2; }
+    if (command == "list") { for (const auto& dep : project.dependencies) out << dep.first << " " << dep.second << '\n'; return 0; }
+    if (command == "add") { if (argument.empty()) { err << "strut: add requires a local package path\n"; return 2; } PackageManifest package; std::filesystem::path cached; if (!cache_local_package(argument,cached,package,error)) { err << "strut: " << error << '\n'; return 1; } project.dependencies[package.name]=package.version; if(!write_package_manifest_file(root/"strut.json",project,error)||!write_lockfile(root,project,error)){err<<"strut: "<<error<<'\n';return 1;} out<<"added "<<package.name<<" "<<package.version<<'\n'; return 0; }
+    if (command == "remove") { if (argument.empty()) { err << "strut: remove requires a package name\n"; return 2; } if(!project.dependencies.erase(argument)){err<<"strut: package '"<<argument<<"' is not a dependency\n";return 2;} if(!write_package_manifest_file(root/"strut.json",project,error)){err<<"strut: "<<error<<'\n';return 1;} if(!project.dependencies.empty()&&!write_lockfile(root,project,error)){err<<"strut: "<<error<<'\n';return 1;} if(project.dependencies.empty()){std::error_code ec;std::filesystem::remove(root/"strut.lock.json",ec);} out<<"removed "<<argument<<'\n';return 0; }
+    if (command == "install") { if(!write_lockfile(root,project,error)){err<<"strut: "<<error<<'\n';return 1;} out<<"dependencies resolved from cache\n";return 0; }
+    return 2;
+}
+
 }
 
 int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
@@ -147,6 +174,16 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     if (argc == 1) {
         print_help(out);
         return 0;
+    }
+
+    if (argc >= 2) {
+        const std::string command(argv[1]);
+        if (command == "add" || command == "remove" || command == "list" || command == "install") {
+            const std::string argument = argc >= 3 ? argv[2] : std::string();
+            if ((command == "list" || command == "install") && argc > 2) { err << "strut: " << command << " takes no argument\n"; return 2; }
+            if ((command == "add" || command == "remove") && argc != 3) { err << "strut: " << command << " requires exactly one argument\n"; return 2; }
+            return run_package_command(command, argument, out, err);
+        }
     }
 
     for (int i = 1; i < argc; ++i) {

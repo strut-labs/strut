@@ -1,9 +1,12 @@
 #include "strut/package.h"
 
+#include <array>
 #include <charconv>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string_view>
 
 #include "json.h"
@@ -116,6 +119,50 @@ std::filesystem::path package_cache_root() {
     if (const char* home = std::getenv("HOME"); home && *home) return std::filesystem::path(home) / ".cache" / "strut" / "packages";
 #endif
     return std::filesystem::path(".strut-cache") / "packages";
+}
+
+namespace {
+std::array<unsigned,3> semver_parts(const std::string& value, bool& ok) {
+    std::array<unsigned,3> out{0,0,0}; std::size_t off=0; ok=true;
+    for (int i=0;i<3;++i) { const char* first=value.data()+off; const char* last=value.data()+value.size(); auto r=std::from_chars(first,last,out[static_cast<std::size_t>(i)]); if(r.ec!=std::errc{}||r.ptr==first){ok=false;return out;} off=static_cast<std::size_t>(r.ptr-value.data()); if(i<2){if(off>=value.size()||value[off]!='.'){ok=false;return out;}++off;} }
+    ok=off==value.size(); return out;
+}
+bool satisfies(const std::string& version, const std::string& requirement) {
+    bool vok=false, rok=false; auto v=semver_parts(version,vok); std::string base=requirement; char mode=0; if(!base.empty()&&(base[0]=='^'||base[0]=='~')){mode=base[0];base.erase(base.begin());} if(requirement=="*") return true; auto r=semver_parts(base,rok); if(!vok||!rok)return false; if(!mode)return v==r; if(v<r)return false; if(mode=='^') return v[0]==r[0]; return v[0]==r[0]&&v[1]==r[1];
+}
+}
+
+bool load_package_manifest_file(const std::filesystem::path& path, PackageManifest& out, std::string& error) {
+    std::ifstream input(path); if(!input){error="unable to open " + path.string(); return false;} std::ostringstream text; text<<input.rdbuf(); return parse_package_manifest(text.str(),out,error);
+}
+
+bool write_package_manifest_file(const std::filesystem::path& path, const PackageManifest& manifest, std::string& error) {
+    json::Document doc=json::Document::make_object(); doc["name"]=manifest.name; doc["version"]=manifest.version; if(!manifest.entry.empty())doc["entry"]=manifest.entry; if(!manifest.description.empty())doc["description"]=manifest.description; if(!manifest.license.empty())doc["license"]=manifest.license; if(!manifest.repository.empty())doc["repository"]=manifest.repository;
+    json::Document deps=json::Document::make_object(); for(const auto& d:manifest.dependencies)deps[d.first]=d.second; doc["dependencies"]=deps;
+    std::ofstream output(path); if(!output){error="unable to write " + path.string();return false;} output<<doc.dump(2)<<'\n'; return static_cast<bool>(output);
+}
+
+std::optional<std::filesystem::path> resolve_cached_package(const std::string& name, const std::string& requirement) {
+    const auto base=package_cache_root()/name; std::error_code ec; if(!std::filesystem::is_directory(base,ec))return std::nullopt; std::optional<std::pair<std::array<unsigned,3>,std::filesystem::path>> best;
+    for(const auto& e:std::filesystem::directory_iterator(base,ec)){if(ec||!e.is_directory())continue; const auto v=e.path().filename().string(); if(!satisfies(v,requirement))continue; bool ok=false;auto parts=semver_parts(v,ok); if(ok&&(!best||parts>best->first))best=std::make_pair(parts,e.path());} if(!best)return std::nullopt; return best->second;
+}
+
+bool cache_local_package(const std::filesystem::path& source_root, std::filesystem::path& cached_root, PackageManifest& manifest, std::string& error) {
+    if (!load_package_manifest_file(source_root / "strut.json", manifest, error)) return false;
+    cached_root = package_cache_root() / manifest.name / manifest.version;
+    std::error_code ec;
+    if (std::filesystem::exists(cached_root, ec)) return true;
+    std::filesystem::create_directories(cached_root.parent_path(), ec);
+    if (ec) { error = ec.message(); return false; }
+    std::filesystem::copy(source_root, cached_root,
+                          std::filesystem::copy_options::recursive | std::filesystem::copy_options::copy_symlinks, ec);
+    if (ec) { error = ec.message(); return false; }
+    return true;
+}
+
+bool write_lockfile(const std::filesystem::path& project_root, const PackageManifest& manifest, std::string& error) {
+    json::Document root=json::Document::make_object(); root["version"]=1; json::Document deps=json::Document::make_object();
+    for(const auto& d:manifest.dependencies){auto resolved=resolve_cached_package(d.first,d.second); if(!resolved){error="dependency '"+d.first+"' is not present in the package cache";return false;} json::Document item=json::Document::make_object(); item["version"]=resolved->filename().string(); item["source"]="cache"; deps[d.first]=item;} root["dependencies"]=deps; std::ofstream out(project_root/"strut.lock.json"); if(!out){error="unable to write strut.lock.json";return false;} out<<root.dump(2)<<'\n'; return static_cast<bool>(out);
 }
 
 } // namespace strut

@@ -71,3 +71,9 @@ The resolver checkpoint must:
 6. verify cached/downloaded content against the lockfile checksum before use.
 
 CP71 defines and validates this contract. Fetching, registry/GitHub organisation conventions, lockfile mutation, and `strut add` arrive in subsequent package checkpoints.
+
+## Package CLI (CP73)
+
+`strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. `strut remove <name>`, `strut list`, and `strut install` manage the local dependency set. Remote fetching is intentionally not guessed at before the HTTP client exists; CP73 operates against explicit local checkouts and cached versions.
+
+`include <name>` loads the package entry declared by the resolved cached package. `include <name/path.h>` loads an explicit file inside that package. Package includes must also appear in the project manifest.
