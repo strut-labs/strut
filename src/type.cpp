@@ -56,6 +56,18 @@ bool integer_literal_fits(std::string_view text, const TypeInfo& destination) {
     return false;
 }
 
+std::optional<std::size_t> array_extent(std::string_view name) {
+    if (name.size() < 3 || name.back() != ']') return std::nullopt;
+    const auto open = name.rfind('[');
+    if (open == std::string_view::npos || open + 1 == name.size() - 1) return std::nullopt;
+    std::size_t value = 0;
+    const auto first = name.data() + open + 1;
+    const auto last = name.data() + name.size() - 1;
+    const auto [ptr, ec] = std::from_chars(first, last, value);
+    if (ec != std::errc{} || ptr != last) return std::nullopt;
+    return value;
+}
+
 bool can_implicitly_convert(const TypeInfo& from, const TypeInfo& to) {
     if (!from.valid() || !to.valid()) return false;
     if (from.kind == to.kind && from.bits <= to.bits) return true;

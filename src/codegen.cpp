@@ -1,4 +1,5 @@
 #include "strut/codegen.h"
+#include "strut/type.h"
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -6,6 +7,7 @@
 namespace strut { namespace {
 std::string cpp_type(std::string t){
     if(t.size()>2 && t.ends_with("[]")) return "std::vector<"+cpp_type(t.substr(0,t.size()-2))+">";
+    if (auto extent = array_extent(t)) { const auto open=t.rfind('['); return "std::array<"+cpp_type(t.substr(0,open))+","+std::to_string(*extent)+">"; }
     if(t=="void") return "void";
     if(t=="bool") return "bool";
     if(t=="string") return "std::string";
@@ -55,7 +57,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <stdexcept>\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include <cstdint>\n#include <iostream>\n#include <string>\n #include <vector>\n#include <array>\n#include <stdexcept>\n";
 o<<"template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\\n';}\n";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error) const {auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
 #ifdef _WIN32

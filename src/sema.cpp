@@ -136,6 +136,11 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                     result.diagnostics.push_back(Diagnostic{st.declared_type->span, "unknown type '" + st.declared_type->name + "'"});
                 }
                 type_name = resolved_type_name(st.declared_type->name);
+                if (st.value && st.value->kind == Expr::Kind::array_literal) {
+                    if (auto extent = array_extent(st.declared_type->name); extent && *extent != st.value->arguments.size()) {
+                        result.diagnostics.push_back(Diagnostic{st.value->span, "fixed array initializer has " + std::to_string(st.value->arguments.size()) + " elements but type requires " + std::to_string(*extent)});
+                    }
+                }
                 bool literal_integer_ok = false;
                 if (destination.numeric() && st.value && st.value->kind == Expr::Kind::integer_literal) {
                     if ((destination.kind == TypeKind::signed_int || destination.kind == TypeKind::unsigned_int) && integer_literal_fits(st.value->text, destination)) literal_integer_ok = true;

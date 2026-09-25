@@ -220,12 +220,12 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] tests + regressions.
 
 ### CP24 — Fixed arrays `T[n]`
-- [ ] fixed-size type semantics.
-- [ ] layout/storage rules.
-- [ ] initialization rules.
-- [ ] nested fixed/dynamic arrays.
-- [ ] bounds diagnostics/runtime safety.
-- [ ] tests + regressions.
+- [x] fixed-size type semantics.
+- [x] layout/storage rules.
+- [x] initialization rules.
+- [x] nested fixed/dynamic arrays.
+- [x] bounds diagnostics/runtime safety.
+- [x] tests + regressions.
 
 ### CP25 — Strings
 - [ ] owned string representation.
