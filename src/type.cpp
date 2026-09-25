@@ -12,6 +12,7 @@ TypeInfo builtin_type(std::string_view n) {
     if (n == "void") return {TypeKind::void_type, 0, std::string(n)};
     if (n == "bool") return {TypeKind::bool_type, 0, std::string(n)};
     if (n == "string") return {TypeKind::string_type, 0, std::string(n)};
+    if (n == "json") return {TypeKind::json_type, 0, std::string(n)};
     if (n == "int_8") return {TypeKind::signed_int, 8, std::string(n)};
     if (n == "int_16") return {TypeKind::signed_int, 16, std::string(n)};
     if (n == "int_32") return {TypeKind::signed_int, 32, std::string(n)};

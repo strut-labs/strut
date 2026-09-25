@@ -12,6 +12,7 @@ std::string cpp_type(std::string t){
     if(t=="void") return "void";
     if(t=="bool") return "bool";
     if(t=="string") return "strut_string";
+    if(t=="json") return "json::Document";
     if(t=="int"||t=="int_32") return "std::int32_t";
     if(t=="int_8") return "std::int8_t";
     if(t=="int_16") return "std::int16_t";
@@ -25,6 +26,19 @@ std::string cpp_type(std::string t){
     if(t=="opaque") return "auto";
     return t.empty()?"auto":t;
 }
+std::string expr(const IRExpr& e);
+std::string json_expr(const IRExpr& e){
+    switch(e.kind){
+        case IRExpr::Kind::json_object:{std::string out="[](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+e.arguments[i]->text+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
+        case IRExpr::Kind::array_literal:{std::string out="[](){json::Document d=json::Document::make_array();";for(const auto& a:e.arguments)out+="d.push_back("+json_expr(*a)+");";return out+="return d;}()";}
+        case IRExpr::Kind::string_literal:return "json::Document(std::string("+e.text+"))";
+        case IRExpr::Kind::integer_literal:return "json::Document(static_cast<int>("+e.text+"))";
+        case IRExpr::Kind::floating_literal:return "json::Document(static_cast<double>("+e.text+"))";
+        case IRExpr::Kind::boolean_literal:return "json::Document("+e.text+")";
+        case IRExpr::Kind::null_literal:return "json::Document(nullptr)";
+        default:return "strut_json_value("+expr(e)+")";
+    }
+}
 std::string expr(const IRExpr& e){
     switch(e.kind){
         case IRExpr::Kind::identifier: case IRExpr::Kind::integer_literal: case IRExpr::Kind::floating_literal: case IRExpr::Kind::boolean_literal: return e.text;
@@ -32,12 +46,13 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::null_literal:return "nullptr";
         case IRExpr::Kind::array_literal:{std::string out="{";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+"}";}
         case IRExpr::Kind::map_literal:{std::string out="{";for(size_t i=0;i+1<e.arguments.size();i+=2){if(i)out+=",";out+="{"+expr(*e.arguments[i])+","+expr(*e.arguments[i+1])+"}";}return out+"}";}
+        case IRExpr::Kind::json_object:return json_expr(e);
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
         case IRExpr::Kind::unary:return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::member:{std::string m=e.text;if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";return expr(*e.left)+"."+m;}
-        case IRExpr::Kind::index:return expr(*e.left)+".at("+expr(*e.right)+")";
+        case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?e.right->text:expr(*e.right);return expr(*e.left)+"["+k+"]";}return expr(*e.left)+".at("+expr(*e.right)+")";}
         case IRExpr::Kind::call:{
             std::string name=expr(*e.left); if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string";
@@ -61,7 +76,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n";
 o<<R"CPP(
 struct strut_string {
     std::string v;
@@ -79,6 +94,14 @@ inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<
 inline strut_string operator+(const strut_string&a,const strut_string&b){return a.v+b.v;}
 inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.v;}
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
+inline json::Document strut_json_value(const json::Document& d){return d;}
+inline json::Document strut_json_value(const strut_string& s){return json::Document(s.v);}
+inline json::Document strut_json_value(bool v){return json::Document(v);}
+inline json::Document strut_json_value(int v){return json::Document(v);}
+inline json::Document strut_json_value(double v){return json::Document(v);}
+inline json::Document strut_json_value(float v){return json::Document(static_cast<double>(v));}
+inline bool strut_json_equal(const json::Document&a,const json::Document&b){if(a.type!=b.type)return false;switch(a.type){case json::Type::Null:return true;case json::Type::Boolean:return a.boolean==b.boolean;case json::Type::Number:return a.num==b.num;case json::Type::StrNumber:return a.string==b.string;case json::Type::String:return a.string==b.string;case json::Type::Array:if(a.array.size()!=b.array.size())return false;for(std::size_t i=0;i<a.array.size();++i)if(!strut_json_equal(a.array[i],b.array[i]))return false;return true;case json::Type::Object:if(a.object.size()!=b.object.size())return false;for(const auto& kv:a.object){if(!b.has(kv.first)||!strut_json_equal(kv.second,b[kv.first]))return false;}return true;}return false;}
+namespace json { inline bool operator==(const Document&a,const Document&b){return strut_json_equal(a,b);} inline std::ostream& operator<<(std::ostream&o,const Document&d){return o<<d.dump();} }
 inline strut_string strut_join(const std::vector<strut_string>& xs,const strut_string& sep){std::string r;for(std::size_t i=0;i<xs.size();++i){if(i)r+=sep.v;r+=xs[i].v;}return r;}
 inline std::int32_t strut_to_int(const strut_string& s){std::int32_t x{};auto [p,e]=std::from_chars(s.v.data(),s.v.data()+s.v.size(),x);if(e!=std::errc{}||p!=s.v.data()+s.v.size())throw std::runtime_error("invalid int");return x;}
 inline float strut_to_double(const strut_string& s){float x{};auto [p,e]=std::from_chars(s.v.data(),s.v.data()+s.v.size(),x);if(e!=std::errc{}||p!=s.v.data()+s.v.size())throw std::runtime_error("invalid double");return x;}
@@ -93,9 +116,9 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++20 /EHsc \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ cmd=cxx+" /nologo /std:c++20 /EHsc /I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
 #else
- cmd=cxx+" -std=c++20 -O2 \""+tmp.string()+"\" -o \""+output.string()+"\"";
+ cmd=cxx+" -std=c++20 -O2 -I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
 #endif
  int rc=std::system(cmd.c_str());std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error="native C++ compiler failed";return false;}return true;}
 }

@@ -8,7 +8,7 @@
 
 namespace strut {
 
-enum class TypeKind { invalid, void_type, bool_type, string_type, null_type, signed_int, unsigned_int, floating, named };
+enum class TypeKind { invalid, void_type, bool_type, string_type, json_type, null_type, signed_int, unsigned_int, floating, named };
 struct TypeInfo {
     TypeKind kind = TypeKind::invalid;
     int bits = 0;

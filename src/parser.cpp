@@ -72,6 +72,11 @@ ExprPtr Parser::parse_primary(ParseResult& result) {
         case TokenKind::boolean_literal: kind=Expr::Kind::boolean_literal; break;
         case TokenKind::null_literal: kind=Expr::Kind::null_literal; break;
         default:
+            if (match("{")) {
+                const Token open=previous();auto e=std::make_unique<Expr>();e->kind=Expr::Kind::json_object;
+                if(!check("}")){do{if(peek().kind!=TokenKind::string_literal){error(result,peek(),"JSON object keys must be string literals");return nullptr;}const Token key=advance();auto k=std::make_unique<Expr>();k->kind=Expr::Kind::string_literal;k->text=key.lexeme;k->span=key.span;e->arguments.push_back(std::move(k));if(!match(":")){error(result,peek(),"expected ':' after JSON object key");return nullptr;}auto value=parse_expression(result);if(!value)return nullptr;e->arguments.push_back(std::move(value));}while(match(","));}
+                if(!match("}")){error(result,peek(),"expected '}' after JSON object");return nullptr;}e->span=join(open.span,previous().span);return e;
+            }
             if (match("[")) {
                 const Token open=previous();
                 auto e=std::make_unique<Expr>();

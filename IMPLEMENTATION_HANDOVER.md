@@ -244,12 +244,12 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] tests + regressions.
 
 ### CP27 — Built-in JSON type
-- [ ] JSON value representation.
-- [ ] `{...}` literal syntax always means JSON/object data rather than map inference.
-- [ ] nested array/object values.
-- [ ] indexing/navigation.
-- [ ] equality.
-- [ ] tests + regressions.
+- [x] JSON value representation.
+- [x] `{...}` literal syntax always means JSON/object data rather than map inference.
+- [x] nested array/object values.
+- [x] indexing/navigation.
+- [x] equality.
+- [x] tests + regressions.
 
 ### CP28 — JSON stdlib
 - [ ] `json.parse`.

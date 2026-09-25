@@ -21,6 +21,7 @@ std::string literal_type(const Expr& expr) {
             if (expr.arguments.size() < 2) return "map<opaque,opaque>";
             return "map<" + literal_type(*expr.arguments[0]) + "," + literal_type(*expr.arguments[1]) + ">";
         }
+        case Expr::Kind::json_object: return "json";
         case Expr::Kind::lambda: return "function";
         default: return "opaque";
     }
@@ -40,6 +41,7 @@ public:
         }
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
         for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
+        if (expr->kind == Expr::Kind::index && out->left && out->left->type_name == "json") out->type_name = "json";
         return out;
     }
     IRStmtPtr statement(const Stmt& st) {

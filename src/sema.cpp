@@ -80,6 +80,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             for(std::size_t i=2;i+1<expr.arguments.size();i+=2){auto k=infer_expression(result,*expr.arguments[i]);auto v=infer_expression(result,*expr.arguments[i+1]);if(key.valid()&&k.valid()&&!compatible(k,key))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"map key type mismatch"});if(value.valid()&&v.valid()&&!compatible(v,value))result.diagnostics.push_back(Diagnostic{expr.arguments[i+1]->span,"map value type mismatch"});}
             return {TypeKind::named,0,"map<"+(key.name.empty()?std::string("opaque"):key.name)+","+(value.name.empty()?std::string("opaque"):value.name)+">"};
         }
+        case Expr::Kind::json_object: {
+            for(std::size_t i=1;i<expr.arguments.size();i+=2) infer_expression(result,*expr.arguments[i]);
+            return builtin_type("json");
+        }
         case Expr::Kind::identifier: {
             auto* symbol = lookup(expr.text, SymbolNamespace::value);
             if (!symbol) {
