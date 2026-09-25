@@ -653,6 +653,8 @@ Explicit threads:
 worker := thread(work, arg1, arg2);
 worker.join();
 
+// join() waits for the native thread and rethrows any worker error on the joining thread.
+
 worker := thread(() => {
     do_work();
 });

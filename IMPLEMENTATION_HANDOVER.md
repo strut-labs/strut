@@ -529,12 +529,12 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 ## Phase 11 — Threads, mutexes, channels, async
 
 ### CP61 — Native threads
-- [ ] `thread(function, args...)`.
-- [ ] lambda thread form.
-- [ ] `join` and lifecycle semantics.
-- [ ] return/error propagation policy.
-- [ ] safe pointer/ref behaviour across threads.
-- [ ] tests + stress regressions.
+- [x] `thread(function, args...)`.
+- [x] lambda thread form.
+- [x] `join` and lifecycle semantics.
+- [x] return/error propagation policy.
+- [x] safe pointer/ref behaviour across threads.
+- [x] tests + stress regressions.
 
 ### CP62 — Mutex
 - [ ] `mutex` type.
