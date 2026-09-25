@@ -906,14 +906,14 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] verify package workflow from clean machine/environment.
 
 ### CP108 — Website/docs maintenance audit 2
-- [ ] make website represent the real language, not early concept syntax.
-- [ ] comprehensive language reference.
-- [ ] package docs.
-- [ ] examples/tutorials.
-- [ ] benchmark/performance methodology where claims are made.
-- [ ] responsive/mobile/404/accessibility recheck.
-- [ ] `nift build` green.
-- [ ] commit.
+- [x] make website represent the real language, not early concept syntax.
+- [x] comprehensive language reference.
+- [x] package docs.
+- [x] examples/tutorials.
+- [x] benchmark/performance methodology where claims are made.
+- [x] responsive/mobile/404/accessibility recheck.
+- [x] `nift build` green.
+- [x] commit.
 
 ### CP109 — Regression-suite maintenance audit 2
 - [x] full feature matrix.
@@ -923,11 +923,11 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] compatibility policy for releases.
 
 ### CP110 — Investigate rewriting Nift in Strut
-- [ ] map Nift requirements against Strut capabilities.
-- [ ] identify missing systems/IO/performance capabilities.
-- [ ] prototype one meaningful Nift subsystem.
-- [ ] measure performance/memory/complexity.
-- [ ] decide based on evidence, not symbolism.
+- [x] map Nift requirements against Strut capabilities.
+- [x] identify missing systems/IO/performance capabilities.
+- [x] prototype one meaningful Nift subsystem.
+- [x] measure performance/memory/complexity.
+- [x] decide based on evidence, not symbolism.
 
 ### CP111 — Self-hosting feasibility review
 - [ ] determine what is required for Strut to compile its own compiler.
