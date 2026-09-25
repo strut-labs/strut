@@ -30,6 +30,7 @@ add_library(strut_compiler STATIC
     src/package.cpp
     src/project.cpp
     src/formatter.cpp
+    src/lsp.cpp
 )
 target_include_directories(strut_compiler
     PUBLIC
@@ -98,3 +99,7 @@ add_test(NAME strut_project_tests COMMAND strut_project_tests)
 add_executable(strut_formatter_tests tests/unit/formatter_test.cpp)
 target_link_libraries(strut_formatter_tests PRIVATE strut_compiler)
 add_test(NAME strut_formatter_tests COMMAND strut_formatter_tests)
+
+add_executable(strut_lsp_tests tests/unit/lsp_test.cpp)
+target_link_libraries(strut_lsp_tests PRIVATE strut_compiler)
+add_test(NAME strut_lsp_tests COMMAND strut_lsp_tests)

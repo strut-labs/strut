@@ -1,3 +1,4 @@
+#include <iostream>
 #include "strut/cli.h"
 
 #include <filesystem>
@@ -14,6 +15,7 @@
 #include "json.h"
 #include "strut/lexer.h"
 #include "strut/ir.h"
+#include "strut/lsp.h"
 #include "strut/codegen.h"
 #include "strut/diagnostic.h"
 #include "strut/formatter.h"
@@ -41,6 +43,7 @@ void print_help(std::ostream& out) {
         << "  remove <name>     Remove a package dependency\n"
         << "  list              List project dependencies\n"
         << "  install           Resolve dependencies from the shared cache\n"
+        << "  lsp               Run the Language Server Protocol server on stdio\n"
         << "  help [command]    Show general or command help\n\n"
         << "Compile options:\n"
         << "  -o <path>         Output executable path\n"
@@ -71,6 +74,7 @@ void print_command_help(std::string_view command, std::ostream& out) {
     else if (command == "remove") out << "Usage: strut remove <package-name>\n";
     else if (command == "list") out << "Usage: strut list\n";
     else if (command == "install") out << "Usage: strut install\n";
+    else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout.\n";
     else print_help(out);
 }
 
@@ -326,6 +330,7 @@ int run_package_command(const std::string& command, const std::string& argument,
 }
 
 int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
+    if (argc >= 2 && std::string_view(argv[1]) == "lsp") return run_lsp(std::cin, out, err);
     bool want_version = false;
     bool want_json = false;
     bool want_dump_tokens = false;

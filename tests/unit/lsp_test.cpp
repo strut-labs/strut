@@ -1,0 +1,7 @@
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include "strut/lsp.h"
+static void req(std::stringstream& in,const std::string& body){in<<"Content-Length: "<<body.size()<<"\r\n\r\n"<<body;}
+int main(){std::stringstream in,out,err;req(in,R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");req(in,R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///test.p","text":"function main() -> void {\n  x := 1;\n  return;\n}\n"}}})");req(in,R"({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///test.p"},"position":{"line":1,"character":2}}})");req(in,R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///test.p"},"position":{"line":1,"character":2}}})");req(in,R"({"jsonrpc":"2.0","id":4,"method":"shutdown","params":{}})");req(in,R"({"jsonrpc":"2.0","method":"exit","params":{}})");int rc=strut::run_lsp(in,out,err);auto s=out.str();if(rc||s.find("completionProvider")==std::string::npos||s.find("publishDiagnostics")==std::string::npos||s.find("inferred x")==std::string::npos){std::cerr<<s<<err.str();return EXIT_FAILURE;}return EXIT_SUCCESS;}

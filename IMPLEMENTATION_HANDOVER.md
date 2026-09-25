@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP96 complete; CP97 is next.**
+Current implementation progress: **CP0–CP97 complete; CP98 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -827,12 +827,12 @@ Current implementation progress: **CP0–CP96 complete; CP97 is next.**
 - [x] symbol handling debug vs release.
 
 ### CP97 — Language server/editor support
-- [ ] parser/typechecker reuse.
-- [ ] diagnostics.
-- [ ] go-to-definition.
-- [ ] completion.
-- [ ] hover/type info.
-- [ ] formatting integration.
+- [x] parser/typechecker reuse.
+- [x] diagnostics.
+- [x] go-to-definition.
+- [x] completion.
+- [x] hover/type info.
+- [x] formatting integration.
 
 ### CP98 — Linux certification
 - [ ] x64.
