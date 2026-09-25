@@ -242,8 +242,12 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::struct_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, st.name});
             auto& fields=struct_fields_[st.name];
+            int data_bases=0;
+            for(const auto& base:st.bases){auto b=struct_fields_.find(base);if(b==struct_fields_.end()&&abstract_methods_.find(base)==abstract_methods_.end()){result.diagnostics.push_back(Diagnostic{st.span,"unknown base struct '"+base+"'"});continue;}if(b!=struct_fields_.end()&&!b->second.empty()){++data_bases;for(const auto& f:b->second)fields.emplace(f.first,f.second);}}
+            if(data_bases>1)result.diagnostics.push_back(Diagnostic{st.span,"multiple data-bearing base structs are not supported; use one concrete base plus contracts"});
             for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else {auto ft=resolved_type_name(field.type.name);if(ft.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{field.span,"ref<T> struct fields require lifetime proof and are not yet allowed"});fields[field.name]=ft;}}
-            for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:st.fields)declare(result,Symbol{field.name,SymbolNamespace::value,field.span,false,resolved_type_name(field.type.name)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
+            std::unordered_set<std::string> own_methods; for(const auto& method:st.body)if(!own_methods.insert(method->name).second)result.diagnostics.push_back(Diagnostic{method->span,"duplicate/conflicting method declaration '"+method->name+"' in struct "+st.name});
+            for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:fields)declare(result,Symbol{field.first,SymbolNamespace::value,method->span,false,resolved_type_name(field.second)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
             break;
         }
         case Stmt::Kind::function_decl: {
@@ -299,8 +303,10 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
-    for(const auto& st:program.statements){if(st->kind==Stmt::Kind::struct_decl){for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}else if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);}
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
+    for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }

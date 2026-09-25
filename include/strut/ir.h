@@ -47,6 +47,7 @@ struct IRStmt {
     std::vector<Parameter> parameters;
     std::vector<Parameter> fields;
     std::vector<std::string> generic_parameters;
+    std::vector<std::string> bases;
     std::string return_type;
     std::string owner;
     bool has_body = false;

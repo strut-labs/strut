@@ -55,6 +55,7 @@ struct Stmt {
     std::vector<Parameter> parameters;
     std::vector<Parameter> fields;
     std::vector<std::string> generic_parameters;
+    std::vector<std::string> bases;
     std::optional<TypeSyntax> return_type;
     std::string owner;
     std::optional<TypeSyntax> alias_target;
@@ -67,6 +68,7 @@ struct LambdaData {
     std::vector<Parameter> parameters;
     std::vector<Parameter> fields;
     std::vector<std::string> generic_parameters;
+    std::vector<std::string> bases;
     ExprPtr expression_body;
     std::vector<StmtPtr> body;
 };

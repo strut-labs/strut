@@ -287,8 +287,9 @@ StmtPtr Parser::parse_struct(ParseResult& result) {
     const Token begin=previous();
     if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected struct name");return nullptr;}
     const Token name=advance();
-    if(!match("{")){error(result,peek(),"expected '{' after struct name");return nullptr;}
     auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::struct_decl;st->name=name.lexeme;
+    if(match(":")){do{auto base=parse_type(result);if(base.name.empty())return nullptr;st->bases.push_back(base.name);}while(match(","));}
+    if(!match("{")){error(result,peek(),"expected '{' after struct name");return nullptr;}
     while(!at_end()&&!check("}")){
         if(match("function")){
             auto method=parse_function(result);if(!method)return nullptr;method->owner=st->name;st->body.push_back(std::move(method));continue;

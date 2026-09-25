@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP43 complete; CP44 is next.**
+Current implementation progress: **CP0–CP44 complete; CP45 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -386,11 +386,11 @@ Current implementation progress: **CP0–CP43 complete; CP44 is next.**
 - [x] tests + regressions.
 
 ### CP44 — Inheritance and multiple contracts
-- [ ] `struct User : Serializable, Printable` syntax.
-- [ ] settle concrete-base/data inheritance rule.
-- [ ] explicitly avoid accidental C++ diamond/layout complexity unless deliberately supported.
-- [ ] method resolution/conflict diagnostics.
-- [ ] tests + regressions.
+- [x] `struct User : Serializable, Printable` syntax.
+- [x] settle concrete-base/data inheritance rule.
+- [x] explicitly avoid accidental C++ diamond/layout complexity unless deliberately supported.
+- [x] method resolution/conflict diagnostics.
+- [x] tests + regressions.
 
 ### CP45 — Enums with explicit values
 - [ ] implicit enum values.
