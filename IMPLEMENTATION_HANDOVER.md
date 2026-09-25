@@ -537,12 +537,12 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 - [x] tests + stress regressions.
 
 ### CP62 — Mutex
-- [ ] `mutex` type.
-- [ ] explicit `lock()` / `unlock()`.
-- [ ] scoped `mtx.lock(() => { ... });`.
-- [ ] exception/error-safe unlocking.
-- [ ] recursive/non-recursive policy.
-- [ ] tests + regressions.
+- [x] `mutex` type.
+- [x] explicit `lock()` / `unlock()`.
+- [x] scoped `mtx.lock(() => { ... });`.
+- [x] exception/error-safe unlocking.
+- [x] recursive/non-recursive policy.
+- [x] tests + regressions.
 
 ### CP63 — Channels/queues
 - [ ] typed channel primitive if design still justified.

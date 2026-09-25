@@ -158,6 +158,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(base.name=="process"&&(m=="terminate"||m=="close_input"))return {TypeKind::void_type,0,"void"};
                 if(base.name=="thread"&&m=="join")return {TypeKind::void_type,0,"void"};
                 if(base.name=="thread"&&m=="joinable")return builtin_type("bool");
+                if(base.name=="mutex"&&(m=="lock"||m=="unlock"))return {TypeKind::void_type,0,"void"};
                 std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort")return {TypeKind::void_type,0,"void"};}
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
@@ -172,6 +173,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "env") return {TypeKind::named,0,"string?"};
                 if (name == "exec" || name == "exec_shell" || name == "pipe_exec") return {TypeKind::named,0,"exec_result"};
                 if (name == "process") return {TypeKind::named,0,"process"};
+                if (name == "mutex") return {TypeKind::named,0,"mutex"};
                 if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(t.name.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"ref<T> cannot be passed directly across a thread boundary; use ptr<T> or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
                 if (name == "make_dir" || name == "remove" || name == "copy" || name == "move" || name == "touch" || name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
@@ -384,7 +386,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); unsafe_depth_=0; catch_all_depth_=0;
-    named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out");
+    named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out"); named_types_.insert("mutex"); named_types_.insert("MutexError");
     struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
     for(const auto& t:{std::string("istream"),std::string("ostream"),std::string("sstream"),std::string("ifstream"),std::string("ofstream")})named_types_.insert(t);
