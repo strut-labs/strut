@@ -954,11 +954,11 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] package compatibility expectations.
 
 ### CP114 — Security/reliability review
-- [ ] safe memory guarantee audit.
-- [ ] unsafe/FFI audit.
-- [ ] package resolver/supply-chain review.
-- [ ] HTTP/TLS default review.
-- [ ] parser/input hardening review.
+- [x] safe memory guarantee audit.
+- [x] unsafe/FFI audit.
+- [x] package resolver/supply-chain review.
+- [x] HTTP/TLS default review.
+- [x] parser/input hardening review.
 
 ### CP115 — Release candidate certification
 - [ ] compiler unit/integration tests green.
