@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP47 complete; CP48 is next.**
+Current implementation progress: **CP0–CP48 complete; CP49 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -414,15 +414,15 @@ Current implementation progress: **CP0–CP47 complete; CP48 is next.**
 - [x] tests + regressions.
 
 ### CP48 — Generics/templates
-- [ ] square-bracket declaration parameters: `function name[T]`, `struct Name[T]`, `operator[T]`.
-- [ ] angle-bracket instantiated types: `Box<int>`, `ptr<T>`, etc.
-- [ ] generic functions and structs.
-- [ ] uppercase template identifier rule.
-- [ ] implicit generic lambda inference from typed uppercase parameters.
-- [ ] no constraint syntax until real use cases justify it.
-- [ ] monomorphisation or chosen predictable strategy.
-- [ ] diagnostics that remain readable.
-- [ ] tests + regressions + docs.
+- [x] square-bracket declaration parameters for functions/structs; operator generics are completed with operator declarations in CP51–CP53.
+- [x] angle-bracket instantiated types: `Box<int>`, `ptr<T>`, etc.
+- [x] generic functions and structs.
+- [x] uppercase template identifier rule.
+- [x] implicit generic lambda inference from typed uppercase parameters.
+- [x] no constraint syntax until real use cases justify it.
+- [x] bootstrap backend uses host C++ templates for predictable instantiation; direct backend may monomorphise later without changing source syntax.
+- [x] diagnostics that remain readable.
+- [x] tests + regressions + docs.
 
 ### CP49 — Checked error signatures
 - [ ] `-> X : Error`.

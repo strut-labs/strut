@@ -306,6 +306,7 @@ StmtPtr Parser::parse_struct(ParseResult& result) {
     if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected struct name");return nullptr;}
     const Token name=advance();
     auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::struct_decl;st->name=name.lexeme;
+    if(match("[")){do{if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected uppercase generic parameter");return nullptr;}std::string g=advance().lexeme;bool uppercase=!g.empty();for(char c:g)if(c>='a'&&c<='z')uppercase=false;if(!uppercase){error(result,previous(),"generic parameter names must be uppercase");return nullptr;}st->generic_parameters.push_back(g);}while(match(","));if(!match("]")){error(result,peek(),"expected ']' after struct generic parameters");return nullptr;}}
     if(match(":")){do{auto base=parse_type(result);if(base.name.empty())return nullptr;st->bases.push_back(base.name);}while(match(","));}
     if(!match("{")){error(result,peek(),"expected '{' after struct name");return nullptr;}
     while(!at_end()&&!check("}")){
