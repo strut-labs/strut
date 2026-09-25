@@ -33,10 +33,11 @@ std::string cpp_type(std::string t){
     if(t=="uint_64") return "std::uint64_t";
     if(t=="double"||t=="double_32") return "float";
     if(t=="double_64") return "double";
-    if(t=="opaque") return "auto";
+    if(t=="opaque"||t=="function") return "auto";
     return t.empty()?"auto":t;
 }
 std::string expr(const IRExpr& e);
+void stmt(std::ostringstream& o,const IRStmt& s,int n);
 std::string json_expr(const IRExpr& e){
     switch(e.kind){
         case IRExpr::Kind::json_object:{std::string out="[](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+e.arguments[i]->text+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
@@ -73,7 +74,7 @@ std::string expr(const IRExpr& e){
             if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
-        case IRExpr::Kind::lambda:return "/* lambda pending */";
+        case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
     } return {};
 }
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');

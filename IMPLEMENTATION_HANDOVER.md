@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP31 complete; CP32 is next.**
+Current implementation progress: **CP0–CP32 complete; CP33 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -287,12 +287,12 @@ Current implementation progress: **CP0–CP31 complete; CP32 is next.**
 - [x] tests + regressions.
 
 ### CP32 — Lambdas and closures
-- [ ] inferred lambda parameter/return types where context permits.
-- [ ] explicit function-type assignments.
-- [ ] capture semantics.
-- [ ] escaping closure lifetime safety.
-- [ ] mutable capture semantics documented.
-- [ ] tests + regressions.
+- [x] inferred lambda parameter/return types where context permits.
+- [x] explicit function-type assignments.
+- [x] capture semantics.
+- [x] escaping closure lifetime safety.
+- [x] mutable capture semantics documented.
+- [x] tests + regressions.
 
 ### CP33 — Higher-order collection functions
 - [ ] `map`.

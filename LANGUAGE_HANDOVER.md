@@ -786,3 +786,7 @@ Do not silently freeze these without explicit review:
 ## Deferred: server-side templating
 
 Nift-style/server-side templating is intentionally not part of the active Strut language plan. It may be reconsidered later if the core language and web/backend ecosystem demonstrate a clear need and the design is fleshed out independently.
+
+## Lambda capture baseline
+
+Lambdas capture referenced outer values by value by default. This makes escaping closures lifetime-safe and keeps captures effectively const. Mutation of external state should be explicit through safe reference/pointer facilities rather than implicit mutable capture. Uppercase undeclared lambda parameter types such as `T` are inferred generic parameters.

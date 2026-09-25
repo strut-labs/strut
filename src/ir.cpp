@@ -1,6 +1,8 @@
 #include "strut/ir.h"
 
 #include <unordered_map>
+#include <algorithm>
+#include <cctype>
 
 #include "strut/type.h"
 
@@ -49,6 +51,7 @@ public:
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
         for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
         out->names = expr->names;
+        if(expr->kind==Expr::Kind::lambda && expr->lambda){out->lambda_async=expr->lambda->is_async;out->lambda_parameters=expr->lambda->parameters;out->lambda_expression=expression(expr->lambda->expression_body.get());for(const auto& child:expr->lambda->body)out->lambda_body.push_back(statement(*child));}
         if (expr->kind == Expr::Kind::index && out->left && out->left->type_name == "json") out->type_name = "json";
         if (expr->kind == Expr::Kind::call && out->left && out->left->kind == IRExpr::Kind::member && out->left->left && out->left->left->kind == IRExpr::Kind::identifier && out->left->left->text == "json") {
             if (out->left->text == "parse" || out->left->text == "encode") out->type_name = "json";
@@ -65,6 +68,9 @@ public:
         if (st.initializer) out->initializer=statement(*st.initializer);
         if (st.kind == Stmt::Kind::declaration) {
             if (out->type_name.empty() && out->value) out->type_name = out->value->type_name;
+            if(out->value && out->value->kind==IRExpr::Kind::lambda && out->type_name.rfind("function<(",0)==0){
+                auto arrow=out->type_name.rfind(")->"); if(arrow!=std::string::npos){auto args=out->type_name.substr(10,arrow-10);std::vector<std::string> types;int depth=0;std::size_t start=0;for(std::size_t i=0;i<=args.size();++i){char c=i<args.size()?args[i]:',';if(c=='<'||c=='['||c=='(')++depth;else if(c=='>'||c==']'||c==')')--depth;else if(c==','&&depth==0){types.push_back(args.substr(start,i-start));start=i+1;}}for(std::size_t i=0;i<out->value->lambda_parameters.size()&&i<types.size();++i)if(out->value->lambda_parameters[i].type.name.empty() || std::all_of(out->value->lambda_parameters[i].type.name.begin(),out->value->lambda_parameters[i].type.name.end(),[](unsigned char c){return !std::islower(c);}))out->value->lambda_parameters[i].type.name=types[i];}
+            }
             value_types_[st.name] = out->type_name.empty() ? "opaque" : out->type_name;
         }
         for (const auto& child : st.body) out->body.push_back(statement(*child));

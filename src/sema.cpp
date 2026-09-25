@@ -145,7 +145,12 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             }
             return {TypeKind::named, 0, "opaque"};
         }
-        case Expr::Kind::lambda: return {TypeKind::named, 0, "function"};
+        case Expr::Kind::lambda: {
+            push_scope();
+            if(expr.lambda){for(const auto& p:expr.lambda->parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,true,p.type.name.empty()?"opaque":resolved_type_name(p.type.name)});if(expr.lambda->expression_body)infer_expression(result,*expr.lambda->expression_body);analyze_statements(result,expr.lambda->body,false);}
+            pop_scope();
+            return {TypeKind::named, 0, "function"};
+        }
         case Expr::Kind::member: {
             auto base=infer_expression(result,*expr.left);
             if (is_nullable_type(base.name)) { result.diagnostics.push_back(Diagnostic{expr.span,"cannot access member of nullable value without ?. or null check"}); return {}; }

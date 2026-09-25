@@ -10,6 +10,8 @@
 
 namespace strut {
 
+struct IRStmt;
+using IRStmtPtr = std::unique_ptr<IRStmt>;
 struct IRExpr;
 using IRExprPtr = std::unique_ptr<IRExpr>;
 struct IRExpr {
@@ -22,10 +24,11 @@ struct IRExpr {
     IRExprPtr right;
     std::vector<IRExprPtr> arguments;
     std::vector<std::string> names;
+    bool lambda_async = false;
+    std::vector<Parameter> lambda_parameters;
+    IRExprPtr lambda_expression;
+    std::vector<IRStmtPtr> lambda_body;
 };
-
-struct IRStmt;
-using IRStmtPtr = std::unique_ptr<IRStmt>;
 struct IRStmt {
     enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl };
     Kind kind = Kind::expression;
