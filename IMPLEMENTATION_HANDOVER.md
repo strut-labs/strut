@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP70 complete; CP71 is next.**
+Current implementation progress: **CP0–CP71 complete; CP72 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -604,12 +604,12 @@ Current implementation progress: **CP0–CP70 complete; CP71 is next.**
 - [x] regression/integration tests.
 
 ### CP71 — Package manifest/cache design
-- [ ] define project/package manifest format.
-- [ ] dependency version syntax.
-- [ ] lock/reproducibility strategy.
-- [ ] shared local cache.
-- [ ] deterministic resolution.
-- [ ] docs.
+- [x] define project/package manifest format.
+- [x] dependency version syntax.
+- [x] lock/reproducibility strategy.
+- [x] shared local cache.
+- [x] deterministic resolution.
+- [x] docs.
 
 ### CP72 — Dedicated `strut-packages` ecosystem contract
 - [ ] establish expected GitHub organisation/repository convention.

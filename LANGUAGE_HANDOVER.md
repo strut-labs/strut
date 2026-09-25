@@ -817,3 +817,7 @@ The bootstrap CLI accepts native library search paths and per-library link inten
 ### Final executable link modes
 
 `--static` requests a fully static final executable where the platform/toolchain permits it; `--dynamic` requests the ordinary dynamically linked platform model. Per-library `--static-lib`/`--dynamic-lib` selections allow mixed builds. `--release` enables optimisation plus platform-appropriate dead-code elimination and symbol stripping. macOS does not generally support a fully static system executable with the default toolchain, so Strut diagnoses that request rather than pretending it succeeded.
+
+### Package metadata
+
+Projects/packages use JSONIC-parsed `strut.json` metadata. Initial dependency requirements are exact semver, caret, tilde, or `*`; resolution is locked into deterministic `strut.lock.json` entries with immutable revision/content checksums. Package contents are shared in a platform cache (or under `STRUT_HOME`) rather than copied into a per-project `node_modules` equivalent.

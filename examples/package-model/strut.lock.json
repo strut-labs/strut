@@ -1,0 +1,21 @@
+{
+  "lock_version": 1,
+  "packages": [
+    {
+      "name": "http",
+      "version": "0.2.4",
+      "source": "github:strut-packages/http",
+      "revision": "example-immutable-revision",
+      "checksum": "sha256:example",
+      "dependencies": []
+    },
+    {
+      "name": "sqlite",
+      "version": "0.3.2",
+      "source": "github:strut-packages/sqlite",
+      "revision": "example-immutable-revision",
+      "checksum": "sha256:example",
+      "dependencies": []
+    }
+  ]
+}
