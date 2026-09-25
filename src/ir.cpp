@@ -31,6 +31,7 @@ public:
             auto it = value_types_.find(expr->text); if (it != value_types_.end()) out->type_name = it->second;
         }
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
+        for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
         return out;
     }
     IRStmtPtr statement(const Stmt& st) {

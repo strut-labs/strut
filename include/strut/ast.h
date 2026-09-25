@@ -26,13 +26,14 @@ using ExprPtr = std::unique_ptr<Expr>;
 struct Expr {
     enum class Kind {
         identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal,
-        unary, binary, grouping, member, index, postfix, lambda
+        unary, binary, grouping, member, index, postfix, call, lambda
     };
     Kind kind;
     std::string text;
     SourceSpan span;
     ExprPtr left;
     ExprPtr right;
+    std::vector<ExprPtr> arguments;
     std::shared_ptr<LambdaData> lambda;
 };
 struct Stmt {

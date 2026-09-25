@@ -193,11 +193,11 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] document backend contract.
 
 ### CP21 — First native code generation
-- [ ] compile integer/string hello-world style programs.
-- [ ] function calls and returns.
-- [ ] basic control flow.
-- [ ] produce a native executable.
-- [ ] verify compiler tests and independent regressions.
+- [x] compile integer/string hello-world style programs.
+- [x] function calls and returns.
+- [x] basic control flow.
+- [x] produce a native executable.
+- [x] verify compiler tests and independent regressions.
 
 ### CP22 — Initial CLI compile workflow
 - [ ] support `strut file.p` as the preferred single-file compile form.

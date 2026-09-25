@@ -97,6 +97,15 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             }
             return {};
         }
+        case Expr::Kind::call: {
+            for (const auto& arg : expr.arguments) infer_expression(result, *arg);
+            if (expr.left && expr.left->kind == Expr::Kind::identifier) {
+                const auto& name = expr.left->text;
+                if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};
+                if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(fn->type_name);
+            }
+            return {TypeKind::named, 0, "opaque"};
+        }
         case Expr::Kind::lambda: return {TypeKind::named, 0, "function"};
         case Expr::Kind::member:
         case Expr::Kind::index: return {TypeKind::named, 0, "opaque"};

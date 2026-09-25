@@ -81,6 +81,12 @@ ExprPtr Parser::parse_primary(ParseResult& result) {
 ExprPtr Parser::parse_postfix(ParseResult& result){
     auto expr=parse_primary(result); if(!expr)return nullptr;
     while(true){
+        if(match("(")){
+            auto n=std::make_unique<Expr>();n->kind=Expr::Kind::call;n->left=std::move(expr);
+            if(!check(")")){do{auto arg=parse_expression(result);if(!arg)return nullptr;n->arguments.push_back(std::move(arg));}while(match(","));}
+            if(!match(")")){error(result,peek(),"expected ')' after call arguments");return nullptr;}
+            n->span=join(n->left->span,previous().span);expr=std::move(n);continue;
+        }
         if(match(".")){if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected member name after '.'");return nullptr;}const Token member=advance();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::member;n->text=member.lexeme;n->span=join(expr->span,member.span);n->left=std::move(expr);expr=std::move(n);continue;}
         if(match("[")){auto idx=parse_expression(result);if(!idx)return nullptr;if(!match("]")){error(result,peek(),"expected ']' after index");return nullptr;}auto n=std::make_unique<Expr>();n->kind=Expr::Kind::index;n->span=join(expr->span,previous().span);n->left=std::move(expr);n->right=std::move(idx);expr=std::move(n);continue;}
         if(match("++")||match("--")){const Token op=previous();auto n=std::make_unique<Expr>();n->kind=Expr::Kind::postfix;n->text=op.lexeme;n->span=join(expr->span,op.span);n->left=std::move(expr);expr=std::move(n);continue;}

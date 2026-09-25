@@ -19,6 +19,7 @@ add_library(strut_compiler STATIC
     src/sema.cpp
     src/type.cpp
     src/ir.cpp
+    src/codegen.cpp
 )
 target_include_directories(strut_compiler
     PUBLIC
@@ -69,3 +70,6 @@ add_test(NAME strut_type_tests COMMAND strut_type_tests)
 add_executable(strut_ir_tests tests/unit/ir_test.cpp)
 target_link_libraries(strut_ir_tests PRIVATE strut_compiler)
 add_test(NAME strut_ir_tests COMMAND strut_ir_tests)
+add_executable(strut_codegen_tests tests/unit/codegen_test.cpp)
+target_link_libraries(strut_codegen_tests PRIVATE strut_compiler)
+add_test(NAME strut_codegen_tests COMMAND strut_codegen_tests)
