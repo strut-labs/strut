@@ -876,11 +876,11 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] destruction-order torture tests.
 
 ### CP104 — Concurrency hardening
-- [ ] thread sanitizer where feasible.
-- [ ] mutex/channel stress.
-- [ ] async scheduler stress.
-- [ ] cancellation/shutdown races.
-- [ ] document guarantees/limitations honestly.
+- [x] thread sanitizer where feasible.
+- [x] mutex/channel stress.
+- [x] async scheduler stress.
+- [x] cancellation/shutdown races.
+- [x] document guarantees/limitations honestly.
 
 ### CP105 — FFI/unsafe hardening
 - [ ] ABI torture fixtures.
