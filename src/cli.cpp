@@ -50,6 +50,7 @@ void print_help(std::ostream& out) {
         << "  --check           Parse/type-check only\n"
         << "  --dump-tokens     Print lexer tokens\n"
         << "  --release         Optimise, strip and enable dead-code elimination\n"
+        << "  --target <name>   native/linux-x64/linux-arm64/macos-arm64/macos-x64/windows-x64\n"
         << "  --static          Request fully static final linking where supported\n"
         << "  --dynamic         Prefer ordinary dynamic final linking\n"
         << "  --lib <name>      Link a native library using platform-default mode\n"
@@ -237,6 +238,7 @@ int run_make_command(bool release_override, bool verbose, std::ostream& out, std
     link.release = release_override || config.mode == "release";
     link.fully_static = config.linking == "static";
     link.prefer_dynamic = config.linking == "dynamic";
+    link.target = config.target;
     if (verbose) out << "project " << root.generic_string() << '\n';
     return compile_source(source, output, link, out, err, verbose);
 }
@@ -415,6 +417,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         if (arg == "--static") { link_options.fully_static = true; link_options.prefer_dynamic = false; continue; }
         if (arg == "--dynamic") { link_options.prefer_dynamic = true; link_options.fully_static = false; continue; }
         if (arg == "--release") { link_options.release = true; continue; }
+        if (arg == "--target") { if(i+1>=argc){err<<"strut: --target requires a target name\n";return 2;} link_options.target=argv[++i]; const std::unordered_set<std::string> valid={"native","linux-x64","linux-arm64","macos-arm64","macos-x64","windows-x64"}; if(!valid.count(link_options.target)){err<<"strut: unsupported target '"<<link_options.target<<"'\n";return 2;} continue; }
         if (arg == "--verbose") { verbose = true; continue; }
         if (arg == "--lib" || arg == "--static-lib" || arg == "--dynamic-lib") {
             if (i + 1 >= argc) { err << "strut: " << arg << " requires a library name or path\n"; return 2; }
@@ -475,8 +478,9 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         }
         if (output_path.empty()) {
             output_path = source_path.parent_path() / source_path.stem();
+if (link_options.target == "windows-x64") output_path += ".exe";
 #ifdef _WIN32
-            output_path += ".exe";
+            else if (link_options.target == "native") output_path += ".exe";
 #endif
         }
         return compile_source(source_path, output_path, link_options, out, err, verbose);

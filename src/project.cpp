@@ -24,6 +24,7 @@ bool parse_build_config(const std::string& text, BuildConfig& out, std::string& 
     if(!field("entrypoint",cfg.entrypoint)||!field("output",cfg.output)||!field("target",cfg.target)||!field("mode",cfg.mode)||!field("linking",cfg.linking)||!field("incremental",cfg.incremental))return false;
     if(cfg.entrypoint.empty()||std::filesystem::path(cfg.entrypoint).is_absolute()){error="entrypoint must be a non-empty relative path";return false;}
     if(cfg.output.empty()||std::filesystem::path(cfg.output).is_absolute()){error="output must be a non-empty relative path";return false;}
+    if(!one_of(cfg.target,{"native","linux-x64","linux-arm64","macos-arm64","macos-x64","windows-x64"})){error="target must be native, linux-x64, linux-arm64, macos-arm64, macos-x64 or windows-x64";return false;}
     if(!one_of(cfg.mode,{"debug","release"})){error="mode must be 'debug' or 'release'";return false;}
     if(!one_of(cfg.linking,{"dynamic","static","mixed"})){error="linking must be 'dynamic', 'static' or 'mixed'";return false;}
     if(!one_of(cfg.incremental,{"modified"})){error="incremental must currently be 'modified'";return false;}

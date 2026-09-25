@@ -715,36 +715,63 @@ inline std::map<strut_string,strut_string> strut_embed_dir(const strut_string& r
 
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
 )CPP";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
+
+namespace {
+std::string target_env_name(const std::string& target) {
+    std::string out = "STRUT_CXX_";
+    for (unsigned char c : target) out += std::isalnum(c) ? static_cast<char>(std::toupper(c)) : '_';
+    return out;
+}
+bool target_windows(const std::string& t) { return t == "windows-x64" || (t == "native"
+#ifdef _WIN32
+    && true
+#else
+    && false
+#endif
+); }
+bool target_macos(const std::string& t) { return t.rfind("macos-", 0) == 0 || (t == "native"
+#ifdef __APPLE__
+    && true
+#else
+    && false
+#endif
+); }
+std::string target_compiler(const std::string& target, bool& msvc) {
+    msvc = false;
+    if (target == "native") {
+        const char* env = std::getenv("CXX");
+#ifdef _WIN32
+        msvc = true; return env && *env ? env : "cl";
+#else
+        return env && *env ? env : "c++";
+#endif
+    }
+    const std::string key = target_env_name(target);
+    if (const char* env = std::getenv(key.c_str()); env && *env) return env;
+    if (target == "linux-x64") return "x86_64-linux-gnu-g++";
+    if (target == "linux-arm64") return "aarch64-linux-gnu-g++";
+    if (target == "windows-x64") return "x86_64-w64-mingw32-g++";
+    if (target == "macos-arm64") return "oa64-clang++";
+    if (target == "macos-x64") return "o64-clang++";
+    return "c++";
+}
+}
 bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
  auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
-#ifdef _WIN32
- const char* def="cl";
-#else
- const char* def="c++";
-#endif
- const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
-#ifdef _WIN32
- cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy /GL ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
-#else
- cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
-#endif
+bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd;
+ if(msvc) cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy /GL ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
+ else cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
  if(std::system(cmd.c_str())!=0){error="native C++ object compilation failed";return false;}return true;
 }
 
 bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesystem::path>& objects,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {
  if(objects.empty()){error="no object files to link";return false;}
-#ifdef _WIN32
- const char* def="cl";
-#else
- const char* def="c++";
-#endif
- const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd=cxx;
-#ifdef _WIN32
+bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd=cxx;
+ if(msvc){
  cmd+=" /nologo "+std::string(link.fully_static?"/MT ":"/MD ");for(const auto&o:objects)cmd+=" \""+o.string()+"\"";cmd+=" /Fe:\""+output.string()+"\"";bool ls=false;for(const auto&d:link.search_paths){if(!ls){cmd+=" /link";ls=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}for(const auto&lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}if(!ls)cmd+=" /link";cmd+=" ws2_32.lib";if(link.release)cmd+=" /OPT:REF /OPT:ICF /LTCG";else cmd+=" /DEBUG";
-#else
-#ifdef __APPLE__
- if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";return false;}
-#endif
+ } else {
+ if(target_macos(link.target)&&link.fully_static){error="fully static final executables are not supported for macOS targets";return false;}
+
  for(const auto& o : objects) { cmd += " \"" + o.string() + "\""; }
  cmd += " -o \"" + output.string() + "\"";
  if (link.fully_static) cmd += " -static";
@@ -766,25 +793,18 @@ bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesyst
  cmd+=" -Wl,--gc-sections -s";
 #endif
  }
-#endif
+}
+ if(!msvc && target_windows(link.target)) cmd += " -lws2_32";
  if(program_uses_sqlite(p)){
-#ifdef _WIN32
- cmd+=" sqlite3.lib";
-#else
- cmd+=" -lsqlite3";
-#endif
+if(msvc) cmd+=" sqlite3.lib"; else cmd+=" -lsqlite3";
  }
  if(program_uses_curl(p)){
-#ifdef _WIN32
- cmd+=" libcurl.lib";
-#else
- cmd+=" -lcurl";
-#endif
+if(msvc) cmd+=" libcurl.lib"; else cmd+=" -lcurl";
  }
  if(std::system(cmd.c_str())!=0){error="native linker failed";return false;}return true;
 }
 
-bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
+bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {if(link.target!="native"){auto obj=output;obj += ".strut.o";auto gen=output;gen += ".strut.cpp";if(!compile_object(p,obj,gen,error,link))return false;bool ok=link_objects(p,{obj},output,error,link);std::error_code ec;std::filesystem::remove(obj,ec);std::filesystem::remove(gen,ec);return ok;}auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
 #ifdef _WIN32
  const char* def="cl";
 #else

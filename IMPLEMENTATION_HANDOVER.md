@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP97 complete; CP98 is next.**
+Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 await platform certification; CP102 is next for local work.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -851,10 +851,10 @@ Current implementation progress: **CP0–CP97 complete; CP98 is next.**
 - [ ] regression suite passes.
 
 ### CP101 — Cross compilation
-- [ ] settle target naming.
-- [ ] produce binaries for supported targets where toolchain permits.
-- [ ] official-package native dependency story.
-- [ ] document limitations explicitly.
+- [x] settle target naming.
+- [x] produce binaries for supported targets where toolchain permits.
+- [x] official-package native dependency story.
+- [x] document limitations explicitly.
 
 ## Deferred ideas
 

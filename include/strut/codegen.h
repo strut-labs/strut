@@ -13,6 +13,7 @@ struct NativeLinkOptions {
     bool fully_static = false;
     bool prefer_dynamic = false;
     bool release = false;
+    std::string target = "native";
 };
 class CppBackend {
 public:
