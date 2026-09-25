@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP90 complete; CP91 is next.**
+Current implementation progress: **CP0–CP91 complete; CP92 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -773,14 +773,14 @@ Current implementation progress: **CP0–CP90 complete; CP91 is next.**
 - [x] no gratuitous aliases that complicate docs/agents.
 
 ### CP91 — Website/docs maintenance audit 1
-- [ ] update every implemented language page.
-- [ ] remove stale speculative syntax.
-- [ ] update install/getting-started/CLI/package docs.
-- [ ] document current functions/templates, operator overloading, streams, `exec`, and linking modes.
-- [ ] update examples to compile against current Strut.
-- [ ] run `nift build`.
-- [ ] inspect mobile menu + 404 after docs growth.
-- [ ] commit website changes.
+- [x] update every implemented language page.
+- [x] remove stale speculative syntax.
+- [x] update install/getting-started/CLI/package docs.
+- [x] document current functions/templates, operator overloading, streams, `exec`, and linking modes.
+- [x] update examples to compile against current Strut.
+- [x] run `nift build`.
+- [x] inspect mobile menu + 404 after docs growth.
+- [x] commit website changes.
 
 ### CP92 — Regression-suite maintenance audit 1
 - [ ] ensure every shipped syntax/type/memory/error/concurrency feature has coverage.
