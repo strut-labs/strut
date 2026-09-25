@@ -13,6 +13,10 @@ std::string literal_type(const Expr& expr) {
         case Expr::Kind::string_literal: return "string";
         case Expr::Kind::boolean_literal: return "bool";
         case Expr::Kind::null_literal: return "null";
+        case Expr::Kind::array_literal: {
+            if (expr.arguments.empty()) return "opaque[]";
+            return literal_type(*expr.arguments.front()) + "[]";
+        }
         case Expr::Kind::lambda: return "function";
         default: return "opaque";
     }

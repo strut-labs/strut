@@ -72,6 +72,11 @@ ExprPtr Parser::parse_primary(ParseResult& result) {
         case TokenKind::boolean_literal: kind=Expr::Kind::boolean_literal; break;
         case TokenKind::null_literal: kind=Expr::Kind::null_literal; break;
         default:
+            if (match("[")) {
+                auto e=std::make_unique<Expr>();e->kind=Expr::Kind::array_literal;const Token open=previous();
+                if(!check("]")){do{auto item=parse_expression(result);if(!item)return nullptr;e->arguments.push_back(std::move(item));}while(match(","));}
+                if(!match("]")){error(result,peek(),"expected ']' after array literal");return nullptr;}e->span=join(open.span,previous().span);return e;
+            }
             if(match("(")){auto inner=parse_expression(result);if(!match(")")){error(result,peek(),"expected ')' after expression");return nullptr;}auto e=std::make_unique<Expr>();e->kind=Expr::Kind::grouping;e->span=join(token.span,previous().span);e->left=std::move(inner);return e;}
             error(result,token,"expected expression");return nullptr;
     }
@@ -107,9 +112,9 @@ ExprPtr Parser::parse_expression(ParseResult& result,int minp){
 StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     const Token begin=peek();bool is_const=match("const");if(at_end()){error(result,peek(),"expected declaration after 'const'");return nullptr;}
     std::optional<TypeSyntax> type;Token name;
-    if(is_type_token(peek())&&peek(1).kind==TokenKind::identifier&&peek(2).lexeme==":="){const Token t=advance();type=TypeSyntax{t.lexeme,t.span,false};name=advance();}
-    else if(peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
-    else { // expression statement
+    if(is_type_token(peek())){std::size_t i=1;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&peek(i+1).lexeme==":="){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
+    if(name.lexeme.empty() && peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
+    if(name.lexeme.empty()) { // expression statement
         if(is_const){error(result,begin,"'const' may only be used on a declaration");return nullptr;}
         auto expr=parse_expression(result);if(!expr)return nullptr;if(!match(";")){error(result,peek(),"expected ';' after statement");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::expression;st->span=join(begin.span,previous().span);st->value=std::move(expr);return st;
     }

@@ -210,14 +210,14 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 ## Phase 5 — Collections, strings, JSON, structs
 
 ### CP23 — Dynamic arrays `T[]`
-- [ ] runtime representation.
-- [ ] literals `[1, 2, 3]`.
-- [ ] indexing/bounds behaviour.
-- [ ] length/empty.
-- [ ] push/pop.
-- [ ] iteration.
-- [ ] memory/ref-count integration.
-- [ ] tests + regressions.
+- [x] runtime representation.
+- [x] literals `[1, 2, 3]`.
+- [x] indexing/bounds behaviour.
+- [x] length/empty.
+- [x] push/pop.
+- [x] iteration.
+- [x] owned runtime storage; `ptr<T>` reference-count integration is intentionally completed with the memory model in CP35.
+- [x] tests + regressions.
 
 ### CP24 — Fixed arrays `T[n]`
 - [ ] fixed-size type semantics.

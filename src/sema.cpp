@@ -68,6 +68,12 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::string_literal: return {TypeKind::string_type, 0, "string"};
         case Expr::Kind::boolean_literal: return {TypeKind::bool_type, 0, "bool"};
         case Expr::Kind::null_literal: return {TypeKind::null_type, 0, "null"};
+        case Expr::Kind::array_literal: {
+            if (expr.arguments.empty()) return {TypeKind::named,0,"opaque[]"};
+            auto first=infer_expression(result,*expr.arguments.front());
+            for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i]);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch"});}
+            return {TypeKind::named,0,(first.name.empty()?std::string("opaque"):first.name)+"[]"};
+        }
         case Expr::Kind::identifier: {
             auto* symbol = lookup(expr.text, SymbolNamespace::value);
             if (!symbol) {
