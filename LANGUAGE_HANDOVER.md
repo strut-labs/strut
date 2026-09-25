@@ -809,3 +809,7 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 ## Unsafe/raw pointer baseline
 
 `raw_ptr<T>` is an unmanaged raw pointer and raw operations are restricted to `unsafe { ... }`. `raw(ptr_value)` exposes a non-owning raw address from a safe `ptr<T>` without changing ownership. Raw dereference and pointer arithmetic are only legal inside unsafe blocks. There is no automatic promotion from `raw_ptr<T>` back to owning `ptr<T>`; callers must not manufacture ownership from an unmanaged address. `weak_ptr<T>` must be upgraded with `.lock()` before converting to raw.
+
+### Native library selection
+
+The bootstrap CLI accepts native library search paths and per-library link intent with `--lib`, `--static-lib`, `--dynamic-lib`, and `--lib-path`. Exact library paths are also accepted. Static/dynamic availability remains platform/toolchain dependent; the compiler must diagnose unsupported requests rather than silently changing modes.

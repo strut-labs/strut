@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP68 complete; CP69 is next.**
+Current implementation progress: **CP0–CP69 complete; CP70 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -588,11 +588,11 @@ Current implementation progress: **CP0–CP68 complete; CP69 is next.**
 - [x] tests against tiny C fixtures.
 
 ### CP69 — Native library linking model
-- [ ] support native static libraries and dynamic libraries through the FFI/build system.
-- [ ] Linux `.a`/`.so`, macOS `.a`/`.dylib`, Windows static/import library + `.dll` model as appropriate.
-- [ ] package/build metadata can request static, dynamic, or platform-default linking.
-- [ ] fail with clear diagnostics when requested link mode is unavailable.
-- [ ] tests against tiny native libraries in both modes.
+- [x] support native static libraries and dynamic libraries through the FFI/build system.
+- [x] Linux `.a`/`.so`, macOS `.a`/`.dylib`, Windows static/import library + `.dll` model as appropriate.
+- [x] package/build metadata can request static, dynamic, or platform-default linking.
+- [x] fail with clear diagnostics when requested link mode is unavailable.
+- [x] tests against tiny native libraries in both modes.
 
 ### CP70 — Static, dynamic, and mixed project builds
 - [ ] fully static build mode where platform/dependencies permit.

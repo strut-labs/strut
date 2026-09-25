@@ -30,6 +30,13 @@ void print_help(std::ostream& out) {
         << "      --dump-tokens   Lex a .p/.h file and print its token stream\n"
         << "      --check         Parse/check a .p/.h file without code generation\n"
         << "  -o <path>           Write compiled executable to path\n"
+        << "      --lib <name>     Link a native library using platform-default mode\n"
+        << "      --static-lib <n> Link one native library statically where supported\n"
+        << "      --dynamic-lib <n> Link one native library dynamically\n"
+        << "      --lib-path <dir> Add a native library search path\n"
+        << "      --static         Request a fully static final link where supported\n"
+        << "      --dynamic        Prefer an ordinary dynamically linked final binary\n"
+        << "      --release        Optimise, strip and enable dead-code elimination\n"
         << "      compile         Optional explicit compile command alias\n";
 }
 
@@ -113,7 +120,7 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
     return checked.ok()?0:1;
 }
 
-int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, std::ostream& err) {
+int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& err) {
     Program program; if(!load_program(path,program,err)) return 1;
     SemanticAnalyzer sema; auto checked=sema.analyze(program);
     for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
@@ -121,7 +128,7 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     if(!checked.ok())return 1;
     IRLowerer lowerer; auto lowered=lowerer.lower(program); if(!lowered.ok())return 1;
     CppBackend backend; std::string backend_error;
-    if(!backend.compile(lowered.program,output,backend_error)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}
+    if(!backend.compile(lowered.program,output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}
     return 0;
 }
 
@@ -135,6 +142,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     std::filesystem::path source_path;
     std::filesystem::path output_path;
     bool explicit_compile = false;
+    NativeLinkOptions link_options;
 
     if (argc == 1) {
         print_help(out);
@@ -157,6 +165,17 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         }
         if (arg == "--dump-tokens") { want_dump_tokens = true; continue; }
         if (arg == "--check") { want_check = true; continue; }
+        if (arg == "--static") { link_options.fully_static = true; link_options.prefer_dynamic = false; continue; }
+        if (arg == "--dynamic") { link_options.prefer_dynamic = true; link_options.fully_static = false; continue; }
+        if (arg == "--release") { link_options.release = true; continue; }
+        if (arg == "--lib" || arg == "--static-lib" || arg == "--dynamic-lib") {
+            if (i + 1 >= argc) { err << "strut: " << arg << " requires a library name or path\n"; return 2; }
+            NativeLinkMode mode = NativeLinkMode::platform_default; if(arg=="--static-lib")mode=NativeLinkMode::static_link;else if(arg=="--dynamic-lib")mode=NativeLinkMode::dynamic_link;
+            std::string value(argv[++i]); std::filesystem::path lp(value);
+            if ((lp.has_parent_path() || lp.is_absolute()) && !std::filesystem::exists(lp)) { err << "strut: native library not found: " << value << '\n'; return 2; }
+            link_options.libraries.push_back(NativeLibrary{std::move(value),mode}); continue;
+        }
+        if (arg == "--lib-path") { if(i+1>=argc){err<<"strut: --lib-path requires a directory\n";return 2;} link_options.search_paths.emplace_back(argv[++i]); continue; }
         if (arg == "compile" && source_path.empty()) { explicit_compile = true; continue; }
         if (arg == "-o") {
             if (i + 1 >= argc) { err << "strut: -o requires an output path\n"; return 2; }
@@ -212,7 +231,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             output_path += ".exe";
 #endif
         }
-        return compile_source(source_path, output_path, err);
+        return compile_source(source_path, output_path, link_options, err);
     }
 
     (void)explicit_compile;
