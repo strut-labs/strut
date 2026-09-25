@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP76 complete; CP77 is next.**
+Current implementation progress: **CP0–CP81 complete; CP82 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 

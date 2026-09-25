@@ -44,7 +44,7 @@ When a design decision changes, update these documents before or alongside imple
 
 ## Current status
 
-The compiler implementation has not started. The first checkpoints are intentionally project/bootstrap work: lock the initial design contract, establish builds/tests, establish the independent regression suite, and turn the barebones website into the public Strut documentation site before large amounts of implementation make documentation catch-up expensive.
+CP0–CP81 are complete. Strut now has a working native compiler bootstrap, type system and memory model, concurrency/async support, packages, TCP/TLS/HTTP client support, a plain HTTP server, external/system SQLite integration, compile-time embedded resources, and the first production-ish one-binary web-app fixture. CP82 starts the persistent `.strut` project/object-cache work.
 
 ## Major acceptance target
 
