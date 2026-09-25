@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP94 complete; CP95 is next.**
+Current implementation progress: **CP0–CP95 complete; CP96 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -816,10 +816,10 @@ Current implementation progress: **CP0–CP94 complete; CP95 is next.**
 - [x] benchmark every claimed win.
 
 ### CP95 — Reference-count optimisation pass
-- [ ] elide provably unnecessary increments/decrements.
-- [ ] prefer `ref<T>` borrowing in hot internal APIs.
-- [ ] benchmark before/after.
-- [ ] verify memory semantics unchanged with regression suite/sanitizers.
+- [x] elide provably unnecessary increments/decrements.
+- [x] prefer `ref<T>` borrowing in hot internal APIs.
+- [x] benchmark before/after.
+- [x] verify memory semantics unchanged with regression suite/sanitizers.
 
 ### CP96 — Debug information and stack traces
 - [ ] useful source-level debug metadata.

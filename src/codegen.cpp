@@ -97,6 +97,22 @@ std::string compile_embed_dir(const std::string& quoted){
 
 std::string expr(const IRExpr& e);
 void stmt(std::ostringstream& o,const IRStmt& s,int n);
+
+bool stmt_assigns_name(const IRStmt& s,const std::string& name){
+    if(s.kind==IRStmt::Kind::assignment && !s.target && s.name==name)return true;
+    auto scan=[&](const std::vector<IRStmtPtr>& body){for(const auto& child:body)if(stmt_assigns_name(*child,name))return true;return false;};
+    if(scan(s.body)||scan(s.else_body))return true;
+    for(const auto& c:s.switch_cases)if(scan(c.body))return true;
+    for(const auto& c:s.catches)if(scan(c.body))return true;
+    if(s.initializer&&stmt_assigns_name(*s.initializer,name))return true;
+    return false;
+}
+bool body_assigns_name(const std::vector<IRStmtPtr>& body,const std::string& name){for(const auto& s:body)if(stmt_assigns_name(*s,name))return true;return false;}
+std::string function_param_cpp(const IRStmt& fn,const Parameter& p){
+    const auto type=cpp_type(p.type.name);
+    if(!fn.is_extern_c && p.type.name.rfind("ptr<",0)==0 && !body_assigns_name(fn.body,p.name))return "const "+type+"& "+p.name;
+    return type+" "+p.name;
+}
 std::string json_expr(const IRExpr& e){
     switch(e.kind){
         case IRExpr::Kind::json_object:{std::string out="[&](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+e.arguments[i]->text+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
@@ -186,7 +202,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
                 else{o<<"void "<<helper<<"("<<cpp_type(dest)<<"& "<<s.parameters[0].name<<","<<operator_param_cpp(s.parameters[1].type.name,s.parameters[1].name)<<") {\n";if(s.value&&s.value->kind==IRExpr::Kind::lambda){if(s.value->lambda_expression)o<<"    (void)"<<expr(*s.value->lambda_expression)<<";\n";else for(const auto& c:s.value->lambda_body)stmt(o,*c,4);}else for(const auto& c:s.body)stmt(o,*c,4);o<<"}\n";}break;
             }
             if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}o<<operator_return_cpp(s.return_type)<<" operator"<<s.op<<"(";for(std::size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<operator_param_cpp(s.parameters[i].type.name,s.parameters[i].name);}o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";if(s.value&&s.value->kind==IRExpr::Kind::lambda){if(s.value->lambda_expression)o<<std::string(n+4,' ')<<"return "<<expr(*s.value->lambda_expression)<<";\n";else for(const auto& c:s.value->lambda_body)stmt(o,*c,n+4);}else for(const auto& c:s.body)stmt(o,*c,n+4);o<<"}\n";break;}
-        case IRStmt::Kind::function_decl:{if(s.is_extern_c)o<<"extern \"C\" ";if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}const bool main_void=(s.name=="main"&&s.return_type=="void"&&!s.is_async);o<<(s.is_async?("strut_future<"+cpp_type(s.return_type)+">"):(main_void?"int":cpp_type(s.return_type)))<<" ";if(!s.owner.empty())o<<s.owner<<"::";o<<s.name<<"(";for(size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<cpp_type(s.parameters[i].type.name)<<" "<<s.parameters[i].name;}o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";if(s.is_async){o<<"    return strut_async([=]() mutable {\n";for(auto&c:s.body)stmt(o,*c,n+8);o<<"    });\n";}else{for(auto&c:s.body){if(main_void&&c->kind==IRStmt::Kind::return_stmt&&!c->value){o<<std::string(n+4,' ')<<"return 0;\n";}else stmt(o,*c,n+4);}}o<<"}\n";break;}
+        case IRStmt::Kind::function_decl:{if(s.is_extern_c)o<<"extern \"C\" ";if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}const bool main_void=(s.name=="main"&&s.return_type=="void"&&!s.is_async);o<<(s.is_async?("strut_future<"+cpp_type(s.return_type)+">"):(main_void?"int":cpp_type(s.return_type)))<<" ";if(!s.owner.empty())o<<s.owner<<"::";o<<s.name<<"(";for(size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<function_param_cpp(s,s.parameters[i]);}o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";if(s.is_async){o<<"    return strut_async([=]() mutable {\n";for(auto&c:s.body)stmt(o,*c,n+8);o<<"    });\n";}else{for(auto&c:s.body){if(main_void&&c->kind==IRStmt::Kind::return_stmt&&!c->value){o<<std::string(n+4,' ')<<"return 0;\n";}else stmt(o,*c,n+4);}}o<<"}\n";break;}
         default:break;
     }}
 }
