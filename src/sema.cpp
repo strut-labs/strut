@@ -4,6 +4,10 @@
 #include <cctype>
 
 namespace strut {
+namespace {
+std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}sig+=")->"+(st.return_type?st.return_type->name:std::string("void"))+">";return sig;}
+std::string function_return(std::string_view sig){auto p=sig.rfind(")->");if(p==std::string_view::npos||sig.empty()||sig.back()!='>')return "opaque";return std::string(sig.substr(p+3,sig.size()-(p+4)));}
+}
 
 std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& scope, SymbolNamespace ns) {
     if (ns == SymbolNamespace::function) return scope.functions;
@@ -95,11 +99,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::identifier: {
             auto* symbol = lookup(expr.text, SymbolNamespace::value);
-            if (!symbol) {
-                result.diagnostics.push_back(Diagnostic{expr.span, "unknown value '" + expr.text + "'"});
-                return {};
-            }
-            return resolve_type(symbol->type_name);
+            if (symbol) return resolve_type(symbol->type_name);
+            if (auto* fn=lookup(expr.text,SymbolNamespace::function)) return {TypeKind::named,0,fn->type_name};
+            result.diagnostics.push_back(Diagnostic{expr.span, "unknown value '" + expr.text + "'"});
+            return {};
         }
         case Expr::Kind::grouping: return expr.left ? infer_expression(result, *expr.left) : TypeInfo{};
         case Expr::Kind::unary:
@@ -137,7 +140,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
                 if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};
-                if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(fn->type_name);
+                if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
+                if (auto* value = lookup(name, SymbolNamespace::value); value && value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name));
             }
             return {TypeKind::named, 0, "opaque"};
         }
@@ -220,7 +224,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             break;
         }
         case Stmt::Kind::function_decl: {
-            declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, st.return_type ? st.return_type->name : "void"});
+            declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
             if (st.has_body) {
                 push_scope();
                 if(!st.owner.empty()){declare(result,Symbol{"this",SymbolNamespace::value,st.span,true,st.owner});auto fit=struct_fields_.find(st.owner);if(fit!=struct_fields_.end())for(const auto& f:fit->second)declare(result,Symbol{f.first,SymbolNamespace::value,st.span,false,f.second});}

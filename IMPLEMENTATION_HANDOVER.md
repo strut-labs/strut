@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP30 complete; CP31 is next.**
+Current implementation progress: **CP0–CP31 complete; CP32 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -280,11 +280,11 @@ Current implementation progress: **CP0–CP30 complete; CP31 is next.**
 ## Phase 6 — First-class functions and collection ergonomics
 
 ### CP31 — First-class named functions
-- [ ] assign functions to variables.
-- [ ] pass functions as arguments.
-- [ ] return functions where safe.
-- [ ] function identity semantics.
-- [ ] tests + regressions.
+- [x] assign functions to variables.
+- [x] pass functions as arguments.
+- [x] return functions where safe.
+- [x] function identity semantics.
+- [x] tests + regressions.
 
 ### CP32 — Lambdas and closures
 - [ ] inferred lambda parameter/return types where context permits.

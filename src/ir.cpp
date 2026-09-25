@@ -32,13 +32,19 @@ IRStmt::Kind convert_stmt_kind(Stmt::Kind kind) { return static_cast<IRStmt::Kin
 
 class LoweringContext {
 public:
+    void register_function(const Stmt& st) {
+        std::string sig="function<(";
+        for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}
+        sig+=")->"+(st.return_type?st.return_type->name:std::string("void"))+">";
+        function_types_[st.name]=sig;
+    }
     IRExprPtr expression(const Expr* expr) {
         if (!expr) return nullptr;
         auto out = std::make_unique<IRExpr>();
         out->kind = convert_expr_kind(expr->kind); out->text = expr->text; out->span = expr->span;
         out->type_name = literal_type(*expr);
         if (expr->kind == Expr::Kind::identifier) {
-            auto it = value_types_.find(expr->text); if (it != value_types_.end()) out->type_name = it->second;
+            auto it = value_types_.find(expr->text); if (it != value_types_.end()) out->type_name = it->second; else { auto fn=function_types_.find(expr->text); if(fn!=function_types_.end()) out->type_name=fn->second; }
         }
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
         for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
@@ -67,10 +73,12 @@ public:
     }
 private:
     std::unordered_map<std::string,std::string> value_types_;
+    std::unordered_map<std::string,std::string> function_types_;
 };
 }
 IRResult IRLowerer::lower(const Program& program) {
     IRResult result; LoweringContext ctx;
+    for (const auto& statement : program.statements) if(statement->kind==Stmt::Kind::function_decl) ctx.register_function(*statement);
     for (const auto& statement : program.statements) result.program.statements.push_back(ctx.statement(*statement));
     return result;
 }
