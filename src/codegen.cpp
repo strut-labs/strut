@@ -66,7 +66,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::json_object:return json_expr(e);
         case IRExpr::Kind::struct_literal:{std::string out="[](){"+e.text+" value{};";for(std::size_t i=0;i<e.names.size();++i)out+="value."+e.names[i]+"="+expr(*e.arguments[i])+";";return out+"return value;}()";}
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
-        case IRExpr::Kind::unary:return e.text+expr(*e.right);
+        case IRExpr::Kind::unary:if(e.text=="*"&&e.right&&e.right->type_name.rfind("ptr<",0)==0)return "strut_deref("+expr(*e.right)+")";return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
@@ -148,6 +148,7 @@ template<class T> bool operator!=(strut_null_t,const std::shared_ptr<T>& v){retu
 template<class T> std::shared_ptr<typename std::decay<T>::type> strut_ptr(T&& value){using U=typename std::decay<T>::type;return std::make_shared<U>(std::forward<T>(value));}
 template<class T> std::weak_ptr<T> strut_weak(const std::shared_ptr<T>& value){return std::weak_ptr<T>(value);}
 template<class T> T* strut_raw(const std::shared_ptr<T>& value){return value.get();}
+template<class T> T& strut_deref(const std::shared_ptr<T>& value){if(!value)throw std::runtime_error("null ptr<T> dereference");return *value;}
 template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f) -> std::optional<typename std::decay<decltype(f(*value))>::type> { if(!value)return std::nullopt; return f(*value); }
 template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback);}
 

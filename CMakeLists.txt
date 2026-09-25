@@ -6,8 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(STRUT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(STRUT_SANITIZERS "Enable address/undefined sanitizers on supported compilers" OFF)
 
 enable_testing()
+
+if(STRUT_SANITIZERS AND NOT MSVC)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 add_library(strut_compiler STATIC
     src/cli.cpp
@@ -40,6 +46,8 @@ else()
         target_compile_options(strut_compiler PRIVATE -Werror)
     endif()
 endif()
+
+
 
 add_executable(strut src/main.cpp)
 target_link_libraries(strut PRIVATE strut_compiler)

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP39 complete; CP40 is next.**
+Current implementation progress: **CP0–CP40 complete; CP41 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -354,14 +354,14 @@ Current implementation progress: **CP0–CP39 complete; CP40 is next.**
 - [x] tests + regressions.
 
 ### CP40 — Memory-safety certification pass 1
-- [ ] use-after-free attempts.
-- [ ] dangling `ref<T>` attempts.
-- [ ] invalid weak upgrades.
-- [ ] double-destruction attempts.
-- [ ] null safe-pointer cases.
-- [ ] iterator/reference invalidation cases.
-- [ ] sanitizers/Valgrind or equivalent on compiler/runtime tests.
-- [ ] document what safe Strut guarantees and what `unsafe` opts out of.
+- [x] use-after-free attempts.
+- [x] dangling `ref<T>` attempts.
+- [x] invalid weak upgrades.
+- [x] double-destruction attempts.
+- [x] null safe-pointer cases.
+- [x] iterator/reference invalidation cases.
+- [x] sanitizers/Valgrind or equivalent on compiler/runtime tests.
+- [x] document what safe Strut guarantees and what `unsafe` opts out of.
 
 ## Phase 8 — Includes/modules, structs-as-contracts, generics, enums, errors
 
