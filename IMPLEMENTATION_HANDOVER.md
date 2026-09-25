@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP89 complete; CP90 is next.**
+Current implementation progress: **CP0–CP90 complete; CP91 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -765,12 +765,12 @@ Current implementation progress: **CP0–CP89 complete; CP90 is next.**
 - [x] formatter fixtures in regression suite.
 
 ### CP90 — CLI polish
-- [ ] help/version.
-- [ ] compile/make/test/fmt/package commands settled.
-- [ ] static/dynamic/mixed linking flags and project configuration settled.
-- [ ] consistent exit codes.
-- [ ] shell completion if worthwhile.
-- [ ] no gratuitous aliases that complicate docs/agents.
+- [x] help/version.
+- [x] compile/make/test/fmt/package commands settled.
+- [x] static/dynamic/mixed linking flags and project configuration settled.
+- [x] consistent exit codes.
+- [x] shell completion if worthwhile.
+- [x] no gratuitous aliases that complicate docs/agents.
 
 ### CP91 — Website/docs maintenance audit 1
 - [ ] update every implemented language page.

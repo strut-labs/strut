@@ -29,31 +29,49 @@ namespace strut {
 namespace {
 void print_help(std::ostream& out) {
     out << "Strut " << version << "\n"
-        << "Usage: strut [options] [source.p|source.h]\n\n"
-        << "Options:\n"
-        << "  -h, --help          Show this help\n"
-        << "  -v, --version       Show compiler version\n"
-        << "      --json          With --version, emit JSON metadata\n"
-        << "      --dump-tokens   Lex a .p/.h file and print its token stream\n"
-        << "      --check         Parse/check a .p/.h file without code generation\n"
-        << "  -o <path>           Write compiled executable to path\n"
-        << "      --lib <name>     Link a native library using platform-default mode\n"
-        << "      --static-lib <n> Link one native library statically where supported\n"
-        << "      --dynamic-lib <n> Link one native library dynamically\n"
-        << "      --lib-path <dir> Add a native library search path\n"
-        << "      --static         Request a fully static final link where supported\n"
-        << "      --dynamic        Prefer an ordinary dynamically linked final binary\n"
-        << "      --release        Optimise, strip and enable dead-code elimination\n"
-        << "      --verbose        Explain object rebuild/reuse decisions\n"
-        << "      compile         Optional explicit compile command alias\n"
-        << "      make            Build the current Strut project\n"
-        << "      test [filter]   Build and run tests/**/*_test.p\n"
-        << "      fmt [path]      Format Strut source (project by default)\n"
-        << "      add <path>      Add a local package checkout to this project\n"
-        << "      remove <name>   Remove a package dependency\n"
-        << "      list            List project dependencies\n"
-        << "      install         Resolve dependencies from the shared cache\n"
-        << "      init            Create .strut/config.json build configuration\n";
+        << "Usage: strut <source.p> [compile options]\n"
+        << "       strut <command> [options]\n\n"
+        << "Commands:\n"
+        << "  compile <file>    Explicit form of 'strut <file>'\n"
+        << "  init              Create .strut/config.json\n"
+        << "  make              Build the current project\n"
+        << "  test [filter]     Build and run tests/**/*_test.p\n"
+        << "  fmt [path]        Format source (project by default)\n"
+        << "  add <path>        Add a local package checkout\n"
+        << "  remove <name>     Remove a package dependency\n"
+        << "  list              List project dependencies\n"
+        << "  install           Resolve dependencies from the shared cache\n"
+        << "  help [command]    Show general or command help\n\n"
+        << "Compile options:\n"
+        << "  -o <path>         Output executable path\n"
+        << "  --check           Parse/type-check only\n"
+        << "  --dump-tokens     Print lexer tokens\n"
+        << "  --release         Optimise, strip and enable dead-code elimination\n"
+        << "  --static          Request fully static final linking where supported\n"
+        << "  --dynamic         Prefer ordinary dynamic final linking\n"
+        << "  --lib <name>      Link a native library using platform-default mode\n"
+        << "  --static-lib <n>  Link one native library statically\n"
+        << "  --dynamic-lib <n> Link one native library dynamically\n"
+        << "  --lib-path <dir>  Add a native library search path\n"
+        << "  --verbose         Explain object rebuild/reuse decisions\n\n"
+        << "Global options:\n"
+        << "  -h, --help        Show help\n"
+        << "  -v, --version     Show compiler version\n"
+        << "  --json            With --version, emit JSON metadata\n\n"
+        << "Exit codes: 0 success, 1 compile/build/test failure, 2 command-line usage/configuration error.\n";
+}
+
+void print_command_help(std::string_view command, std::ostream& out) {
+    if (command == "compile") out << "Usage: strut compile <source.p> [-o path] [--release] [link options]\n";
+    else if (command == "init") out << "Usage: strut init\nCreates .strut/config.json for the current project.\n";
+    else if (command == "make") out << "Usage: strut make [--release] [--verbose]\nBuilds the configured project entrypoint using incremental object metadata.\n";
+    else if (command == "test") out << "Usage: strut test [filter] [--verbose]\nDiscovers tests/**/*_test.p; tests run deterministically and sequentially.\n";
+    else if (command == "fmt") out << "Usage: strut fmt [path] [--check]\nFormats .p/.h files; --check reports drift without writing.\n";
+    else if (command == "add") out << "Usage: strut add <local-package-path>\n";
+    else if (command == "remove") out << "Usage: strut remove <package-name>\n";
+    else if (command == "list") out << "Usage: strut list\n";
+    else if (command == "install") out << "Usage: strut install\n";
+    else print_help(out);
 }
 
 std::string escaped_lexeme(std::string_view value) {
@@ -325,6 +343,14 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
 
     if (argc >= 2) {
         const std::string command(argv[1]);
+        if (command == "help") {
+            if (argc > 3) { err << "strut: help accepts at most one command\n"; return 2; }
+            if (argc == 2) print_help(out); else print_command_help(argv[2], out);
+            return 0;
+        }
+        if (argc >= 3 && (std::string_view(argv[2]) == "--help" || std::string_view(argv[2]) == "-h") && command != "compile") {
+            print_command_help(command, out); return 0;
+        }
         if (command == "init") {
             if (argc != 2) { err << "strut: init takes no arguments\n"; return 2; }
             std::string init_error;

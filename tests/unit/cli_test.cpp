@@ -75,5 +75,13 @@ int main() {
         std::filesystem::current_path(old); std::filesystem::remove_all(root, ec);
     }
 
+
+    {
+        char arg0[]="strut"; char arg1[]="make"; char arg2[]="--help"; char* argv[]={arg0,arg1,arg2};
+        std::ostringstream out; std::ostringstream err;
+        require(strut::run_cli(3,argv,out,err)==0,"command help status");
+        require(out.str().find("Usage: strut make")!=std::string::npos,"command help text");
+    }
+
     return 0;
 }
