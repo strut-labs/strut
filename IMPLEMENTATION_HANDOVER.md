@@ -200,12 +200,12 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] verify compiler tests and independent regressions.
 
 ### CP22 — Initial CLI compile workflow
-- [ ] support `strut file.p` as the preferred single-file compile form.
-- [ ] define deterministic default output naming.
-- [ ] add explicit output option.
-- [ ] decide whether `strut compile file.p` exists as an alias/explicit form.
-- [ ] do not add `strut run` by inertia.
-- [ ] docs + regressions.
+- [x] support `strut file.p` as the preferred single-file compile form.
+- [x] define deterministic default output naming.
+- [x] add explicit output option.
+- [x] decide whether `strut compile file.p` exists as an alias/explicit form.
+- [x] do not add `strut run` by inertia.
+- [x] docs + regressions.
 
 ## Phase 5 — Collections, strings, JSON, structs
 

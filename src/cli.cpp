@@ -8,6 +8,8 @@
 
 #include "json.h"
 #include "strut/lexer.h"
+#include "strut/ir.h"
+#include "strut/codegen.h"
 #include "strut/diagnostic.h"
 #include "strut/parser.h"
 #include "strut/source.h"
@@ -25,7 +27,9 @@ void print_help(std::ostream& out) {
         << "  -v, --version       Show compiler version\n"
         << "      --json          With --version, emit JSON metadata\n"
         << "      --dump-tokens   Lex a .p/.h file and print its token stream\n"
-        << "      --check         Parse/check a .p/.h file without code generation\n";
+        << "      --check         Parse/check a .p/.h file without code generation\n"
+        << "  -o <path>           Write compiled executable to path\n"
+        << "      compile         Optional explicit compile command alias\n";
 }
 
 std::string escaped_lexeme(std::string_view value) {
@@ -91,6 +95,26 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
     return checked.ok() ? 0 : 1;
 }
 
+int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, std::ostream& err) {
+    std::string load_error;
+    auto source = SourceFile::load(path, load_error);
+    if (!source) { err << path.string() << ": error: " << load_error << '\n'; return 2; }
+    Lexer lexer(*source); auto lexed = lexer.lex();
+    for (const auto& d : lexed.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
+    if (!lexed.ok()) return 1;
+    Parser parser(lexed.tokens); auto parsed = parser.parse();
+    for (const auto& d : parsed.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
+    if (!parsed.ok()) return 1;
+    SemanticAnalyzer sema; auto checked = sema.analyze(parsed.program);
+    for (const auto& d : checked.diagnostics) err << format_diagnostic(path.string(), d) << '\n';
+    if (!checked.ok()) return 1;
+    IRLowerer lowerer; auto lowered = lowerer.lower(parsed.program);
+    if (!lowered.ok()) return 1;
+    CppBackend backend; std::string backend_error;
+    if (!backend.compile(lowered.program, output, backend_error)) { err << path.string() << ": error: " << backend_error << '\n'; return 1; }
+    return 0;
+}
+
 }
 
 int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
@@ -99,6 +123,8 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     bool want_dump_tokens = false;
     bool want_check = false;
     std::filesystem::path source_path;
+    std::filesystem::path output_path;
+    bool explicit_compile = false;
 
     if (argc == 1) {
         print_help(out);
@@ -121,6 +147,11 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         }
         if (arg == "--dump-tokens") { want_dump_tokens = true; continue; }
         if (arg == "--check") { want_check = true; continue; }
+        if (arg == "compile" && source_path.empty()) { explicit_compile = true; continue; }
+        if (arg == "-o") {
+            if (i + 1 >= argc) { err << "strut: -o requires an output path\n"; return 2; }
+            output_path = std::filesystem::path(argv[++i]); continue;
+        }
         if (!arg.empty() && arg.front() == '-') {
             err << "strut: unsupported option '" << arg << "'\n";
             return 2;
@@ -165,10 +196,16 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             err << source_path.string() << ": error: expected a Strut .p or .h source file\n";
             return 2;
         }
-        err << "strut: compilation is not implemented yet; use --dump-tokens while bootstrapping\n";
-        return 2;
+        if (output_path.empty()) {
+            output_path = source_path.parent_path() / source_path.stem();
+#ifdef _WIN32
+            output_path += ".exe";
+#endif
+        }
+        return compile_source(source_path, output_path, err);
     }
 
+    (void)explicit_compile;
     return 0;
 }
 }
