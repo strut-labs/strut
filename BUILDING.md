@@ -3,9 +3,9 @@
 ## Bootstrap requirements
 
 - CMake 3.20 or newer
-- a C++17 compiler:
+- a C++20 compiler:
   - GCC 11+ or Clang 14+ on Linux
-  - Apple Clang with C++17 support on macOS
+  - Apple Clang with C++20 support on macOS
   - Visual Studio 2022 / MSVC on Windows
 - Python 3 for the independent regression suite (not required by the compiler binary itself)
 
@@ -35,4 +35,4 @@ Generated files and binaries belong under `build/` (or another caller-selected C
 
 ## Native backend policy
 
-The initial backend emits portable C++17 then invokes a host C++ toolchain. The compiler frontend must not depend on this representation. Direct AOT backends can be added later behind the backend interface.
+The initial backend emits portable C++20 then invokes a host C++ toolchain. The compiler frontend must not depend on this representation. Direct AOT backends can be added later behind the backend interface.

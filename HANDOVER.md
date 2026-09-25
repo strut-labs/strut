@@ -85,7 +85,7 @@ Prefer allocation-light standard-library conversion primitives such as `std::fro
 
 ## Bootstrap implementation standard
 
-The compiler/runtime bootstrap targets portable C++17. JSONIC is verified header-only C++17. libcurl does not require Strut itself to use C++20. Do not raise the bootstrap language standard without a demonstrated need.
+The compiler/runtime bootstrap targets portable C++20. JSONIC is verified header-only C++20. The bootstrap moved to C++20 when the pre-approved libcurl-backed TLS/HTTP layer was integrated. JSONIC itself remains verified C++17-compatible; do not regress that independent compatibility.
 
 ## Embedded third-party dependency policy
 

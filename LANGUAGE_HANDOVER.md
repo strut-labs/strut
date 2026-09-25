@@ -796,7 +796,7 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 
 ## Reference-counted ownership baseline
 
-`ptr<T>` is the ordinary safe owning pointer and is reference counted. Copying a `ptr<T>` shares ownership, release decrements the count, and the object is destroyed deterministically when the last owner disappears. `ptr<T>` may be `null`; `ref<T>` is the non-null borrowing facility. The bootstrap C++17 backend currently maps this contract to `std::shared_ptr` while runtime optimisation remains open. There is no tracing garbage collector.
+`ptr<T>` is the ordinary safe owning pointer and is reference counted. Copying a `ptr<T>` shares ownership, release decrements the count, and the object is destroyed deterministically when the last owner disappears. `ptr<T>` may be `null`; `ref<T>` is the non-null borrowing facility. The bootstrap C++20 backend currently maps this contract to `std::shared_ptr` while runtime optimisation remains open. There is no tracing garbage collector.
 
 ## Borrow baseline
 

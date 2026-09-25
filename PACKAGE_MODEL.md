@@ -70,7 +70,7 @@ The resolver checkpoint must:
 5. reject conflicting requirements with a dependency-path diagnostic rather than choosing nondeterministically;
 6. verify cached/downloaded content against the lockfile checksum before use.
 
-CP71 defines and validates this contract. Fetching, registry/GitHub organisation conventions, lockfile mutation, and `strut add` arrive in subsequent package checkpoints.
+CP71 defined the base contract; CP72–CP73 added the `strut-packages` repository convention, local package development/cache flow, deterministic lockfile mutation, `strut add/remove/list/install`, and package include resolution. Remote fetching remains intentionally separate from the local/cache workflow.
 
 ## Package CLI (CP73)
 

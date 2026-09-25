@@ -2,11 +2,11 @@
 
 ## Bootstrap implementation
 
-The first Strut compiler and runtime are implemented in portable C++17.
+The first Strut compiler and runtime are implemented in portable C++20.
 
 Reasons:
 
-- Strut is a native compiled language and C++17 gives direct control over memory, processes, files, threads, dynamic/static libraries, and platform APIs without introducing a managed bootstrap runtime.
+- Strut is a native compiled language and C++20 gives direct control over memory, processes, files, threads, dynamic/static libraries, and platform APIs without introducing a managed bootstrap runtime.
 - Nift and Jsonic++ provide useful C++ reference implementations already available to the project.
 - GCC, Clang, Apple Clang, and MSVC make the bootstrap compiler practical on Linux, macOS, and Windows.
 - The implementation can later be rewritten in Strut without changing the language contract.
@@ -30,7 +30,7 @@ Source locations are preserved from lexing onward. Diagnostics consume source sp
 
 ## Backend boundary
 
-The initial bootstrap backend will lower typed Strut IR to portable C++17 and invoke an available host C++ compiler to produce native executables. This keeps the first native backend small and immediately usable across GCC/Clang/MSVC hosts while the language semantics are still changing.
+The initial bootstrap backend will lower typed Strut IR to portable C++20 and invoke an available host C++ compiler to produce native executables. This keeps the first native backend small and immediately usable across GCC/Clang/MSVC hosts while the language semantics are still changing.
 
 The backend is an interface, not a frontend assumption. A later direct native backend (for example LLVM or another AOT backend) may replace or coexist with the C++ bootstrap backend without changing parsing, typing, ownership analysis, package semantics, or the Strut source language.
 

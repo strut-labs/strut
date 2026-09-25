@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP75 complete; CP76 is next.**
+Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -641,10 +641,10 @@ Current implementation progress: **CP0–CP75 complete; CP76 is next.**
 - [x] regression/integration tests for generated TLS support and verification policy.
 
 ### CP76 — Official HTTP package: client
-- [ ] requests/methods/headers/body.
-- [ ] JSON convenience using core JSON support.
-- [ ] async client.
-- [ ] redirects/timeouts/streaming policy.
+- [x] requests/methods/headers/body.
+- [x] JSON convenience using core JSON support.
+- [x] async client.
+- [x] redirects/timeouts/streaming policy.
 - [x] tests + docs.
 
 ### CP77 — Official HTTP package: server
@@ -653,7 +653,7 @@ Current implementation progress: **CP0–CP75 complete; CP76 is next.**
 - [ ] request body text/bytes/JSON.
 - [ ] response text/bytes/JSON/HTML.
 - [ ] async handlers.
-- [x] tests + docs.
+- [ ] tests + docs.
 
 ### CP78 — Official SQLite package
 - [ ] create/use official SQLite package rather than bloating core stdlib.
