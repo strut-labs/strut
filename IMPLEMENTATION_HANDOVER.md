@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP53 complete; CP54 is next.**
+Current implementation progress: **CP0–CP54 complete; CP55 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -467,12 +467,12 @@ Current implementation progress: **CP0–CP53 complete; CP54 is next.**
 - [x] tests + formatter/regression fixtures.
 
 ### CP54 — Assignment and initialization overloading
-- [ ] overload `=` for existing destination values.
-- [ ] overload `:=` for typed construction/initialization into new destination storage.
-- [ ] model `:=` destination as construction storage, not an existing `ref<T>`.
-- [ ] inferred `x := value` must retain predictable type inference and must not let overloads invent an unrelated lhs type.
-- [ ] define copy/conversion initialization interaction deliberately.
-- [ ] tests + negative diagnostics.
+- [x] overload `=` for existing destination values.
+- [x] overload `:=` for typed construction/initialization into new destination storage.
+- [x] model `:=` destination as construction storage, not an existing `ref<T>`.
+- [x] inferred `x := value` must retain predictable type inference and must not let overloads invent an unrelated lhs type.
+- [x] define copy/conversion initialization interaction deliberately.
+- [x] tests + negative diagnostics.
 
 ## Phase 10 — Core IO/runtime facilities
 

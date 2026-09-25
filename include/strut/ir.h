@@ -59,6 +59,8 @@ struct IRStmt {
     std::vector<TypeSyntax> error_types;
     std::string owner;
     bool has_body = false;
+    bool explicit_type = false;
+    std::string overload_name;
 };
 
 struct IRProgram { std::vector<IRStmtPtr> statements; };
