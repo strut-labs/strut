@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP32 complete; CP33 is next.**
+Current implementation progress: **CP0–CP33 complete; CP34 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -295,13 +295,13 @@ Current implementation progress: **CP0–CP32 complete; CP33 is next.**
 - [x] tests + regressions.
 
 ### CP33 — Higher-order collection functions
-- [ ] `map`.
-- [ ] `filter`.
-- [ ] `reduce`.
-- [ ] `any` / `all`.
-- [ ] `find` / `count`.
-- [ ] `sort` callback.
-- [ ] tests + regressions.
+- [x] `map`.
+- [x] `filter`.
+- [x] `reduce`.
+- [x] `any` / `all`.
+- [x] `find` / `count`.
+- [x] `sort` callback.
+- [x] tests + regressions.
 
 ### CP34 — Extended collection helpers
 - [ ] `count_by`.

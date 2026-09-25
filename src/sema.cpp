@@ -137,6 +137,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
                 if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
             }
+            if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort")return {TypeKind::void_type,0,"void"};}
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
                 if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};
