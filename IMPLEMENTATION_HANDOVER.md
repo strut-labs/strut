@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP33 complete; CP34 is next.**
+Current implementation progress: **CP0–CP34 complete; CP35 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -304,12 +304,12 @@ Current implementation progress: **CP0–CP33 complete; CP34 is next.**
 - [x] tests + regressions.
 
 ### CP34 — Extended collection helpers
-- [ ] `count_by`.
-- [ ] `index_by` with duplicate-key policy.
-- [ ] `partition`.
-- [ ] `pick` / `omit` where applicable.
-- [ ] `merge_deep` with conservative explicit semantics.
-- [ ] tests + regressions.
+- [x] `count_by`.
+- [x] `index_by` with duplicate-key policy.
+- [x] `partition`.
+- [x] `pick` / `omit` where applicable.
+- [x] `merge_deep` with conservative explicit semantics.
+- [x] tests + regressions.
 
 ## Phase 7 — Safe memory model, reference counting, weak refs, unsafe
 
