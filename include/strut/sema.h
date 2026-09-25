@@ -59,6 +59,8 @@ private:
     std::unordered_set<std::string> named_types_;
     std::vector<Scope> scopes_;
     std::string current_function_return_type_;
+    std::unordered_set<std::string> current_function_errors_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> function_errors_;
     int unsafe_depth_ = 0;
 };
 

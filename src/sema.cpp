@@ -138,6 +138,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::call: {
             for (const auto& arg : expr.arguments) infer_expression(result, *arg);
+            if(expr.left && expr.left->kind==Expr::Kind::identifier){auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end())result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
                 if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
@@ -258,12 +259,12 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::function_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
             if (st.has_body) {
-                const auto previous_return=current_function_return_type_; current_function_return_type_=st.return_type?st.return_type->name:"void";
+                const auto previous_return=current_function_return_type_; const auto previous_errors=current_function_errors_; current_function_return_type_=st.return_type?st.return_type->name:"void"; current_function_errors_.clear();for(const auto& e:st.error_types)current_function_errors_.insert(resolved_type_name(e.name));
                 push_scope();
                 if(!st.owner.empty()){declare(result,Symbol{"this",SymbolNamespace::value,st.span,true,st.owner});auto fit=struct_fields_.find(st.owner);if(fit!=struct_fields_.end())for(const auto& f:fit->second)declare(result,Symbol{f.first,SymbolNamespace::value,st.span,false,f.second});}
                 for (const auto& p : st.parameters) declare(result, Symbol{p.name, SymbolNamespace::value, p.span, false, resolved_type_name(p.type.name)});
                 analyze_statements(result, st.body, false);
-                pop_scope(); current_function_return_type_=previous_return;
+                pop_scope(); current_function_return_type_=previous_return; current_function_errors_=previous_errors;
             }
             break;
         }
@@ -306,6 +307,10 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             push_scope(); declare(result, Symbol{st.name, SymbolNamespace::value, st.span, false, "opaque"}); analyze_statements(result, st.body, false); pop_scope(); break;
         case Stmt::Kind::expression: if (st.value) infer_expression(result, *st.value); break;
         case Stmt::Kind::return_stmt: if (st.value) { infer_expression(result,*st.value); if(current_function_return_type_.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"returning ref<T> is not permitted until lifetime proof can establish a safe escape"}); } break;
+        case Stmt::Kind::throw_stmt: {
+            std::string thrown; if(st.value){if(st.value->kind==Expr::Kind::call&&st.value->left&&st.value->left->kind==Expr::Kind::identifier){thrown=st.value->left->text;for(const auto& a:st.value->arguments)infer_expression(result,*a);}else if(st.value->kind==Expr::Kind::struct_literal)thrown=st.value->text;else {auto t=infer_expression(result,*st.value);thrown=t.name;}}
+            thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end())result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in function signature"});break;
+        }
         default: break;
     }
 }
@@ -322,12 +327,13 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); unsafe_depth_=0;
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){auto& errs=function_errors_[st->name];for(const auto& e:st->error_types)errs.insert(resolved_type_name(e.name));}
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }
     analyze_statements(result, program.statements, false);

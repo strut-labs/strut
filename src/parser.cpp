@@ -263,6 +263,10 @@ StmtPtr Parser::parse_function(ParseResult& result) {
     if (!match("->")) { error(result, peek(), "expected '->' and explicit return type"); return nullptr; }
     auto return_type = parse_type(result); if (return_type.name.empty()) return nullptr;
     st->return_type = std::move(return_type);
+    if(match(":")){
+        if(match("(")){if(!check(")")){do{auto e=parse_type(result);if(e.name.empty())return nullptr;st->error_types.push_back(std::move(e));}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after error type list");return nullptr;}}
+        else {auto e=parse_type(result);if(e.name.empty())return nullptr;st->error_types.push_back(std::move(e));}
+    }
     if (match(";")) { st->has_body = false; st->span = join(begin.span, previous().span); return st; }
     if (!match("{")) { error(result, peek(), "expected function body or ';'"); return nullptr; }
     auto body = parse_block(result); if (!body) return nullptr;
@@ -391,6 +395,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("switch")) return parse_switch(result);
     if (match("match")) return parse_match(result);
     if (match("for")) return parse_for(result);
+    if (match("throw")) { const Token kw=previous(); auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::throw_stmt;st->value=parse_expression(result);if(!st->value)return nullptr;if(!match(";")){error(result,peek(),"expected ';' after throw");return nullptr;}st->span=join(kw.span,previous().span);return st; }
     if (match("return")) {
         const Token kw = previous();
         auto st = std::make_unique<Stmt>(); st->kind = Stmt::Kind::return_stmt;

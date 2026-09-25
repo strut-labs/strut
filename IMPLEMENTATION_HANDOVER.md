@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP48 complete; CP49 is next.**
+Current implementation progress: **CP0–CP49 complete; CP50 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -425,12 +425,12 @@ Current implementation progress: **CP0–CP48 complete; CP49 is next.**
 - [x] tests + regressions + docs.
 
 ### CP49 — Checked error signatures
-- [ ] `-> X : Error`.
-- [ ] `-> X : (E1, E2, ...)`.
-- [ ] `throw Error(...)`.
-- [ ] validate declared throw set.
-- [ ] diagnostics for undeclared checked throws.
-- [ ] tests + regressions.
+- [x] `-> X : Error`.
+- [x] `-> X : (E1, E2, ...)`.
+- [x] `throw Error(...)`.
+- [x] validate declared throw set.
+- [x] diagnostics for undeclared checked throws.
+- [x] tests + regressions.
 
 ### CP50 — Try/catch
 - [ ] `try { ... }`.

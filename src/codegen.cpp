@@ -107,6 +107,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
         case IRStmt::Kind::assignment:o<<pad<<(s.target?expr(*s.target):s.name)<<" "<<s.op<<" "<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::expression:o<<pad<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::return_stmt:o<<pad<<"return"<<(s.value?" "+expr(*s.value):"")<<";\n";break;
+        case IRStmt::Kind::throw_stmt:{std::string en="Error";std::string msg="\"checked error\"";if(s.value&&s.value->kind==IRExpr::Kind::call&&s.value->left&&s.value->left->kind==IRExpr::Kind::identifier){en=s.value->left->text;if(!s.value->arguments.empty())msg=expr(*s.value->arguments[0]);}o<<pad<<"throw strut_checked_error(\""<<en<<"\","<<msg<<");\n";break;}
         case IRStmt::Kind::break_stmt:o<<pad<<"break;\n";break; case IRStmt::Kind::continue_stmt:o<<pad<<"continue;\n";break;
         case IRStmt::Kind::unsafe_stmt:o<<pad<<"{ /* unsafe */\n";for(auto&c:s.body)stmt(o,*c,n+4);o<<pad<<"}\n";break;
         case IRStmt::Kind::block:o<<pad<<"{\n";for(auto&c:s.body)stmt(o,*c,n+4);o<<pad<<"}\n";break;
@@ -134,6 +135,7 @@ private:
     T* p_;
 };
 template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
+struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
 struct strut_null_t {
     template<class T> operator std::optional<T>() const { return std::nullopt; }
     template<class T> operator std::shared_ptr<T>() const { return {}; }

@@ -61,7 +61,7 @@ public:
     }
     IRStmtPtr statement(const Stmt& st) {
         auto out = std::make_unique<IRStmt>(); out->kind=convert_stmt_kind(st.kind); out->span=st.span; out->name=st.name; out->op=st.op; out->is_const=st.is_const;
-        out->owner=st.owner; out->generic_parameters=st.generic_parameters; out->bases=st.bases; out->enum_names=st.enum_names; out->enum_values=st.enum_values; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
+        out->owner=st.owner; out->generic_parameters=st.generic_parameters; out->bases=st.bases; out->enum_names=st.enum_names; out->enum_values=st.enum_values; out->error_types=st.error_types; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
         out->type_name = st.declared_type ? st.declared_type->name : "";
         if (st.return_type) out->return_type = st.return_type->name;
         out->value=expression(st.value.get()); out->target=expression(st.target.get()); out->condition=expression(st.condition.get()); out->increment=expression(st.increment.get());
