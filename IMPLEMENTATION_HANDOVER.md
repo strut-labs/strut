@@ -668,10 +668,10 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 ## Phase 14 — Embedded resources and first serious web app
 
 ### CP79 — Embedded files/directories
-- [ ] compile file bytes into executable.
-- [ ] directory embedding.
-- [ ] content metadata/MIME helpers as appropriate.
-- [ ] deterministic builds.
+- [x] compile file bytes into executable.
+- [x] directory embedding.
+- [x] content metadata/MIME helpers as appropriate.
+- [x] deterministic builds.
 - [x] tests.
 
 ### CP80 — Static asset serving helpers
