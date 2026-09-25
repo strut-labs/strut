@@ -557,11 +557,11 @@ Current implementation progress: **CP0–CP59 complete; CP60 is next.**
 - [x] document unsafe escape hatches honestly.
 
 ### CP65 — Async functions/futures
-- [ ] `async function`.
-- [ ] `await`.
-- [ ] future/task type representation.
-- [ ] async errors.
-- [ ] tests + regressions.
+- [x] `async function`.
+- [x] `await`.
+- [x] future/task type representation.
+- [x] async errors.
+- [x] tests + regressions.
 
 ### CP66 — Async lambdas
 - [ ] `async (args) => expr`.

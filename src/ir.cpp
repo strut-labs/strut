@@ -39,7 +39,7 @@ public:
     void register_function(const Stmt& st) {
         std::string sig="function<(";
         for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}
-        sig+=")->"+(st.return_type?st.return_type->name:std::string("void"))+">";
+        sig+=")->"+(st.is_async?("future<"+(st.return_type?st.return_type->name:std::string("void"))+">"):(st.return_type?st.return_type->name:std::string("void")))+">";
         function_types_[st.name]=sig;
     }
     void register_operator(const Stmt& st){if(st.parameters.size()!=2)return;std::string a=strip_ref_type(st.parameters[0].type.name),b=strip_ref_type(st.parameters[1].type.name);std::string helper="strut_op_"+(st.op==":="?std::string("init"):std::string("assign"))+"_"+safe_name(a)+"_"+safe_name(b);if(st.op==":=")init_overloads_[a+"|"+b]=helper;else if(st.op=="=")assign_overloads_[a+"|"+b]=helper;}
@@ -64,7 +64,7 @@ public:
     }
     IRStmtPtr statement(const Stmt& st) {
         auto out = std::make_unique<IRStmt>(); out->kind=convert_stmt_kind(st.kind); out->span=st.span; out->name=st.name; out->op=st.op; out->is_const=st.is_const;
-        out->owner=st.owner; out->generic_parameters=st.generic_parameters; out->bases=st.bases; out->enum_names=st.enum_names; out->enum_values=st.enum_values; out->error_types=st.error_types; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
+        out->owner=st.owner; out->is_async=st.is_async; out->generic_parameters=st.generic_parameters; out->bases=st.bases; out->enum_names=st.enum_names; out->enum_values=st.enum_values; out->error_types=st.error_types; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
         out->type_name = st.declared_type ? st.declared_type->name : ""; out->explicit_type=st.declared_type.has_value();
         if (st.return_type) out->return_type = st.return_type->name;
         out->value=expression(st.value.get()); out->target=expression(st.target.get()); out->condition=expression(st.condition.get()); out->increment=expression(st.increment.get());

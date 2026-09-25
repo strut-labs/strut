@@ -45,6 +45,7 @@ std::string cpp_type(std::string t){
     if(t=="process_out") return "strut_process_out";
     if(t=="thread") return "strut_thread";
     if(t=="mutex") return "strut_mutex";
+    if(t.rfind("future<",0)==0&&t.back()=='>') return "std::future<"+cpp_type(t.substr(7,t.size()-8))+">";
     if(t.rfind("channel<",0)==0&&t.back()=='>') return "strut_channel<"+cpp_type(t.substr(8,t.size()-9))+">";
     if(t=="int"||t=="int_32") return "std::int32_t";
     if(t=="int_8") return "std::int8_t";
@@ -85,7 +86,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::json_object:return json_expr(e);
         case IRExpr::Kind::struct_literal:{std::string out="[&](){"+e.text+" value{};";for(std::size_t i=0;i<e.names.size();++i)out+="value."+e.names[i]+"="+expr(*e.arguments[i])+";";return out+"return value;}()";}
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
-        case IRExpr::Kind::unary:if(e.text=="*"&&e.right&&e.right->type_name.rfind("ptr<",0)==0)return "strut_deref("+expr(*e.right)+")";return e.text+expr(*e.right);
+        case IRExpr::Kind::unary:if(e.text=="await")return "strut_await("+expr(*e.right)+")";if(e.text=="*"&&e.right&&e.right->type_name.rfind("ptr<",0)==0)return "strut_deref("+expr(*e.right)+")";return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
@@ -150,11 +151,11 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
                 else{o<<"void "<<helper<<"("<<cpp_type(dest)<<"& "<<s.parameters[0].name<<","<<operator_param_cpp(s.parameters[1].type.name,s.parameters[1].name)<<") {\n";if(s.value&&s.value->kind==IRExpr::Kind::lambda){if(s.value->lambda_expression)o<<"    (void)"<<expr(*s.value->lambda_expression)<<";\n";else for(const auto& c:s.value->lambda_body)stmt(o,*c,4);}else for(const auto& c:s.body)stmt(o,*c,4);o<<"}\n";}break;
             }
             if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}o<<operator_return_cpp(s.return_type)<<" operator"<<s.op<<"(";for(std::size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<operator_param_cpp(s.parameters[i].type.name,s.parameters[i].name);}o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";if(s.value&&s.value->kind==IRExpr::Kind::lambda){if(s.value->lambda_expression)o<<std::string(n+4,' ')<<"return "<<expr(*s.value->lambda_expression)<<";\n";else for(const auto& c:s.value->lambda_body)stmt(o,*c,n+4);}else for(const auto& c:s.body)stmt(o,*c,n+4);o<<"}\n";break;}
-        case IRStmt::Kind::function_decl:{if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}const bool main_void=(s.name=="main"&&s.return_type=="void");o<<(main_void?"int":cpp_type(s.return_type))<<" ";if(!s.owner.empty())o<<s.owner<<"::";o<<s.name<<"(";for(size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<cpp_type(s.parameters[i].type.name)<<" "<<s.parameters[i].name;}o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";for(auto&c:s.body){if(main_void&&c->kind==IRStmt::Kind::return_stmt&&!c->value){o<<std::string(n+4,' ')<<"return 0;\n";}else stmt(o,*c,n+4);}o<<"}\n";break;}
+        case IRStmt::Kind::function_decl:{if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}const bool main_void=(s.name=="main"&&s.return_type=="void"&&!s.is_async);o<<(s.is_async?("std::future<"+cpp_type(s.return_type)+">"):(main_void?"int":cpp_type(s.return_type)))<<" ";if(!s.owner.empty())o<<s.owner<<"::";o<<s.name<<"(";for(size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<cpp_type(s.parameters[i].type.name)<<" "<<s.parameters[i].name;}o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";if(s.is_async){o<<"    return std::async(std::launch::async, [=]() mutable {\n";for(auto&c:s.body)stmt(o,*c,n+8);o<<"    });\n";}else{for(auto&c:s.body){if(main_void&&c->kind==IRStmt::Kind::return_stmt&&!c->value){o<<std::string(n+4,' ')<<"return 0;\n";}else stmt(o,*c,n+4);}}o<<"}\n";break;}
         default:break;
     }}
 }
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <unistd.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <unistd.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -367,6 +368,9 @@ inline strut_exec_result strut_exec_shell(const strut_string& command){
     return strut_exec(strut_string("/bin/sh"),std::vector<strut_string>{strut_string("-c"),command});
 #endif
 }
+template<class T> T strut_await(std::future<T>& f){return f.get();}
+inline void strut_await(std::future<void>& f){f.get();}
+
 class strut_mutex {
 public:
     void lock(){m_.lock();}

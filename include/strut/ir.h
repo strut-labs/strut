@@ -60,6 +60,7 @@ struct IRStmt {
     std::string owner;
     bool has_body = false;
     bool explicit_type = false;
+    bool is_async = false;
     std::string overload_name;
 };
 

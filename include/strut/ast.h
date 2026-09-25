@@ -69,6 +69,7 @@ struct Stmt {
     std::optional<TypeSyntax> alias_target;
     bool has_body = false;
     bool include_is_package = false;
+    bool is_async = false;
 };
 
 struct LambdaData {

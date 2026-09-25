@@ -5,7 +5,7 @@
 
 namespace strut {
 namespace {
-std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}sig+=")->"+(st.return_type?st.return_type->name:std::string("void"))+">";return sig;}
+std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}sig+=")->"+(st.is_async?("future<"+(st.return_type?st.return_type->name:std::string("void"))+">"):(st.return_type?st.return_type->name:std::string("void")))+">";return sig;}
 std::string function_return(std::string_view sig){auto p=sig.rfind(")->");if(p==std::string_view::npos||sig.empty()||sig.back()!='>')return "opaque";return std::string(sig.substr(p+3,sig.size()-(p+4)));}
 std::string generic_inner(std::string_view type,std::string_view head){if(type.rfind(head,0)!=0||type.size()<=head.size()+1||type.back()!='>')return {};return std::string(type.substr(head.size(),type.size()-head.size()-1));}
 std::string normalize_operator_type(std::string t){if(t.rfind("ref<",0)==0&&t.back()=='>')t=t.substr(4,t.size()-5);if(t.rfind("const ",0)==0)t=t.substr(6);return t;}
@@ -116,6 +116,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::postfix: {
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
+            if(expr.text=="await"){auto inner=generic_inner(operand.name,"future<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.span,"await requires a future<T>"});return resolve_type(inner.empty()?"opaque":inner);}
             if(expr.text=="*"){if(operand.name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw_ptr<T> dereference requires unsafe block"});for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
             auto oit=operator_returns_.find("prefix:"+expr.text+"|"+operand.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
             return operand;

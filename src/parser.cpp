@@ -114,6 +114,7 @@ ExprPtr Parser::parse_postfix(ParseResult& result){
 ExprPtr Parser::parse_unary(ParseResult& result){
     if (match("async")) return parse_lambda(result, true);
     if (check("(")) { std::size_t i=current_, depth=0; bool lambda=false; for(;i<tokens_.size();++i){if(tokens_[i].lexeme=="(")++depth;else if(tokens_[i].lexeme==")"){if(--depth==0){lambda=(i+1<tokens_.size()&&tokens_[i+1].lexeme=="=>");break;}}} if(lambda) return parse_lambda(result,false); }
+    if(match("await")){const Token op=previous();auto rhs=parse_unary(result);if(!rhs)return nullptr;auto e=std::make_unique<Expr>();e->kind=Expr::Kind::unary;e->text="await";e->span=join(op.span,rhs->span);e->right=std::move(rhs);return e;}
     if(check("!")||check("~")||check("-")||check("+")||check("*")||check("++")||check("--")){const Token op=advance();auto rhs=parse_unary(result);if(!rhs)return nullptr;auto e=std::make_unique<Expr>();e->kind=Expr::Kind::unary;e->text=op.lexeme;e->span=join(op.span,rhs->span);e->right=std::move(rhs);return e;}return parse_postfix(result);
 }
 ExprPtr Parser::parse_expression(ParseResult& result,int minp){
@@ -439,6 +440,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("enum")) return parse_enum(result);
     if (match("unsafe")) { const Token kw=previous(); if(!match("{")){error(result,peek(),"expected '{' after unsafe");return nullptr;} auto block=parse_block(result); if(!block)return nullptr; block->kind=Stmt::Kind::unsafe_stmt; block->span=join(kw.span,block->span); return block; }
     if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
+    if (match("async")) { if(!match("function")){error(result,previous(),"expected function after async");return nullptr;} auto st=parse_function(result); if(st)st->is_async=true; return st; }
     if (match("function")) return parse_function(result);
     if (match("operator")) return parse_operator(result);
     if (match("{")) return parse_block(result);
