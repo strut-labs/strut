@@ -930,9 +930,9 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] decide based on evidence, not symbolism.
 
 ### CP111 — Self-hosting feasibility review
-- [ ] determine what is required for Strut to compile its own compiler.
-- [ ] prototype only if it benefits the project.
-- [ ] do not distort language design merely to achieve a vanity milestone.
+- [x] determine what is required for Strut to compile its own compiler.
+- [x] prototype only if it benefits the project.
+- [x] do not distort language design merely to achieve a vanity milestone.
 
 ## Phase 19 — Stability and release readiness
 
