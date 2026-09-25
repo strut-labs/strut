@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP88 complete; CP89 is next.**
+Current implementation progress: **CP0–CP89 complete; CP90 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -758,11 +758,11 @@ Current implementation progress: **CP0–CP88 complete; CP89 is next.**
 - [x] self-host Strut package tests with it where possible.
 
 ### CP89 — Formatter
-- [ ] define canonical formatting.
-- [ ] mandatory-semicolon output.
-- [ ] one canonical pointer/ref/type spelling.
-- [ ] idempotence tests.
-- [ ] formatter fixtures in regression suite.
+- [x] define canonical formatting.
+- [x] mandatory-semicolon output.
+- [x] one canonical pointer/ref/type spelling.
+- [x] idempotence tests.
+- [x] formatter fixtures in regression suite.
 
 ### CP90 — CLI polish
 - [ ] help/version.

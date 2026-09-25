@@ -16,6 +16,7 @@
 #include "strut/ir.h"
 #include "strut/codegen.h"
 #include "strut/diagnostic.h"
+#include "strut/formatter.h"
 #include "strut/parser.h"
 #include "strut/package.h"
 #include "strut/project.h"
@@ -47,6 +48,7 @@ void print_help(std::ostream& out) {
         << "      compile         Optional explicit compile command alias\n"
         << "      make            Build the current Strut project\n"
         << "      test [filter]   Build and run tests/**/*_test.p\n"
+        << "      fmt [path]      Format Strut source (project by default)\n"
         << "      add <path>      Add a local package checkout to this project\n"
         << "      remove <name>   Remove a package dependency\n"
         << "      list            List project dependencies\n"
@@ -265,6 +267,34 @@ int run_test_command(const std::string& filter, bool verbose, std::ostream& out,
     return passed == tests.size() ? 0 : 1;
 }
 
+
+int run_fmt_command(const std::filesystem::path& requested, bool check_only, std::ostream& out, std::ostream& err) {
+    const auto root = find_project_root(std::filesystem::current_path());
+    const auto target = requested.empty() ? root : (requested.is_absolute() ? requested : std::filesystem::current_path() / requested);
+    if (!std::filesystem::exists(target)) { err << "strut: format path not found: " << target.string() << '\n'; return 2; }
+    std::vector<std::filesystem::path> files;
+    std::error_code ec;
+    auto add = [&](const std::filesystem::path& p){ if (SourceFile::has_strut_extension(p)) files.push_back(p); };
+    if (std::filesystem::is_regular_file(target, ec)) add(target);
+    else for (const auto& e : std::filesystem::recursive_directory_iterator(target, ec)) {
+        if (ec) break;
+        if (!e.is_regular_file()) continue;
+        if (e.path().string().find((root / ".strut").string()) == 0) continue;
+        add(e.path());
+    }
+    std::sort(files.begin(), files.end());
+    bool differs=false;
+    for(const auto& file:files){
+        std::string load_error; auto source=SourceFile::load(file,load_error); if(!source){err<<"strut: "<<load_error<<'\n';return 1;}
+        Program parsed; std::ostringstream parse_errors; if(!load_program(file,parsed,parse_errors)){err<<parse_errors.str();return 1;}
+        const auto formatted=format_source_text(source->text()); if(formatted==source->text())continue; differs=true;
+        if(check_only){out<<std::filesystem::relative(file,root,ec).generic_string()<<" needs formatting\n";ec.clear();continue;}
+        std::ofstream f(file,std::ios::binary|std::ios::trunc);if(!f){err<<"strut: unable to write "<<file.string()<<'\n';return 1;}f<<formatted;
+        out<<"formatted "<<std::filesystem::relative(file,root,ec).generic_string()<<'\n';ec.clear();
+    }
+    return check_only&&differs?1:0;
+}
+
 int run_package_command(const std::string& command, const std::string& argument, std::ostream& out, std::ostream& err) {
     const auto root = std::filesystem::current_path(); PackageManifest project; std::string error;
     if (!load_package_manifest_file(root / "strut.json", project, error)) { err << "strut: " << error << '\n'; return 2; }
@@ -300,6 +330,11 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             std::string init_error;
             if (!init_project_build_state(std::filesystem::current_path(), init_error)) { err << "strut: " << init_error << '\n'; return 1; }
             out << "created .strut/config.json\n"; return 0;
+        }
+        if (command == "fmt") {
+            std::filesystem::path format_path; bool check_only = false;
+            for(int i=2;i<argc;++i){const std::string_view arg(argv[i]); if(arg=="--check")check_only=true; else if(!arg.empty()&&arg.front()=='-'){err<<"strut: unsupported fmt option '"<<arg<<"'\n";return 2;} else if(format_path.empty())format_path=std::string(arg); else{err<<"strut: fmt accepts at most one path\n";return 2;}}
+            return run_fmt_command(format_path,check_only,out,err);
         }
         if (command == "test") {
             std::string filter; bool test_verbose = false;
