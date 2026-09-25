@@ -53,6 +53,7 @@ private:
     std::unordered_map<std::string, std::string> aliases_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
     std::vector<Scope> scopes_;
+    std::string current_function_return_type_;
 };
 
 } // namespace strut

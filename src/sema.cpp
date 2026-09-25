@@ -142,6 +142,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort")return {TypeKind::void_type,0,"void"};}
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
+                if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
                 if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value); value && value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name));
@@ -223,6 +224,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 auto* target = lookup(st.name, SymbolNamespace::value);
                 if (!target) { result.diagnostics.push_back(Diagnostic{st.span, "assignment to unknown value '" + st.name + "'"}); break; }
                 if (target->is_const) result.diagnostics.push_back(Diagnostic{st.span, "cannot assign to const value '" + st.name + "'"});
+                if (target->type_name.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"ref<T> bindings cannot be reassigned"});
                 lhs=resolve_type(target->type_name);
             }
             if (st.value) { auto rhs=infer_expression(result,*st.value); if(rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs))result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"}); }
@@ -235,18 +237,19 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::struct_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, st.name});
             auto& fields=struct_fields_[st.name];
-            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else fields[field.name]=resolved_type_name(field.type.name);}
+            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else {auto ft=resolved_type_name(field.type.name);if(ft.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{field.span,"ref<T> struct fields require lifetime proof and are not yet allowed"});fields[field.name]=ft;}}
             for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:st.fields)declare(result,Symbol{field.name,SymbolNamespace::value,field.span,false,resolved_type_name(field.type.name)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
             break;
         }
         case Stmt::Kind::function_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
             if (st.has_body) {
+                const auto previous_return=current_function_return_type_; current_function_return_type_=st.return_type?st.return_type->name:"void";
                 push_scope();
                 if(!st.owner.empty()){declare(result,Symbol{"this",SymbolNamespace::value,st.span,true,st.owner});auto fit=struct_fields_.find(st.owner);if(fit!=struct_fields_.end())for(const auto& f:fit->second)declare(result,Symbol{f.first,SymbolNamespace::value,st.span,false,f.second});}
                 for (const auto& p : st.parameters) declare(result, Symbol{p.name, SymbolNamespace::value, p.span, false, resolved_type_name(p.type.name)});
                 analyze_statements(result, st.body, false);
-                pop_scope();
+                pop_scope(); current_function_return_type_=previous_return;
             }
             break;
         }
@@ -272,7 +275,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             if (st.value) infer_expression(result, *st.value);
             push_scope(); declare(result, Symbol{st.name, SymbolNamespace::value, st.span, false, "opaque"}); analyze_statements(result, st.body, false); pop_scope(); break;
         case Stmt::Kind::expression: if (st.value) infer_expression(result, *st.value); break;
-        case Stmt::Kind::return_stmt: if (st.value) infer_expression(result, *st.value); break;
+        case Stmt::Kind::return_stmt: if (st.value) { infer_expression(result,*st.value); if(current_function_return_type_.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"returning ref<T> is not permitted until lifetime proof can establish a safe escape"}); } break;
         default: break;
     }
 }
@@ -289,7 +292,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear();
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); current_function_return_type_.clear();
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }

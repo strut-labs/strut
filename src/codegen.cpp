@@ -18,6 +18,7 @@ std::string cpp_type(std::string t){
     if(t.rfind("const ",0)==0) return "const "+cpp_type(t.substr(6));
     if(!t.empty() && t.back()=='?') return "std::optional<"+cpp_type(t.substr(0,t.size()-1))+">";
     if(t.rfind("ptr<",0)==0 && t.back()=='>') return "std::shared_ptr<"+cpp_type(t.substr(4,t.size()-5))+">";
+    if(t.rfind("ref<",0)==0 && t.back()=='>') return "strut_ref<"+cpp_type(t.substr(4,t.size()-5))+">";
     if(t.rfind("map<",0)==0 && t.back()=='>'){auto inner=t.substr(4,t.size()-5);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}if(comma!=std::string::npos)return "std::map<"+cpp_type(inner.substr(0,comma))+","+cpp_type(inner.substr(comma+1))+">";}
     if(t.size()>2 && t.compare(t.size()-2,2,"[]")==0) return "std::vector<"+cpp_type(t.substr(0,t.size()-2))+">";
     if (auto extent = array_extent(t)) { const auto open=t.rfind('['); return "std::array<"+cpp_type(t.substr(0,open))+","+std::to_string(*extent)+">"; }
@@ -90,7 +91,7 @@ std::string expr(const IRExpr& e){
                 if(m=="omit"&&e.arguments.size()==1)return "strut_json_omit("+base+","+expr(*e.arguments[0])+")";
                 if(m=="merge_deep"&&e.arguments.size()==1)return "strut_json_merge_deep("+base+","+expr(*e.arguments[0])+")";
             }
-            std::string name=expr(*e.left); if(name=="ptr"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
+            std::string name=expr(*e.left); if(name=="ptr"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
@@ -115,6 +116,17 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
 }
 CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n";
 o<<R"CPP(
+template<class T> class strut_ref {
+public:
+    explicit strut_ref(T& value):p_(&value){}
+    strut_ref(const strut_ref&)=default;
+    strut_ref& operator=(const strut_ref&)=delete;
+    T& operator*() const { return *p_; }
+    T* operator->() const { return p_; }
+private:
+    T* p_;
+};
+template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
 struct strut_null_t {
     template<class T> operator std::optional<T>() const { return std::nullopt; }
     template<class T> operator std::shared_ptr<T>() const { return {}; }

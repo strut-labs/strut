@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP36 complete; CP37 is next.**
+Current implementation progress: **CP0–CP37 complete; CP38 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -330,12 +330,12 @@ Current implementation progress: **CP0–CP36 complete; CP37 is next.**
 - [x] tests + regressions.
 
 ### CP37 — `ref<T>` safe borrows
-- [ ] `ref<T>` non-null/non-owning.
-- [ ] `ref<const T>`.
-- [ ] reference binding is non-reassignable.
-- [ ] establish lifetime validation sufficient to prevent dangling refs.
-- [ ] pass-by-ref without refcount churn.
-- [ ] tests + compile-fail regressions.
+- [x] `ref<T>` non-null/non-owning.
+- [x] `ref<const T>`.
+- [x] reference binding is non-reassignable.
+- [x] establish lifetime validation sufficient to prevent dangling refs.
+- [x] pass-by-ref without refcount churn.
+- [x] tests + compile-fail regressions.
 
 ### CP38 — `weak_ptr<T>` and cycle strategy
 - [ ] weak-control-block/runtime mechanics.
