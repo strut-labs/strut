@@ -1,4 +1,5 @@
 #include "strut/parser.h"
+#include "strut/operator.h"
 
 #include <array>
 #include <charconv>
@@ -22,20 +23,7 @@ bool Parser::match(std::string_view x) { if(!check(x)) return false; advance(); 
 void Parser::error(ParseResult& r,const Token&t,std::string m){r.diagnostics.push_back(Diagnostic{t.span,std::move(m)});}
 void Parser::synchronize(){while(!at_end()){if(current_>0&&previous().lexeme==";")return;if(peek().lexeme=="const"||peek().kind==TokenKind::identifier)return;advance();}}
 
-int Parser::precedence(std::string_view op) {
-    if (op=="??") return 0;
-    if (op=="||") return 1;
-    if (op=="&&") return 2;
-    if (op=="|") return 3;
-    if (op=="^") return 4;
-    if (op=="&") return 5;
-    if (op=="=="||op=="!=") return 6;
-    if (op=="<"||op=="<="||op==">"||op==">") return 7;
-    if (op=="<<"||op==">>") return 8;
-    if (op=="+"||op=="-") return 9;
-    if (op=="*"||op=="/"||op=="%") return 10;
-    return -1;
-}
+int Parser::precedence(std::string_view op) { return infix_precedence(op); }
 bool Parser::is_binary_operator(std::string_view op){return precedence(op)>=0;}
 bool Parser::is_assignment_operator(std::string_view op){return op=="="||op=="+="||op=="-="||op=="*="||op=="/="||op=="%="||op=="<<="||op==">>=";}
 

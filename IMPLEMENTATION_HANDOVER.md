@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP50 complete; CP51 is next.**
+Current implementation progress: **CP0–CP51 complete; CP52 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -443,12 +443,12 @@ Current implementation progress: **CP0–CP50 complete; CP51 is next.**
 ## Phase 9 — Operator overloading
 
 ### CP51 — Fixed operator table and overload resolution
-- [ ] define Strut's fixed operator spellings, precedence and fixity in one canonical compiler table.
-- [ ] do not permit arbitrary new punctuation/text operators.
-- [ ] do not permit user-defined precedence or associativity.
-- [ ] distinguish prefix/infix/postfix forms where the language already defines them.
-- [ ] define overload candidate lookup and ambiguity diagnostics.
-- [ ] tests + regressions.
+- [x] define Strut's fixed operator spellings, precedence and fixity in one canonical compiler table.
+- [x] do not permit arbitrary new punctuation/text operators.
+- [x] do not permit user-defined precedence or associativity.
+- [x] distinguish prefix/infix/postfix forms where the language already defines them.
+- [x] define overload candidate lookup and ambiguity diagnostics.
+- [x] tests + regressions.
 
 ### CP52 — Normal operator declarations
 - [ ] `operator +(A a, B b) -> R { ... }`.

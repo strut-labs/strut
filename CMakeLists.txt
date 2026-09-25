@@ -24,6 +24,7 @@ add_library(strut_compiler STATIC
     src/diagnostic.cpp
     src/sema.cpp
     src/type.cpp
+    src/operator.cpp
     src/ir.cpp
     src/codegen.cpp
 )
