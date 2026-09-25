@@ -869,11 +869,11 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] no crashes/hangs on invalid programs.
 
 ### CP103 — Memory/runtime hardening
-- [ ] sanitizers.
-- [ ] Valgrind/equivalent where useful.
-- [ ] refcount overflow policy.
-- [ ] weak-pointer races.
-- [ ] destruction-order torture tests.
+- [x] sanitizers.
+- [x] Valgrind/equivalent where useful.
+- [x] refcount overflow policy.
+- [x] weak-pointer races.
+- [x] destruction-order torture tests.
 
 ### CP104 — Concurrency hardening
 - [ ] thread sanitizer where feasible.
