@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP11 complete; CP12 is next.**
+Current implementation progress: **CP0–CP12 complete; CP13 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -116,13 +116,13 @@ Current implementation progress: **CP0–CP11 complete; CP12 is next.**
 - [x] Tests + regressions.
 
 ### CP12 — Control-flow parser
-- [ ] `if` / `else`.
-- [ ] `while`.
-- [ ] C-style `for`.
-- [ ] Nift-style `for (item : items)`.
-- [ ] `break` / `continue`.
-- [ ] block scopes.
-- [ ] Tests + regressions + docs.
+- [x] `if` / `else`.
+- [x] `while`.
+- [x] C-style `for`.
+- [x] Nift-style `for (item : items)`.
+- [x] `break` / `continue`.
+- [x] block scopes.
+- [x] Tests + regressions + docs.
 
 ### CP13 — Function parser
 - [ ] `function name(args) -> Type { ... }`.

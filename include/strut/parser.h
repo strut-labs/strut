@@ -35,6 +35,10 @@ private:
     ExprPtr parse_postfix(ParseResult& result);
     ExprPtr parse_primary(ParseResult& result);
     StmtPtr parse_statement(ParseResult& result);
+    StmtPtr parse_block(ParseResult& result);
+    StmtPtr parse_if(ParseResult& result);
+    StmtPtr parse_while(ParseResult& result);
+    StmtPtr parse_for(ParseResult& result);
     StmtPtr parse_declaration_or_assignment(ParseResult& result);
 
     static int precedence(std::string_view op);

@@ -32,7 +32,7 @@ struct Expr {
 struct Stmt;
 using StmtPtr = std::unique_ptr<Stmt>;
 struct Stmt {
-    enum class Kind { declaration, assignment, expression };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt };
     Kind kind;
     SourceSpan span;
     std::string name;
@@ -40,6 +40,11 @@ struct Stmt {
     std::optional<TypeSyntax> declared_type;
     bool is_const = false;
     ExprPtr value;
+    ExprPtr condition;
+    ExprPtr increment;
+    StmtPtr initializer;
+    std::vector<StmtPtr> body;
+    std::vector<StmtPtr> else_body;
 };
 
 struct Program { std::vector<StmtPtr> statements; };

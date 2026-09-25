@@ -85,7 +85,33 @@ StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     auto value=parse_expression(result);if(!value)return nullptr;if(!match(";")){error(result,peek(),"expected ';' after statement");return nullptr;}
     auto st=std::make_unique<Stmt>();st->kind=declaration?Stmt::Kind::declaration:Stmt::Kind::assignment;st->span=join(begin.span,previous().span);st->name=name.lexeme;st->op=declaration?":=":op;st->declared_type=std::move(type);st->is_const=is_const;st->value=std::move(value);return st;
 }
-StmtPtr Parser::parse_statement(ParseResult& result){return parse_declaration_or_assignment(result);}
+StmtPtr Parser::parse_block(ParseResult& result){
+    const Token begin=previous();auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::block;
+    while(!at_end()&&!check("}")){auto child=parse_statement(result);if(child)st->body.push_back(std::move(child));else if(!at_end())advance();}
+    if(!match("}")){error(result,peek(),"expected '}' after block");return nullptr;}st->span=join(begin.span,previous().span);return st;
+}
+StmtPtr Parser::parse_if(ParseResult& result){
+    const Token begin=previous();if(!match("(")){error(result,peek(),"expected '(' after 'if'");return nullptr;}auto cond=parse_expression(result);if(!cond)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after if condition");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after if condition");return nullptr;}auto then_block=parse_block(result);if(!then_block)return nullptr;auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::if_stmt;st->condition=std::move(cond);st->body=std::move(then_block->body);st->span=join(begin.span,then_block->span);
+    if(match("else")){if(match("if")){auto nested=parse_if(result);if(!nested)return nullptr;st->else_body.push_back(std::move(nested));st->span.end=st->else_body.back()->span.end;}else{if(!match("{")){error(result,peek(),"expected '{' after 'else'");return nullptr;}auto eb=parse_block(result);if(!eb)return nullptr;st->else_body=std::move(eb->body);st->span.end=eb->span.end;}}return st;
+}
+StmtPtr Parser::parse_while(ParseResult& result){const Token begin=previous();if(!match("(")){error(result,peek(),"expected '(' after 'while'");return nullptr;}auto cond=parse_expression(result);if(!cond)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after while condition");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after while condition");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::while_stmt;st->condition=std::move(cond);st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;}
+StmtPtr Parser::parse_for(ParseResult& result){
+    const Token begin=previous();if(!match("(")){error(result,peek(),"expected '(' after 'for'");return nullptr;}
+    // range form: identifier ':' expression
+    if(peek().kind==TokenKind::identifier&&peek(1).lexeme==":"){Token name=advance();advance();auto items=parse_expression(result);if(!items)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after range for");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after range for");return nullptr;}auto body=parse_block(result);auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::range_for;st->name=name.lexeme;st->value=std::move(items);st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;}
+    auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::for_stmt;
+    if(!check(";")){st->initializer=parse_declaration_or_assignment(result);if(!st->initializer)return nullptr;}else advance();
+    if(!check(";")){st->condition=parse_expression(result);if(!st->condition)return nullptr;}if(!match(";")){error(result,peek(),"expected ';' after for condition");return nullptr;}
+    if(!check(")")){st->increment=parse_expression(result);if(!st->increment)return nullptr;}if(!match(")")){error(result,peek(),"expected ')' after for clauses");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after for clauses");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;
+}
+StmtPtr Parser::parse_statement(ParseResult& result){
+    if (match("{")) return parse_block(result);
+    if (match("if")) return parse_if(result);
+    if (match("while")) return parse_while(result);
+    if (match("for")) return parse_for(result);
+    if (match("break") || match("continue")) {const Token kw=previous();if(!match(";")){error(result,peek(),"expected ';' after control statement");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=kw.lexeme=="break"?Stmt::Kind::break_stmt:Stmt::Kind::continue_stmt;st->span=join(kw.span,previous().span);return st;}
+    return parse_declaration_or_assignment(result);
+}
 ParseResult Parser::parse(){ParseResult r;while(!at_end()){const auto before=current_;auto st=parse_statement(r);if(st)r.program.statements.push_back(std::move(st));if(current_==before)advance();if(!r.diagnostics.empty())synchronize();}return r;}
 
 } // namespace strut
