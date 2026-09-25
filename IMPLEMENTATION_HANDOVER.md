@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP45 complete; CP46 is next.**
+Current implementation progress: **CP0–CP46 complete; CP47 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -400,11 +400,11 @@ Current implementation progress: **CP0–CP45 complete; CP46 is next.**
 - [x] tests + regressions.
 
 ### CP46 — `switch`
-- [ ] `case` / `default`.
-- [ ] enum/integer/string policy as appropriate.
-- [ ] fallthrough policy explicitly chosen; do not inherit C accidentally.
-- [ ] exhaustiveness diagnostics where useful.
-- [ ] tests + regressions.
+- [x] `case` / `default`.
+- [x] enum/integer/string policy as appropriate.
+- [x] fallthrough policy explicitly chosen; do not inherit C accidentally.
+- [x] exhaustiveness diagnostics where useful.
+- [x] tests + regressions.
 
 ### CP47 — `match`
 - [ ] basic enum matching.

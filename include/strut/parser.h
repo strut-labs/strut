@@ -41,6 +41,7 @@ private:
     StmtPtr parse_block(ParseResult& result);
     StmtPtr parse_if(ParseResult& result);
     StmtPtr parse_while(ParseResult& result);
+    StmtPtr parse_switch(ParseResult& result);
     StmtPtr parse_for(ParseResult& result);
     StmtPtr parse_function(ParseResult& result);
     StmtPtr parse_struct(ParseResult& result);

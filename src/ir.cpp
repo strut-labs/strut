@@ -75,6 +75,7 @@ public:
         }
         for (const auto& child : st.body) out->body.push_back(statement(*child));
         for (const auto& child : st.else_body) out->else_body.push_back(statement(*child));
+        for (const auto& c : st.switch_cases) { IRSwitchCase ic; ic.is_default=c.is_default; ic.span=c.span; ic.value=expression(c.value.get()); for(const auto& child:c.body) ic.body.push_back(statement(*child)); out->switch_cases.push_back(std::move(ic)); }
         return out;
     }
 private:

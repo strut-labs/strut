@@ -284,6 +284,14 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::while_stmt:
             if (st.condition) infer_expression(result, *st.condition);
             analyze_statements(result, st.body, true); break;
+        case Stmt::Kind::switch_stmt: {
+            auto subject=st.condition?infer_expression(result,*st.condition):TypeInfo{};
+            if(subject.valid() && !(subject.kind==TypeKind::signed_int||subject.kind==TypeKind::unsigned_int||enum_members_.find(subject.name)!=enum_members_.end())) result.diagnostics.push_back(Diagnostic{st.span,"switch currently requires an integer or enum expression"});
+            bool has_default=false;std::unordered_set<std::string> seen;
+            for(const auto& c:st.switch_cases){if(c.is_default){has_default=true;}else if(c.value){auto ct=infer_expression(result,*c.value);if(subject.valid()&&ct.valid()&&!compatible(ct,subject))result.diagnostics.push_back(Diagnostic{c.value->span,"switch case type is incompatible with subject"});std::string key=c.value->text;if(!key.empty()&&!seen.insert(key).second)result.diagnostics.push_back(Diagnostic{c.value->span,"duplicate switch case"});}analyze_statements(result,c.body,true);}
+            if(!has_default && subject.valid() && enum_members_.find(subject.name)!=enum_members_.end()) result.warnings.push_back(Diagnostic{st.span,"enum switch has no default; exhaustiveness is checked more strictly by match"});
+            break;
+        }
         case Stmt::Kind::for_stmt:
             push_scope(); if (st.initializer) analyze_statement(result, *st.initializer); if (st.condition) infer_expression(result,*st.condition); if(st.increment) infer_expression(result,*st.increment); analyze_statements(result, st.body, false); pop_scope(); break;
         case Stmt::Kind::range_for:
