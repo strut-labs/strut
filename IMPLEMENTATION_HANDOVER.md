@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP41 complete; CP42 is next.**
+Current implementation progress: **CP0–CP42 complete; CP43 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -373,10 +373,10 @@ Current implementation progress: **CP0–CP41 complete; CP42 is next.**
 - [x] tests + regressions.
 
 ### CP42 — Package include syntax
-- [ ] `include <package>` grammar/semantic placeholder.
-- [ ] package namespace rules.
-- [ ] distinguish official/third-party/local packages without making source verbose.
-- [ ] tests + docs.
+- [x] `include <package>` grammar/semantic placeholder.
+- [x] package namespace rules.
+- [x] distinguish official/third-party/local packages without making source verbose.
+- [x] tests + docs.
 
 ### CP43 — Abstract struct contracts
 - [ ] permit structs with unimplemented function declarations.
