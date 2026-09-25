@@ -115,6 +115,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::call: {
             for (const auto& arg : expr.arguments) infer_expression(result, *arg);
+            if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
+                if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
+                if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
+            }
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
                 if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};

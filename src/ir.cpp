@@ -42,6 +42,10 @@ public:
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
         for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
         if (expr->kind == Expr::Kind::index && out->left && out->left->type_name == "json") out->type_name = "json";
+        if (expr->kind == Expr::Kind::call && out->left && out->left->kind == IRExpr::Kind::member && out->left->left && out->left->left->kind == IRExpr::Kind::identifier && out->left->left->text == "json") {
+            if (out->left->text == "parse" || out->left->text == "encode") out->type_name = "json";
+            if (out->left->text == "stringify" || out->left->text == "pretty") out->type_name = "string";
+        }
         return out;
     }
     IRStmtPtr statement(const Stmt& st) {

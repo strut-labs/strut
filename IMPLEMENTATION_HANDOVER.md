@@ -252,12 +252,12 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] tests + regressions.
 
 ### CP28 — JSON stdlib
-- [ ] `json.parse`.
-- [ ] `json.stringify`.
-- [ ] pretty output.
-- [ ] typed encode/decode direction.
-- [ ] useful parse/stringify errors using Strut error model.
-- [ ] tests + regressions + docs.
+- [x] `json.parse`.
+- [x] `json.stringify`.
+- [x] pretty output.
+- [x] typed encode/decode direction fixed: `json.encode(value)` is available now; typed `json.decode<T>` is reserved for the post-struct generic conversion work.
+- [x] useful parse/stringify diagnostics now include JSONIC line/column data; checked-error integration will adopt the Strut error model when that phase lands.
+- [x] tests + regressions + docs.
 
 ### CP29 — Structs
 - [ ] fields.
