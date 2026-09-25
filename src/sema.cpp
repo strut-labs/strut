@@ -110,7 +110,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::postfix: {
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
-            if(expr.text=="*"){for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
+            if(expr.text=="*"){if(operand.name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw_ptr<T> dereference requires unsafe block"});for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
             return operand;
         }
         case Expr::Kind::binary: {
@@ -126,6 +126,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 return {TypeKind::bool_type, 0, "bool"};
             }
             if (expr.text == "<<" || expr.text == ">>") return left;
+            if((expr.text=="+"||expr.text=="-") && left.name.rfind("raw_ptr<",0)==0){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw pointer arithmetic requires unsafe block"});return left;}
             if (left.numeric() && right.numeric()) {
                 if (left.kind == TypeKind::floating || right.kind == TypeKind::floating) return builtin_type((left.bits > 32 || right.bits > 32) ? "double_64" : "double_32");
                 if (left.kind == right.kind) return left.bits >= right.bits ? left : right;
@@ -142,6 +143,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort")return {TypeKind::void_type,0,"void"};}
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
+                if(name=="raw"){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires unsafe block"});if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires exactly one ptr<T>"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"raw(...) currently requires ptr<T>"});return {TypeKind::named,0,"raw_ptr<"+inner+">"};}
                 if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one ptr<T>"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires ptr<T>"});return {TypeKind::named,0,"weak_ptr<"+inner+">"};}
                 if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
                 if (name == "print" || name == "input") return {TypeKind::void_type, 0, "void"};
@@ -209,6 +211,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 if (!value_type.valid()) result.diagnostics.push_back(Diagnostic{st.span, "cannot infer type of '" + st.name + "'"});
                 type_name = value_type.name.empty() ? "opaque" : std::string(value_type.name);
             }
+            if(type_name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"raw_ptr<T> values may only be created inside unsafe blocks"});
             declare(result, Symbol{st.name, SymbolNamespace::value, st.span, st.is_const, type_name});
             break;
         }
@@ -254,6 +257,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             }
             break;
         }
+        case Stmt::Kind::unsafe_stmt: ++unsafe_depth_; analyze_statements(result,st.body,true); --unsafe_depth_; break;
         case Stmt::Kind::block: analyze_statements(result, st.body, true); break;
         case Stmt::Kind::if_stmt: {
             if (st.condition) infer_expression(result, *st.condition);
@@ -293,7 +297,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); current_function_return_type_.clear();
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); current_function_return_type_.clear(); unsafe_depth_=0;
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }

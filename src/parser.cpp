@@ -309,6 +309,7 @@ StmtPtr Parser::parse_for(ParseResult& result){
 StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("type")) return parse_type_alias(result);
     if (match("struct")) return parse_struct(result);
+    if (match("unsafe")) { const Token kw=previous(); if(!match("{")){error(result,peek(),"expected '{' after unsafe");return nullptr;} auto block=parse_block(result); if(!block)return nullptr; block->kind=Stmt::Kind::unsafe_stmt; block->span=join(kw.span,block->span); return block; }
     if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
     if (match("function")) return parse_function(result);
     if (match("{")) return parse_block(result);

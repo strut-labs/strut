@@ -30,7 +30,7 @@ struct IRExpr {
     std::vector<IRStmtPtr> lambda_body;
 };
 struct IRStmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl, unsafe_stmt };
     Kind kind = Kind::expression;
     SourceSpan span;
     std::string name;

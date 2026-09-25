@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP38 complete; CP39 is next.**
+Current implementation progress: **CP0–CP39 complete; CP40 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -346,12 +346,12 @@ Current implementation progress: **CP0–CP38 complete; CP39 is next.**
 - [x] tests + regressions.
 
 ### CP39 — `unsafe` and `raw_ptr<T>`
-- [ ] `unsafe { ... }`.
-- [ ] `raw_ptr<T>` creation/use restrictions.
-- [ ] pointer arithmetic policy.
-- [ ] conversion rules between safe/weak/raw pointers.
-- [ ] compiler prevents raw operations outside unsafe contexts.
-- [ ] tests + regressions.
+- [x] `unsafe { ... }`.
+- [x] `raw_ptr<T>` creation/use restrictions.
+- [x] pointer arithmetic policy.
+- [x] conversion rules between safe/weak/raw pointers.
+- [x] compiler prevents raw operations outside unsafe contexts.
+- [x] tests + regressions.
 
 ### CP40 — Memory-safety certification pass 1
 - [ ] use-after-free attempts.

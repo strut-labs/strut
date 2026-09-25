@@ -38,7 +38,7 @@ struct Expr {
     std::shared_ptr<LambdaData> lambda;
 };
 struct Stmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl, unsafe_stmt };
     Kind kind;
     SourceSpan span;
     std::string name;

@@ -802,3 +802,7 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 ## Weak ownership baseline
 
 `weak_ptr<T>` is the non-owning counterpart to reference-counted `ptr<T>`. Construct it with `weak(ptr_value)`, use `.lock()` to obtain a safe `ptr<T>` when the object is still alive, and `.expired()` to query liveness. The compiler emits a non-fatal warning for obvious two-struct strong reference cycles and recommends a weak back-reference.
+
+## Unsafe/raw pointer baseline
+
+`raw_ptr<T>` is an unmanaged raw pointer and raw operations are restricted to `unsafe { ... }`. `raw(ptr_value)` exposes a non-owning raw address from a safe `ptr<T>` without changing ownership. Raw dereference and pointer arithmetic are only legal inside unsafe blocks. There is no automatic promotion from `raw_ptr<T>` back to owning `ptr<T>`; callers must not manufacture ownership from an unmanaged address. `weak_ptr<T>` must be upgraded with `.lock()` before converting to raw.
