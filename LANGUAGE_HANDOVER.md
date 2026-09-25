@@ -813,3 +813,7 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 ### Native library selection
 
 The bootstrap CLI accepts native library search paths and per-library link intent with `--lib`, `--static-lib`, `--dynamic-lib`, and `--lib-path`. Exact library paths are also accepted. Static/dynamic availability remains platform/toolchain dependent; the compiler must diagnose unsupported requests rather than silently changing modes.
+
+### Final executable link modes
+
+`--static` requests a fully static final executable where the platform/toolchain permits it; `--dynamic` requests the ordinary dynamically linked platform model. Per-library `--static-lib`/`--dynamic-lib` selections allow mixed builds. `--release` enables optimisation plus platform-appropriate dead-code elimination and symbol stripping. macOS does not generally support a fully static system executable with the default toolchain, so Strut diagnoses that request rather than pretending it succeeded.

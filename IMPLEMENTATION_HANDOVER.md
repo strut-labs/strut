@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP69 complete; CP70 is next.**
+Current implementation progress: **CP0–CP70 complete; CP71 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -595,13 +595,13 @@ Current implementation progress: **CP0–CP69 complete; CP70 is next.**
 - [x] tests against tiny native libraries in both modes.
 
 ### CP70 — Static, dynamic, and mixed project builds
-- [ ] fully static build mode where platform/dependencies permit.
-- [ ] ordinary dynamic build mode.
-- [ ] mixed per-dependency static/dynamic mode.
-- [ ] ensure the one-binary deployment path does not force all Strut programs to be statically linked.
-- [ ] document runtime-library/linker search-path behaviour.
-- [ ] release builds support symbol stripping and dead-code elimination regardless of link mode where the backend/toolchain permits.
-- [ ] regression/integration tests.
+- [x] fully static build mode where platform/dependencies permit.
+- [x] ordinary dynamic build mode.
+- [x] mixed per-dependency static/dynamic mode.
+- [x] ensure the one-binary deployment path does not force all Strut programs to be statically linked.
+- [x] document runtime-library/linker search-path behaviour.
+- [x] release builds support symbol stripping and dead-code elimination regardless of link mode where the backend/toolchain permits.
+- [x] regression/integration tests.
 
 ### CP71 — Package manifest/cache design
 - [ ] define project/package manifest format.

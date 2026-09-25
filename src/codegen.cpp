@@ -524,10 +524,15 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++17 /EHsc /I\"" STRUT_JSONIC_INCLUDE_DIR "\" "+(link.release?"/O2 ":"")+"\""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
- for(const auto& d:link.search_paths)cmd+=" /link /LIBPATH:\""+d.string()+"\"";
- for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);if(lp.has_extension())cmd+=" \""+lib.value+"\"";else cmd+=" "+lib.value+".lib";}
+ cmd=cxx+" /nologo /std:c++17 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ bool link_section=false;
+ for(const auto& d:link.search_paths){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}
+ for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}
+ if(link.release){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /OPT:REF /OPT:ICF";}
 #else
+ #ifdef __APPLE__
+ if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";std::error_code ec;std::filesystem::remove(tmp,ec);return false;}
+ #endif
  cmd=cxx+" -std=c++17 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O2 ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
  if(link.fully_static)cmd+=" -static";
  for(const auto& d:link.search_paths)cmd+=" -L\""+d.string()+"\"";
@@ -538,7 +543,13 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
  if(lib.mode==NativeLinkMode::static_link)cmd+=" -Wl,-Bstatic -l"+lib.value+" -Wl,-Bdynamic";else if(lib.mode==NativeLinkMode::dynamic_link)cmd+=" -Wl,-Bdynamic -l"+lib.value;else cmd+=" -l"+lib.value;
  #endif
  }
- if(link.release)cmd+=" -Wl,--gc-sections -s";
+ if(link.release){
+ #ifdef __APPLE__
+ cmd+=" -Wl,-dead_strip -Wl,-x";
+ #else
+ cmd+=" -Wl,--gc-sections -s";
+ #endif
+ }
 #endif
  int rc=std::system(cmd.c_str());std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error="native C++ compiler/linker failed";return false;}return true;}
 }
