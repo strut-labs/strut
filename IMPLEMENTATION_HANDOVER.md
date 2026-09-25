@@ -898,12 +898,12 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] use dogfood pain to revise APIs before stability freeze.
 
 ### CP107 — Package ecosystem dogfood
-- [ ] HTTP.
-- [ ] SQLite.
-- [ ] TLS.
-- [ ] at least one additional database/integration package.
-- [ ] package authoring docs.
-- [ ] verify package workflow from clean machine/environment.
+- [x] HTTP.
+- [x] SQLite.
+- [x] TLS.
+- [x] at least one additional database/integration package.
+- [x] package authoring docs.
+- [x] verify package workflow from clean machine/environment.
 
 ### CP108 — Website/docs maintenance audit 2
 - [ ] make website represent the real language, not early concept syntax.
