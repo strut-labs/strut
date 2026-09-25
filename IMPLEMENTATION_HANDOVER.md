@@ -683,15 +683,15 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [x] tests.
 
 ### CP81 — Build the first production-ish one-binary app
-- [ ] HTTP server.
-- [ ] JSON API.
-- [ ] SQLite package.
-- [ ] async handlers.
-- [ ] embedded HTML/JS/CSS/assets.
-- [ ] compile to one native executable.
-- [ ] no runtime Node/static-server dependency.
-- [ ] add integration/regression fixture.
-- [ ] document on website.
+- [x] HTTP server.
+- [x] JSON API.
+- [x] SQLite package.
+- [x] async handlers.
+- [x] embedded HTML/JS/CSS/assets.
+- [x] compile to one native executable.
+- [x] no runtime Node/static-server dependency.
+- [x] add integration/regression fixture.
+- [x] document on website.
 
 ## Phase 15 — Incremental object builds and project state
 
