@@ -13,7 +13,7 @@ namespace strut {
 struct IRExpr;
 using IRExprPtr = std::unique_ptr<IRExpr>;
 struct IRExpr {
-    enum class Kind { identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object, unary, binary, grouping, member, index, postfix, call, lambda };
+    enum class Kind { identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object, unary, binary, grouping, member, index, postfix, call, struct_literal, lambda };
     Kind kind = Kind::identifier;
     std::string text;
     std::string type_name;
@@ -21,12 +21,13 @@ struct IRExpr {
     IRExprPtr left;
     IRExprPtr right;
     std::vector<IRExprPtr> arguments;
+    std::vector<std::string> names;
 };
 
 struct IRStmt;
 using IRStmtPtr = std::unique_ptr<IRStmt>;
 struct IRStmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl };
     Kind kind = Kind::expression;
     SourceSpan span;
     std::string name;
@@ -40,6 +41,7 @@ struct IRStmt {
     std::vector<IRStmtPtr> body;
     std::vector<IRStmtPtr> else_body;
     std::vector<Parameter> parameters;
+    std::vector<Parameter> fields;
     std::vector<std::string> generic_parameters;
     std::string return_type;
     std::string owner;

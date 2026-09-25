@@ -84,6 +84,11 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             for(std::size_t i=1;i<expr.arguments.size();i+=2) infer_expression(result,*expr.arguments[i]);
             return builtin_type("json");
         }
+        case Expr::Kind::struct_literal: {
+            auto* type_symbol=lookup(expr.text,SymbolNamespace::type);if(!type_symbol){result.diagnostics.push_back(Diagnostic{expr.span,"unknown struct type '"+expr.text+"'"});return {};}
+            auto fit=struct_fields_.find(expr.text);if(fit!=struct_fields_.end()){std::unordered_set<std::string> seen;for(std::size_t i=0;i<expr.names.size();++i){auto field=fit->second.find(expr.names[i]);if(field==fit->second.end()){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"unknown field '"+expr.names[i]+"' for struct "+expr.text});continue;}if(!seen.insert(expr.names[i]).second)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"duplicate struct field '"+expr.names[i]+"'"});auto value=infer_expression(result,*expr.arguments[i]);auto dest=resolve_type(field->second);if(value.valid()&&dest.valid()&&!compatible(value,dest))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"incompatible value for field '"+expr.names[i]+"'"});}for(const auto& field:fit->second)if(!seen.contains(field.first))result.diagnostics.push_back(Diagnostic{expr.span,"missing field '"+field.first+"' for struct "+expr.text});}
+            return {TypeKind::named,0,expr.text};
+        }
         case Expr::Kind::identifier: {
             auto* symbol = lookup(expr.text, SymbolNamespace::value);
             if (!symbol) {
@@ -127,7 +132,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {TypeKind::named, 0, "opaque"};
         }
         case Expr::Kind::lambda: return {TypeKind::named, 0, "function"};
-        case Expr::Kind::member:
+        case Expr::Kind::member: {
+            auto base=infer_expression(result,*expr.left);auto sit=struct_fields_.find(base.name);if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end())return resolve_type(f->second);}
+            return {TypeKind::named,0,"opaque"};
+        }
         case Expr::Kind::index: return {TypeKind::named, 0, "opaque"};
     }
     return {};
@@ -186,10 +194,18 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, {}});
             if (st.alias_target) aliases_[st.name] = st.alias_target->name;
             break;
+        case Stmt::Kind::struct_decl: {
+            declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, st.name});
+            auto& fields=struct_fields_[st.name];
+            for(const auto& field:st.fields){if(fields.contains(field.name))result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else fields[field.name]=resolved_type_name(field.type.name);}
+            for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:st.fields)declare(result,Symbol{field.name,SymbolNamespace::value,field.span,false,resolved_type_name(field.type.name)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
+            break;
+        }
         case Stmt::Kind::function_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, st.return_type ? st.return_type->name : "void"});
             if (st.has_body) {
                 push_scope();
+                if(!st.owner.empty()){declare(result,Symbol{"this",SymbolNamespace::value,st.span,true,st.owner});auto fit=struct_fields_.find(st.owner);if(fit!=struct_fields_.end())for(const auto& f:fit->second)declare(result,Symbol{f.first,SymbolNamespace::value,st.span,false,f.second});}
                 for (const auto& p : st.parameters) declare(result, Symbol{p.name, SymbolNamespace::value, p.span, false, resolved_type_name(p.type.name)});
                 analyze_statements(result, st.body, false);
                 pop_scope();
@@ -226,7 +242,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear();
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear();
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }

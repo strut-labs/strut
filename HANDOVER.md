@@ -78,3 +78,7 @@ Strut is cross-platform by design. Linux is the initial development host, but co
 ## Deferred
 
 Server-side/Nift-style templating has been removed from the active roadmap for now. Revisit it later only if the core language and web/backend story make it clearly worthwhile.
+
+## Performance implementation rule
+
+Prefer allocation-light standard-library conversion primitives such as `std::from_chars` / `std::to_chars` where they fit, following the performance lessons from JSONIC, rather than stream-based or exception-heavy conversions. Preserve correctness and useful diagnostics first, then benchmark.

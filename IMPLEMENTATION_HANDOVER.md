@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP19 complete; CP20 is next.**
+Current implementation progress: **CP0–CP29 complete; CP30 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -260,13 +260,13 @@ Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 - [x] tests + regressions + docs.
 
 ### CP29 — Structs
-- [ ] fields.
-- [ ] `Type { field: value }` construction.
-- [ ] inline methods.
-- [ ] out-of-struct definitions.
-- [ ] visibility/access policy.
-- [ ] layout rules.
-- [ ] tests + regressions.
+- [x] fields.
+- [x] `Type { field: value }` construction.
+- [x] inline methods.
+- [x] out-of-struct definitions.
+- [x] visibility/access policy.
+- [x] layout rules.
+- [x] tests + regressions.
 
 ### CP30 — Nullability
 - [ ] `T?`.

@@ -26,7 +26,7 @@ using ExprPtr = std::unique_ptr<Expr>;
 struct Expr {
     enum class Kind {
         identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object,
-        unary, binary, grouping, member, index, postfix, call, lambda
+        unary, binary, grouping, member, index, postfix, call, struct_literal, lambda
     };
     Kind kind;
     std::string text;
@@ -34,10 +34,11 @@ struct Expr {
     ExprPtr left;
     ExprPtr right;
     std::vector<ExprPtr> arguments;
+    std::vector<std::string> names;
     std::shared_ptr<LambdaData> lambda;
 };
 struct Stmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias, struct_decl };
     Kind kind;
     SourceSpan span;
     std::string name;
@@ -51,6 +52,7 @@ struct Stmt {
     std::vector<StmtPtr> body;
     std::vector<StmtPtr> else_body;
     std::vector<Parameter> parameters;
+    std::vector<Parameter> fields;
     std::vector<std::string> generic_parameters;
     std::optional<TypeSyntax> return_type;
     std::string owner;
@@ -61,6 +63,7 @@ struct Stmt {
 struct LambdaData {
     bool is_async = false;
     std::vector<Parameter> parameters;
+    std::vector<Parameter> fields;
     std::vector<std::string> generic_parameters;
     ExprPtr expression_body;
     std::vector<StmtPtr> body;

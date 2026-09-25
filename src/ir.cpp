@@ -22,6 +22,7 @@ std::string literal_type(const Expr& expr) {
             return "map<" + literal_type(*expr.arguments[0]) + "," + literal_type(*expr.arguments[1]) + ">";
         }
         case Expr::Kind::json_object: return "json";
+        case Expr::Kind::struct_literal: return expr.text;
         case Expr::Kind::lambda: return "function";
         default: return "opaque";
     }
@@ -41,6 +42,7 @@ public:
         }
         out->left = expression(expr->left.get()); out->right = expression(expr->right.get());
         for (const auto& arg : expr->arguments) out->arguments.push_back(expression(arg.get()));
+        out->names = expr->names;
         if (expr->kind == Expr::Kind::index && out->left && out->left->type_name == "json") out->type_name = "json";
         if (expr->kind == Expr::Kind::call && out->left && out->left->kind == IRExpr::Kind::member && out->left->left && out->left->left->kind == IRExpr::Kind::identifier && out->left->left->text == "json") {
             if (out->left->text == "parse" || out->left->text == "encode") out->type_name = "json";
@@ -50,7 +52,7 @@ public:
     }
     IRStmtPtr statement(const Stmt& st) {
         auto out = std::make_unique<IRStmt>(); out->kind=convert_stmt_kind(st.kind); out->span=st.span; out->name=st.name; out->op=st.op; out->is_const=st.is_const;
-        out->owner=st.owner; out->generic_parameters=st.generic_parameters; out->parameters=st.parameters; out->has_body=st.has_body;
+        out->owner=st.owner; out->generic_parameters=st.generic_parameters; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
         out->type_name = st.declared_type ? st.declared_type->name : "";
         if (st.return_type) out->return_type = st.return_type->name;
         out->value=expression(st.value.get()); out->condition=expression(st.condition.get()); out->increment=expression(st.increment.get());

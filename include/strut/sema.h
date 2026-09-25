@@ -51,6 +51,7 @@ private:
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
 
     std::unordered_map<std::string, std::string> aliases_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
     std::vector<Scope> scopes_;
 };
 

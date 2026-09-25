@@ -101,6 +101,11 @@ ExprPtr Parser::parse_primary(ParseResult& result) {
 ExprPtr Parser::parse_postfix(ParseResult& result){
     auto expr=parse_primary(result); if(!expr)return nullptr;
     while(true){
+        if(expr->kind==Expr::Kind::identifier && match("{")){
+            auto n=std::make_unique<Expr>();n->kind=Expr::Kind::struct_literal;n->text=expr->text;const SourceSpan begin=expr->span;
+            if(!check("}")){do{if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected struct field name");return nullptr;}n->names.push_back(advance().lexeme);if(!match(":")){error(result,peek(),"expected ':' after struct field name");return nullptr;}auto value=parse_expression(result);if(!value)return nullptr;n->arguments.push_back(std::move(value));}while(match(","));}
+            if(!match("}")){error(result,peek(),"expected '}' after struct literal");return nullptr;}n->span=SourceSpan{begin.begin,previous().span.end};expr=std::move(n);continue;
+        }
         if(match("(")){
             auto n=std::make_unique<Expr>();n->kind=Expr::Kind::call;n->left=std::move(expr);
             if(!check(")")){do{auto arg=parse_expression(result);if(!arg)return nullptr;n->arguments.push_back(std::move(arg));}while(match(","));}
@@ -254,6 +259,27 @@ StmtPtr Parser::parse_function(ParseResult& result) {
     auto body = parse_block(result); if (!body) return nullptr;
     st->has_body = true; st->body = std::move(body->body); st->span = join(begin.span, body->span); return st;
 }
+StmtPtr Parser::parse_struct(ParseResult& result) {
+    const Token begin=previous();
+    if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected struct name");return nullptr;}
+    const Token name=advance();
+    if(!match("{")){error(result,peek(),"expected '{' after struct name");return nullptr;}
+    auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::struct_decl;st->name=name.lexeme;
+    while(!at_end()&&!check("}")){
+        if(match("function")){
+            auto method=parse_function(result);if(!method)return nullptr;method->owner=st->name;st->body.push_back(std::move(method));continue;
+        }
+        auto type=parse_type(result);if(type.name.empty())return nullptr;
+        if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected field name");return nullptr;}
+        const Token field=advance();
+        if(!match(";")){error(result,peek(),"expected ';' after struct field");return nullptr;}
+        st->fields.push_back(Parameter{std::move(type),field.lexeme,field.span});
+    }
+    if(!match("}")){error(result,peek(),"expected '}' after struct");return nullptr;}
+    if(match(";")){} // optional compatibility semicolon after a struct definition
+    st->span=join(begin.span,previous().span);return st;
+}
+
 StmtPtr Parser::parse_block(ParseResult& result){
     const Token begin=previous();auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::block;
     while(!at_end()&&!check("}")){auto child=parse_statement(result);if(child)st->body.push_back(std::move(child));else if(!at_end())advance();}
@@ -275,6 +301,7 @@ StmtPtr Parser::parse_for(ParseResult& result){
 }
 StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("type")) return parse_type_alias(result);
+    if (match("struct")) return parse_struct(result);
     if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
     if (match("function")) return parse_function(result);
     if (match("{")) return parse_block(result);

@@ -340,6 +340,8 @@ user := User {
 };
 ```
 
+Fields and methods are public by default, matching `struct` expectations and keeping the first visibility model low-ceremony. Field layout follows source declaration order. A later visibility feature must be explicit rather than silently changing existing layout/access semantics.
+
 ## 10. Nullability
 
 Use explicit nullable types:
