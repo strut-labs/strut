@@ -648,12 +648,12 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [x] tests + docs.
 
 ### CP77 — Official HTTP package: server
-- [ ] server/listen lifecycle.
-- [ ] routing/path params/query/headers.
-- [ ] request body text/bytes/JSON.
-- [ ] response text/bytes/JSON/HTML.
-- [ ] async handlers.
-- [ ] tests + docs.
+- [x] server/listen lifecycle.
+- [x] routing/path params/query/headers.
+- [x] request body text/bytes/JSON.
+- [x] response text/bytes/JSON/HTML.
+- [x] async handlers.
+- [x] tests + docs.
 
 ### CP78 — Official SQLite package
 - [ ] create/use official SQLite package rather than bloating core stdlib.
@@ -693,7 +693,44 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] add integration/regression fixture.
 - [ ] document on website.
 
-### CP82 — Measure first serious app
+## Phase 15 — Incremental object builds and project state
+
+### CP82 — `strut init` and `.strut/config.json`
+- [ ] add `strut init` for creating project-local build metadata/config without overwriting existing project files.
+- [ ] define `.strut/config.json` schema for entrypoint, output, target, build mode, linking defaults, and incremental mode.
+- [ ] keep `strut.json` as package/project manifest; `.strut/config.json` is build-machine/project build state/configuration.
+- [ ] document which `.strut` files are source-controlled vs generated/ignored.
+- [ ] use JSONIC for config parsing.
+- [ ] tests + docs.
+
+### CP83 — Persistent object directory
+- [ ] compile translation units to persistent native `.o`/`.obj` files under `.strut/obj/<target>/<mode>/`.
+- [ ] separate compilation from final linking.
+- [ ] cache generated backend source only when useful for diagnostics/debugging.
+- [ ] object cache keys include compiler version, target, build mode, relevant compiler flags, and linking ABI settings.
+- [ ] deleting `.strut/obj` must always be a safe clean rebuild path.
+- [ ] tests + docs.
+
+### CP84 — Per-object dependency `.info.json` metadata
+- [ ] follow Nift's proven per-output metadata model, adapted for compilation units.
+- [ ] write `.strut/info/<target>/<mode>/<unit>.info.json` after a successful object build.
+- [ ] record source path, resulting object path, direct/transitive local includes, package source/header dependencies, generated/embedded resource dependencies, compiler/version/target/mode fingerprints, and relevant config.
+- [ ] metadata missing, malformed, old-format, or referring to removed dependencies forces recompilation.
+- [ ] write metadata only after the corresponding `.o`/`.obj` build succeeds.
+- [ ] use JSONIC.
+- [ ] tests + docs.
+
+### CP85 — Incremental dependency invalidation
+- [ ] compare each recorded dependency mtime against its `.info.json` mtime to decide whether its object must be rebuilt.
+- [ ] as in Nift modified mode, treat dependency mtime equal to metadata mtime as potentially stale to avoid coarse-timestamp false negatives.
+- [ ] rebuild if object output is missing, metadata is missing/invalid, dependency is missing/changed, config/compiler/target fingerprint changed, or dependency graph changed.
+- [ ] reuse unchanged `.o`/`.obj` files and relink only what is necessary.
+- [ ] track dependency reasons for `strut status`/verbose builds.
+- [ ] leave room for a later hash/hybrid mode analogous to Nift without requiring hashes for the initial implementation.
+- [ ] multi-file regression fixtures proving one changed header/source recompiles only affected objects.
+- [ ] tests + docs.
+
+### CP86 — Measure first serious app
 - [ ] executable size.
 - [ ] cold startup.
 - [ ] idle memory.
@@ -704,7 +741,7 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 
 ## Phase 15 — Project CLI, formatter, tests, docs maintenance
 
-### CP83 — `strut make`
+### CP87 — `strut make`
 - [ ] project discovery/manifest loading.
 - [ ] compile project entrypoint/dependencies.
 - [ ] incremental build strategy.
@@ -712,7 +749,7 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] clear diagnostics.
 - [ ] docs.
 
-### CP84 — `strut test`
+### CP88 — `strut test`
 - [ ] native Strut test convention/API.
 - [ ] test discovery.
 - [ ] filtering.
@@ -720,14 +757,14 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] parallelism policy.
 - [ ] self-host Strut package tests with it where possible.
 
-### CP85 — Formatter
+### CP89 — Formatter
 - [ ] define canonical formatting.
 - [ ] mandatory-semicolon output.
 - [ ] one canonical pointer/ref/type spelling.
 - [ ] idempotence tests.
 - [ ] formatter fixtures in regression suite.
 
-### CP86 — CLI polish
+### CP90 — CLI polish
 - [ ] help/version.
 - [ ] compile/make/test/fmt/package commands settled.
 - [ ] static/dynamic/mixed linking flags and project configuration settled.
@@ -735,7 +772,7 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] shell completion if worthwhile.
 - [ ] no gratuitous aliases that complicate docs/agents.
 
-### CP87 — Website/docs maintenance audit 1
+### CP91 — Website/docs maintenance audit 1
 - [ ] update every implemented language page.
 - [ ] remove stale speculative syntax.
 - [ ] update install/getting-started/CLI/package docs.
@@ -745,7 +782,7 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] inspect mobile menu + 404 after docs growth.
 - [ ] commit website changes.
 
-### CP88 — Regression-suite maintenance audit 1
+### CP92 — Regression-suite maintenance audit 1
 - [ ] ensure every shipped syntax/type/memory/error/concurrency feature has coverage.
 - [ ] add missing negative tests.
 - [ ] add first multi-file/project/package fixtures.
@@ -754,7 +791,7 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 
 ## Phase 16 — Optimisation, tooling, platforms
 
-### CP89 — Baseline benchmark suite
+### CP93 — Baseline benchmark suite
 - [ ] compiler compile time.
 - [ ] generated program startup.
 - [ ] stripped hello-world executable size.
@@ -770,7 +807,7 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] HTTP/SQLite representative tasks.
 - [ ] reproducible benchmark docs.
 
-### CP90 — Optimisation pipeline
+### CP94 — Optimisation pipeline
 - [ ] dead-code elimination.
 - [ ] constant folding.
 - [ ] inlining strategy.
@@ -778,18 +815,18 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] release optimization/LTO where backend supports it.
 - [ ] benchmark every claimed win.
 
-### CP91 — Reference-count optimisation pass
+### CP95 — Reference-count optimisation pass
 - [ ] elide provably unnecessary increments/decrements.
 - [ ] prefer `ref<T>` borrowing in hot internal APIs.
 - [ ] benchmark before/after.
 - [ ] verify memory semantics unchanged with regression suite/sanitizers.
 
-### CP92 — Debug information and stack traces
+### CP96 — Debug information and stack traces
 - [ ] useful source-level debug metadata.
 - [ ] runtime panic/error stack traces where appropriate.
 - [ ] symbol handling debug vs release.
 
-### CP93 — Language server/editor support
+### CP97 — Language server/editor support
 - [ ] parser/typechecker reuse.
 - [ ] diagnostics.
 - [ ] go-to-definition.
@@ -797,23 +834,23 @@ Current implementation progress: **CP0–CP76 complete; CP77 is next.**
 - [ ] hover/type info.
 - [ ] formatting integration.
 
-### CP94 — Linux certification
+### CP98 — Linux certification
 - [ ] x64.
 - [ ] arm64 if practical.
 - [ ] clean install/build/test docs.
 - [ ] regression suite passes.
 
-### CP95 — macOS certification
+### CP99 — macOS certification
 - [ ] arm64.
 - [ ] x64 only if support cost is justified.
 - [ ] regression suite passes.
 
-### CP96 — Windows certification
+### CP100 — Windows certification
 - [ ] x64.
 - [ ] native paths/files/network/runtime fixes.
 - [ ] regression suite passes.
 
-### CP97 — Cross compilation
+### CP101 — Cross compilation
 - [ ] settle target naming.
 - [ ] produce binaries for supported targets where toolchain permits.
 - [ ] official-package native dependency story.
@@ -825,27 +862,27 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 
 ## Phase 17 — Hardening
 
-### CP98 — Parser/typechecker fuzzing
+### CP102 — Parser/typechecker fuzzing
 - [ ] malformed source corpus.
 - [ ] parser fuzzing.
 - [ ] typechecker fuzzing.
 - [ ] no crashes/hangs on invalid programs.
 
-### CP99 — Memory/runtime hardening
+### CP103 — Memory/runtime hardening
 - [ ] sanitizers.
 - [ ] Valgrind/equivalent where useful.
 - [ ] refcount overflow policy.
 - [ ] weak-pointer races.
 - [ ] destruction-order torture tests.
 
-### CP100 — Concurrency hardening
+### CP104 — Concurrency hardening
 - [ ] thread sanitizer where feasible.
 - [ ] mutex/channel stress.
 - [ ] async scheduler stress.
 - [ ] cancellation/shutdown races.
 - [ ] document guarantees/limitations honestly.
 
-### CP101 — FFI/unsafe hardening
+### CP105 — FFI/unsafe hardening
 - [ ] ABI torture fixtures.
 - [ ] raw-pointer escape cases.
 - [ ] clear boundary between safe guarantees and unsafe responsibility.
@@ -853,14 +890,14 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 
 ## Phase 18 — Serious dogfooding and ecosystem
 
-### CP102 — Build multiple non-trivial Strut programs
+### CP106 — Build multiple non-trivial Strut programs
 - [ ] CLI utility.
 - [ ] concurrent/network service.
 - [ ] data/JSON-heavy tool.
 - [ ] one-binary web app.
 - [ ] use dogfood pain to revise APIs before stability freeze.
 
-### CP103 — Package ecosystem dogfood
+### CP107 — Package ecosystem dogfood
 - [ ] HTTP.
 - [ ] SQLite.
 - [ ] TLS.
@@ -868,7 +905,7 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] package authoring docs.
 - [ ] verify package workflow from clean machine/environment.
 
-### CP104 — Website/docs maintenance audit 2
+### CP108 — Website/docs maintenance audit 2
 - [ ] make website represent the real language, not early concept syntax.
 - [ ] comprehensive language reference.
 - [ ] package docs.
@@ -878,28 +915,28 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] `nift build` green.
 - [ ] commit.
 
-### CP105 — Regression-suite maintenance audit 2
+### CP109 — Regression-suite maintenance audit 2
 - [ ] full feature matrix.
 - [ ] real-project fixtures.
 - [ ] package fixtures.
 - [ ] cross-platform CI matrix where practical.
 - [ ] compatibility policy for releases.
 
-### CP106 — Investigate rewriting Nift in Strut
+### CP110 — Investigate rewriting Nift in Strut
 - [ ] map Nift requirements against Strut capabilities.
 - [ ] identify missing systems/IO/performance capabilities.
 - [ ] prototype one meaningful Nift subsystem.
 - [ ] measure performance/memory/complexity.
 - [ ] decide based on evidence, not symbolism.
 
-### CP107 — Self-hosting feasibility review
+### CP111 — Self-hosting feasibility review
 - [ ] determine what is required for Strut to compile its own compiler.
 - [ ] prototype only if it benefits the project.
 - [ ] do not distort language design merely to achieve a vanity milestone.
 
 ## Phase 19 — Stability and release readiness
 
-### CP108 — Language design audit
+### CP112 — Language design audit
 - [ ] review every provisional decision in `LANGUAGE_HANDOVER.md`.
 - [ ] remove dead syntax/features.
 - [ ] resolve extension/header/source conventions.
@@ -910,20 +947,20 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] audit stream/process APIs against real systems programs.
 - [ ] audit static/dynamic linking and executable-size goals against real programs.
 
-### CP109 — Compatibility/versioning policy
+### CP113 — Compatibility/versioning policy
 - [ ] semantic/versioning strategy for compiler/language/packages.
 - [ ] deprecation policy.
 - [ ] regression-suite compatibility baselines.
 - [ ] package compatibility expectations.
 
-### CP110 — Security/reliability review
+### CP114 — Security/reliability review
 - [ ] safe memory guarantee audit.
 - [ ] unsafe/FFI audit.
 - [ ] package resolver/supply-chain review.
 - [ ] HTTP/TLS default review.
 - [ ] parser/input hardening review.
 
-### CP111 — Release candidate certification
+### CP115 — Release candidate certification
 - [ ] compiler unit/integration tests green.
 - [ ] full independent regression suite green.
 - [ ] supported OS matrix green.
@@ -933,7 +970,7 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [ ] official packages green.
 - [ ] benchmark/regression gates green.
 
-### CP112 — First serious public release
+### CP116 — First serious public release
 - [ ] tag/release compiler.
 - [ ] publish install artifacts/instructions.
 - [ ] publish/verify official packages.

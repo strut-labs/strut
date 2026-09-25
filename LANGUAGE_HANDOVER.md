@@ -821,3 +821,8 @@ The bootstrap CLI accepts native library search paths and per-library link inten
 ### Package metadata
 
 Projects/packages use JSONIC-parsed `strut.json` metadata. Initial dependency requirements are exact semver, caret, tilde, or `*`; resolution is locked into deterministic `strut.lock.json` entries with immutable revision/content checksums. Package contents are shared in a platform cache (or under `STRUT_HOME`) rather than copied into a per-project `node_modules` equivalent.
+
+
+## Approved third-party foundations
+
+Only JSONIC, libcurl, and OpenSSL are pre-approved for vendoring/embedding in Strut itself. Prefer the standard library, operating-system APIs, and Strut-owned code otherwise; any additional embedded third-party dependency must be approved first. SQLite may be consumed as an external/system library by the official package without being vendored into the compiler/runtime.

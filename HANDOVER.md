@@ -90,3 +90,8 @@ The compiler/runtime bootstrap targets portable C++20. JSONIC is verified header
 ## Embedded third-party dependency policy
 
 Only JSONIC and libcurl are pre-approved for embedding in the Strut toolchain/runtime. Prefer the standard library and Strut-owned code otherwise. Do not vendor or embed any additional third-party library without discussing it with the maintainer first. Packages may depend on external system libraries later, but that is separate from silently embedding another dependency into Strut itself.
+
+
+## Approved third-party foundations
+
+Only JSONIC, libcurl, and OpenSSL are pre-approved for vendoring/embedding in Strut itself. Prefer the standard library, operating-system APIs, and Strut-owned code otherwise; any additional embedded third-party dependency must be approved first. SQLite may be consumed as an external/system library by the official package without being vendored into the compiler/runtime.

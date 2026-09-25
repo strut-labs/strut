@@ -5,6 +5,9 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <filesystem>
+#include <vector>
+#include <algorithm>
 namespace strut { namespace {
 std::string cpp_type(std::string t);
 std::string safe_symbol(std::string s){for(char& c:s)if(!std::isalnum(static_cast<unsigned char>(c)))c='_';return s;}
@@ -47,6 +50,11 @@ std::string cpp_type(std::string t){
     if(t=="tcp_socket") return "strut_tcp_socket";
     if(t=="tcp_listener") return "strut_tcp_listener";
     if(t=="tls_stream") return "strut_tls_stream";
+    if(t=="http_response") return "strut_http_response";
+    if(t=="http_request") return "strut_server_request";
+    if(t=="http_server_response") return "strut_server_response";
+    if(t=="http_server") return "strut_http_server";
+    if(t=="sqlite_db") return "strut_sqlite_db";
     if(t=="mutex") return "strut_mutex";
     if(t.rfind("future<",0)==0&&t.back()=='>') return "strut_future<"+cpp_type(t.substr(7,t.size()-8))+">";
     if(t.rfind("channel<",0)==0&&t.back()=='>') return "strut_channel<"+cpp_type(t.substr(8,t.size()-9))+">";
@@ -64,6 +72,29 @@ std::string cpp_type(std::string t){
     if(t=="opaque"||t=="function") return "auto";
     return t.empty()?"auto":t;
 }
+
+std::string literal_value(const std::string& q){if(q.size()<2)return q;std::string o;for(std::size_t i=1;i+1<q.size();++i){char c=q[i];if(c=='\\'&&i+2<q.size()){char n=q[++i];if(n=='n')o+='\n';else if(n=='r')o+='\r';else if(n=='t')o+='\t';else o+=n;}else o+=c;}return o;}
+std::string embedded_string_cpp(const std::string& data){std::ostringstream o;o<<"[&](){const unsigned char d[]={";for(std::size_t i=0;i<data.size();++i){if(i)o<<',';o<<static_cast<unsigned int>(static_cast<unsigned char>(data[i]));}o<<"};return strut_string(std::string(reinterpret_cast<const char*>(d),sizeof(d)));}()";return o.str();}
+std::string compile_embed_file(const std::string& quoted){auto path=std::filesystem::path(literal_value(quoted));std::ifstream f(path,std::ios::binary);if(!f)return "strut_embed_file("+std::string("strut_string(")+quoted+")";std::ostringstream b;b<<f.rdbuf();return embedded_string_cpp(b.str());}
+std::string compile_embed_dir(const std::string& quoted){
+    auto root=std::filesystem::path(literal_value(quoted));
+    if(!std::filesystem::exists(root)) return "strut_embed_dir(strut_string("+quoted+"))";
+    std::vector<std::filesystem::path> files;
+    for(auto& e:std::filesystem::recursive_directory_iterator(root)) if(e.is_regular_file()) files.push_back(e.path());
+    std::sort(files.begin(),files.end());
+    std::ostringstream o;
+    o<<"[&](){std::map<strut_string,strut_string> m;";
+    for(const auto& path:files){
+        std::ifstream f(path,std::ios::binary); std::ostringstream b; b<<f.rdbuf();
+        auto rel=std::filesystem::relative(path,root).generic_string();
+        std::string esc;
+        for(char c:rel){ if(c=='\\' || c=='"') esc.push_back('\\'); esc.push_back(c); }
+        o<<"m[strut_string(\""<<esc<<"\")]="<<embedded_string_cpp(b.str())<<";";
+    }
+    o<<"return m;}()";
+    return o.str();
+}
+
 std::string expr(const IRExpr& e);
 void stmt(std::ostringstream& o,const IRStmt& s,int n);
 std::string json_expr(const IRExpr& e){
@@ -93,7 +124,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
-        case IRExpr::Kind::member:{if(e.text.rfind("::",0)==0)return expr(*e.left)+e.text; if(e.text.rfind("->",0)==0)return expr(*e.left)+e.text; if(e.left && !e.left->type_name.empty() && e.left->type_name.back()=='?') return "(*"+expr(*e.left)+")."+e.text; if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";if(e.left&&e.left->type_name.rfind("ref<",0)==0)return "(*"+expr(*e.left)+")."+m;if(e.left&&e.left->type_name.rfind("ptr<",0)==0)return expr(*e.left)+"->"+m;return expr(*e.left)+"."+m;}
+        case IRExpr::Kind::member:{if(e.text.rfind("::",0)==0)return expr(*e.left)+e.text; if(e.text.rfind("->",0)==0)return expr(*e.left)+e.text; if(e.left && !e.left->type_name.empty() && e.left->type_name.back()=='?') return "(*"+expr(*e.left)+")."+e.text; if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;if(e.left&&e.left->type_name=="http_server"&&m=="static")m="serve_static";if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";if(e.left&&e.left->type_name.rfind("ref<",0)==0)return "(*"+expr(*e.left)+")."+m;if(e.left&&e.left->type_name.rfind("ptr<",0)==0)return expr(*e.left)+"->"+m;return expr(*e.left)+"."+m;}
         case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?e.right->text:expr(*e.right);return expr(*e.left)+"["+k+"]";}return expr(*e.left)+".at("+expr(*e.right)+")";}
         case IRExpr::Kind::call:{
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="insert" && e.left->left && e.arguments.size()==2){return "strut_map_insert("+expr(*e.left->left)+","+expr(*e.arguments[0])+","+expr(*e.arguments[1])+")";}
@@ -116,8 +147,9 @@ std::string expr(const IRExpr& e){
                 if(m=="omit"&&e.arguments.size()==1)return "strut_json_omit("+base+","+expr(*e.arguments[0])+")";
                 if(m=="merge_deep"&&e.arguments.size()==1)return "strut_json_merge_deep("+base+","+expr(*e.arguments[0])+")";
             }
+            if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.arguments.size()==1&&e.arguments[0]->kind==IRExpr::Kind::string_literal){if(e.left->text=="embed_file")return compile_embed_file(e.arguments[0]->text);if(e.left->text=="embed_dir")return compile_embed_dir(e.arguments[0]->text);}
             std::string name=expr(*e.left); if(name=="ptr"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="weak"&&e.arguments.size()==1)return "strut_weak("+expr(*e.arguments[0])+")"; if(name=="raw"&&e.arguments.size()==1)return "strut_raw("+expr(*e.arguments[0])+")"; if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
-            if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex";
+            if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
@@ -161,7 +193,11 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');
 bool expr_uses_curl(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text.rfind("tls_",0)==0||e->text.rfind("http_",0)==0))return true;if(expr_uses_curl(e->left.get())||expr_uses_curl(e->right.get())||expr_uses_curl(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_curl(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_curl(st->value.get()))return true;}return false;}
 bool stmt_uses_curl(const IRStmt* s){if(!s)return false;if(expr_uses_curl(s->value.get())||expr_uses_curl(s->target.get())||expr_uses_curl(s->condition.get())||expr_uses_curl(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_curl(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_curl(c.get()))return true;return false;}
 bool program_uses_curl(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_curl(s.get()))return true;return false;}
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;const bool use_curl=program_uses_curl(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#endif\n";
+
+bool expr_uses_sqlite(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&e->text.rfind("sqlite_",0)==0)return true;if(expr_uses_sqlite(e->left.get())||expr_uses_sqlite(e->right.get())||expr_uses_sqlite(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_sqlite(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_sqlite(st->value.get()))return true;}return false;}
+bool stmt_uses_sqlite(const IRStmt* s){if(!s)return false;if(expr_uses_sqlite(s->value.get())||expr_uses_sqlite(s->target.get())||expr_uses_sqlite(s->condition.get())||expr_uses_sqlite(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_sqlite(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_sqlite(c.get()))return true;return false;}
+bool program_uses_sqlite(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_sqlite(s.get()))return true;return false;}
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;std::ostringstream o;const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -602,6 +638,54 @@ inline strut_future<strut_http_response> http_get_async(const strut_string& url)
 inline strut_future<strut_http_response> http_request_async(const strut_string& method,const strut_string& url,const json::Document& options){return strut_async([method,url,options]{return http_request(method,url,options);});}
 #endif
 
+struct strut_server_request {
+    strut_string method, path, body;
+    std::map<strut_string,strut_string> headers, query, params;
+    json::Document json() const { return strut_json_parse(body); }
+};
+struct strut_server_response { std::int32_t status=200; strut_string body; strut_string content_type="text/plain; charset=utf-8"; std::map<strut_string,strut_string> headers; };
+inline strut_server_response strut_http_text(const strut_string& s){return {200,s,"text/plain; charset=utf-8",{}};}
+inline strut_server_response strut_http_html(const strut_string& s){return {200,s,"text/html; charset=utf-8",{}};}
+inline strut_server_response strut_http_json_response(const json::Document& j){return {200,strut_string(j.dump()),"application/json",{}};}
+inline std::string strut_trim_ascii(std::string s){while(!s.empty()&&(s.back()=='\r'||s.back()==' '||s.back()=='\t'))s.pop_back();std::size_t i=0;while(i<s.size()&&(s[i]==' '||s[i]=='\t'))++i;return s.substr(i);}
+inline void strut_parse_query(const std::string& raw,std::map<strut_string,strut_string>& out){std::size_t p=0;while(p<=raw.size()){auto amp=raw.find('&',p);auto part=raw.substr(p,amp==std::string::npos?std::string::npos:amp-p);auto eq=part.find('=');out[strut_string(part.substr(0,eq))]=strut_string(eq==std::string::npos?"":part.substr(eq+1));if(amp==std::string::npos)break;p=amp+1;}}
+inline bool strut_route_match(const std::string& pattern,const std::string& path,std::map<strut_string,strut_string>& params){std::stringstream a(pattern),b(path);std::string x,y;while(true){bool ax=static_cast<bool>(std::getline(a,x,'/')),by=static_cast<bool>(std::getline(b,y,'/'));if(!ax||!by)return ax==by;if(x.empty()&&y.empty())continue;if(!x.empty()&&x[0]==':')params[strut_string(x.substr(1))]=strut_string(y);else if(x!=y)return false;}}
+class strut_http_server {
+public:
+    using handler=std::function<strut_server_response(strut_server_request)>;
+    void get(const strut_string& path,handler h){routes_.push_back({"GET",path.v,std::move(h)});} void post(const strut_string& path,handler h){routes_.push_back({"POST",path.v,std::move(h)});}
+    void get_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h){get(path,[h=std::move(h)](strut_server_request r){auto f=h(std::move(r));return strut_await(f);});}
+    void post_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h){post(path,[h=std::move(h)](strut_server_request r){auto f=h(std::move(r));return strut_await(f);});}
+    void serve_static(const strut_string& prefix,const std::map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()){static_prefix_=prefix.v;static_files_=files;static_fallback_=fallback.v;}
+    void listen(const strut_string& host,std::int32_t port,std::int32_t max_requests=0){auto l=tcp_listen(host,port);std::int32_t served=0;while(max_requests<=0||served<max_requests){auto c=l.accept();serve_one(c);++served;}l.close();}
+private:
+    struct route{std::string method,path;handler fn;}; std::vector<route> routes_; std::string static_prefix_; std::string static_fallback_; std::map<strut_string,strut_string> static_files_;
+    static strut_string mime(const std::string& p){auto dot=p.rfind('.');auto e=dot==std::string::npos?std::string():p.substr(dot);if(e==".html")return "text/html; charset=utf-8";if(e==".css")return "text/css; charset=utf-8";if(e==".js")return "application/javascript";if(e==".json")return "application/json";if(e==".svg")return "image/svg+xml";if(e==".png")return "image/png";return "application/octet-stream";}
+    static std::string etag(const std::string& data){std::uint64_t h=1469598103934665603ull;for(unsigned char c:data){h^=c;h*=1099511628211ull;}std::ostringstream o;o<<'"'<<std::hex<<h<<'"';return o.str();}
+    void serve_one(strut_tcp_socket& sock){std::string raw;for(;;){auto chunk=sock.read(4096).v;if(chunk.empty())break;raw+=chunk;if(raw.find("\r\n\r\n")!=std::string::npos)break;}strut_server_request req;auto line_end=raw.find("\r\n");if(line_end==std::string::npos)return;std::istringstream first(raw.substr(0,line_end));std::string target,version;first>>req.method.v>>target>>version;auto q=target.find('?');req.path=strut_string(target.substr(0,q));if(q!=std::string::npos)strut_parse_query(target.substr(q+1),req.query);auto header_end=raw.find("\r\n\r\n");std::size_t p=line_end+2;std::size_t content_len=0;while(p<header_end){auto e=raw.find("\r\n",p);auto ln=raw.substr(p,e-p);auto colon=ln.find(':');if(colon!=std::string::npos){auto k=strut_trim_ascii(ln.substr(0,colon));auto v=strut_trim_ascii(ln.substr(colon+1));req.headers[strut_string(k)]=strut_string(v);if(k=="Content-Length")content_len=static_cast<std::size_t>(std::strtoull(v.c_str(),nullptr,10));}p=e+2;}if(header_end!=std::string::npos){req.body=strut_string(raw.substr(header_end+4));while(req.body.v.size()<content_len){auto more=sock.read(static_cast<std::int64_t>(content_len-req.body.v.size())).v;if(more.empty())break;req.body.v+=more;}}
+      strut_server_response res;bool found=false;for(auto& r:routes_){if(r.method!=req.method.v)continue;req.params.clear();if(strut_route_match(r.path,req.path.v,req.params)){res=r.fn(req);found=true;break;}}if(!found&&!static_files_.empty()&&req.method.v=="GET"){std::string key=req.path.v;if(!static_prefix_.empty()&&key.rfind(static_prefix_,0)==0)key=key.substr(static_prefix_.size());while(!key.empty()&&key.front()=='/')key.erase(key.begin());if(key.empty())key="index.html";if(key.find("..")!=std::string::npos){res.status=400;res.body="Bad Request";found=true;}else{auto it=static_files_.find(strut_string(key));if(it==static_files_.end()&&!static_fallback_.empty())it=static_files_.find(strut_string(static_fallback_));if(it!=static_files_.end()){res.status=200;res.body=it->second;res.content_type=mime(key);res.headers[strut_string("ETag")]=strut_string(etag(res.body.v));res.headers[strut_string("Cache-Control")]=strut_string("public, max-age=0, must-revalidate");found=true;}}}if(!found){res.status=404;res.body="Not Found";}std::ostringstream out;out<<"HTTP/1.1 "<<res.status<<" "<<(res.status==200?"OK":res.status==404?"Not Found":"Response")<<"\r\nContent-Type: "<<res.content_type.v<<"\r\nContent-Length: "<<res.body.v.size()<<"\r\nConnection: close\r\n";for(auto& h:res.headers)out<<h.first.v<<": "<<h.second.v<<"\r\n";out<<"\r\n"<<res.body.v;sock.write(strut_string(out.str()));sock.close();}
+};
+
+#ifdef STRUT_USE_SQLITE
+inline void strut_sqlite_bind(sqlite3_stmt* st,const json::Document& params){if(params.type!=json::Type::Array)return;for(std::size_t i=0;i<params.array.size();++i){const auto& v=params.array[i];int n=static_cast<int>(i+1);switch(v.type){case json::Type::Null:sqlite3_bind_null(st,n);break;case json::Type::Boolean:sqlite3_bind_int(st,n,v.boolean?1:0);break;case json::Type::Number:case json::Type::StrNumber:sqlite3_bind_double(st,n,v.is_number()?std::strtod(v.type==json::Type::StrNumber?v.string.c_str():v.dump().c_str(),nullptr):0.0);break;case json::Type::String:sqlite3_bind_text(st,n,v.string.c_str(),-1,SQLITE_TRANSIENT);break;default:{auto text=v.dump();sqlite3_bind_text(st,n,text.c_str(),-1,SQLITE_TRANSIENT);break;}}}}
+struct strut_sqlite_state{sqlite3* db=nullptr;~strut_sqlite_state(){if(db)sqlite3_close(db);}};
+class strut_sqlite_db {
+public:
+    strut_sqlite_db():s_(std::make_shared<strut_sqlite_state>()){} explicit strut_sqlite_db(sqlite3* db):s_(std::make_shared<strut_sqlite_state>()){s_->db=db;}
+    void close(){if(s_&&s_->db){sqlite3_close(s_->db);s_->db=nullptr;}}
+    void exec(const strut_string& sql){exec(sql,json::Document::make_array());}
+    void exec(const strut_string& sql,const json::Document& params){auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);int rc=sqlite3_step(st);if(rc!=SQLITE_DONE&&rc!=SQLITE_ROW){std::string m=sqlite3_errmsg(db);sqlite3_finalize(st);throw strut_checked_error("SqliteError",m);}sqlite3_finalize(st);}
+    json::Document query(const strut_string& sql){return query(sql,json::Document::make_array());}
+    json::Document query(const strut_string& sql,const json::Document& params){auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);json::Document rows=json::Document::make_array();while(sqlite3_step(st)==SQLITE_ROW){json::Document row=json::Document::make_object();for(int i=0;i<sqlite3_column_count(st);++i){const char* n=sqlite3_column_name(st,i);switch(sqlite3_column_type(st,i)){case SQLITE_INTEGER:row[n]=static_cast<double>(sqlite3_column_int64(st,i));break;case SQLITE_FLOAT:row[n]=sqlite3_column_double(st,i);break;case SQLITE_TEXT:row[n]=reinterpret_cast<const char*>(sqlite3_column_text(st,i));break;case SQLITE_NULL:row[n]=json::Document(nullptr);break;default:row[n]="<blob>";}}rows.push_back(row);}sqlite3_finalize(st);return rows;}
+    void transaction(std::function<void()> body){exec("BEGIN");try{body();exec("COMMIT");}catch(...){try{exec("ROLLBACK");}catch(...){ }throw;}}
+private: sqlite3* handle() const{if(!s_||!s_->db)throw strut_checked_error("SqliteError","database is closed");return s_->db;} std::shared_ptr<strut_sqlite_state> s_;
+};
+inline strut_sqlite_db strut_sqlite_open(const strut_string& path){sqlite3* db=nullptr;if(sqlite3_open(path.v.c_str(),&db)!=SQLITE_OK){std::string m=db?sqlite3_errmsg(db):"sqlite open failed";if(db)sqlite3_close(db);throw strut_checked_error("SqliteError",m);}return strut_sqlite_db(db);}
+#endif
+
+inline strut_string strut_embed_file(const strut_string& path){std::ifstream f(path.v,std::ios::binary);if(!f)throw strut_checked_error("EmbedError","unable to open embedded file");std::ostringstream o;o<<f.rdbuf();return strut_string(o.str());}
+inline std::map<strut_string,strut_string> strut_embed_dir(const strut_string& root){std::map<strut_string,strut_string> out;for(auto& e:std::filesystem::recursive_directory_iterator(root.v)){if(!e.is_regular_file())continue;std::ifstream f(e.path(),std::ios::binary);std::ostringstream o;o<<f.rdbuf();out[strut_string(std::filesystem::relative(e.path(),root.v).generic_string())]=strut_string(o.str());}return out;}
+
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
 )CPP";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
@@ -640,6 +724,13 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
  #endif
  }
 #endif
+ if(g.cpp.find("#define STRUT_USE_SQLITE 1")!=std::string::npos){
+#ifdef _WIN32
+ cmd+=" sqlite3.lib";
+#else
+ cmd+=" -lsqlite3";
+#endif
+ }
  if(g.cpp.find("#define STRUT_USE_CURL 1")!=std::string::npos){
 #ifdef _WIN32
  cmd+=" libcurl.lib";
