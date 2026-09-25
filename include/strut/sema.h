@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
 
 #include "strut/ast.h"
 #include "strut/lexer.h"
@@ -41,6 +42,8 @@ private:
     void analyze_statement(SemanticResult& result, const Stmt& statement);
     static std::unordered_map<std::string, Symbol>& namespace_map(Scope& scope, SymbolNamespace name_space);
 
+    bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
+    std::unordered_map<std::string, std::string> aliases_;
     std::vector<Scope> scopes_;
 };
 

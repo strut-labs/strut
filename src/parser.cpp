@@ -143,7 +143,34 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
     }
     if (!is_type_token(begin)) { error(result, begin, "expected type"); return TypeSyntax{"", begin.span, false}; }
     advance();
-    return TypeSyntax{begin.lexeme, begin.span, false};
+    std::string text = begin.lexeme;
+    SourceSpan span = begin.span;
+    if (match("<")) {
+        text += "<"; int depth = 1;
+        while (!at_end() && depth > 0) {
+            if (check("<")) { ++depth; text += advance().lexeme; continue; }
+            if (check(">")) { --depth; text += advance().lexeme; span.end = previous().span.end; continue; }
+            text += advance().lexeme;
+        }
+        if (depth != 0) { error(result, peek(), "unterminated generic type"); return TypeSyntax{"", begin.span, false}; }
+    }
+    while (match("[")) {
+        text += "[";
+        if (!check("]")) { if (peek().kind != TokenKind::integer_literal) { error(result, peek(), "expected array size or ']'"); return TypeSyntax{"", begin.span, false}; } text += advance().lexeme; }
+        if (!match("]")) { error(result, peek(), "expected ']' in array type"); return TypeSyntax{"", begin.span, false}; }
+        text += "]"; span.end = previous().span.end;
+    }
+    return TypeSyntax{text, span, false};
+}
+
+StmtPtr Parser::parse_type_alias(ParseResult& result) {
+    const Token begin = previous();
+    if (peek().kind != TokenKind::identifier) { error(result, peek(), "expected alias name after 'type'"); return nullptr; }
+    Token name = advance();
+    if (!match(":=")) { error(result, peek(), "expected ':=' in type alias"); return nullptr; }
+    auto target = parse_type(result); if (target.name.empty()) return nullptr;
+    if (!match(";")) { error(result, peek(), "expected ';' after type alias"); return nullptr; }
+    auto st=std::make_unique<Stmt>(); st->kind=Stmt::Kind::type_alias; st->name=name.lexeme; st->alias_target=std::move(target); st->span=join(begin.span,previous().span); return st;
 }
 
 StmtPtr Parser::parse_typed_function_value(ParseResult& result) {
@@ -221,6 +248,7 @@ StmtPtr Parser::parse_for(ParseResult& result){
     if(!check(")")){st->increment=parse_expression(result);if(!st->increment)return nullptr;}if(!match(")")){error(result,peek(),"expected ')' after for clauses");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after for clauses");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;
 }
 StmtPtr Parser::parse_statement(ParseResult& result){
+    if (match("type")) return parse_type_alias(result);
     if (check("function") && (peek(1).lexeme == "[" || peek(1).lexeme == "<")) return parse_typed_function_value(result);
     if (match("function")) return parse_function(result);
     if (match("{")) return parse_block(result);

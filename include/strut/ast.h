@@ -36,7 +36,7 @@ struct Expr {
     std::shared_ptr<LambdaData> lambda;
 };
 struct Stmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, function_decl, type_alias };
     Kind kind;
     SourceSpan span;
     std::string name;
@@ -53,6 +53,7 @@ struct Stmt {
     std::vector<std::string> generic_parameters;
     std::optional<TypeSyntax> return_type;
     std::string owner;
+    std::optional<TypeSyntax> alias_target;
     bool has_body = false;
 };
 

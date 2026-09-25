@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP17 complete; CP18 is next.**
+Current implementation progress: **CP0–CP18 complete; CP19 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -171,12 +171,12 @@ Current implementation progress: **CP0–CP17 complete; CP18 is next.**
 - [x] Tests + regressions.
 
 ### CP18 — Type aliases
-- [ ] settle alias declaration syntax.
-- [ ] implement general aliases.
-- [ ] define `int := int_32`, `uint := uint_32`, `double := double_32` as ordinary aliases in the language/runtime definition.
-- [ ] support aliases of compound/function types.
-- [ ] cycle/invalid-alias diagnostics.
-- [ ] Docs + regressions.
+- [x] settle alias declaration syntax.
+- [x] implement general aliases.
+- [x] define `int := int_32`, `uint := uint_32`, `double := double_32` as ordinary aliases in the language/runtime definition.
+- [x] support aliases of compound/function types.
+- [x] cycle/invalid-alias diagnostics.
+- [x] Docs + regressions.
 
 ### CP19 — Core semantic typing
 - [ ] `bool`, numeric types, `string`, `void`, `null` foundations.

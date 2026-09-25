@@ -36,6 +36,7 @@ private:
     ExprPtr parse_primary(ParseResult& result);
     ExprPtr parse_lambda(ParseResult& result, bool is_async);
     StmtPtr parse_typed_function_value(ParseResult& result);
+    StmtPtr parse_type_alias(ParseResult& result);
     StmtPtr parse_statement(ParseResult& result);
     StmtPtr parse_block(ParseResult& result);
     StmtPtr parse_if(ParseResult& result);

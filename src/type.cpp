@@ -6,6 +6,9 @@
 namespace strut {
 
 TypeInfo builtin_type(std::string_view n) {
+    if (n == "int") n = "int_32";
+    if (n == "uint") n = "uint_32";
+    if (n == "double") n = "double_32";
     if (n == "void") return {TypeKind::void_type, 0, n};
     if (n == "bool") return {TypeKind::bool_type, 0, n};
     if (n == "string") return {TypeKind::string_type, 0, n};
