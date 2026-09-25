@@ -15,6 +15,7 @@ add_library(strut_compiler STATIC
     src/token.cpp
     src/lexer.cpp
     src/parser.cpp
+    src/diagnostic.cpp
 )
 target_include_directories(strut_compiler
     PUBLIC
@@ -49,3 +50,7 @@ add_test(NAME strut_lexer_tests COMMAND strut_lexer_tests)
 add_executable(strut_parser_tests tests/unit/parser_test.cpp)
 target_link_libraries(strut_parser_tests PRIVATE strut_compiler)
 add_test(NAME strut_parser_tests COMMAND strut_parser_tests)
+
+add_executable(strut_diagnostic_tests tests/unit/diagnostic_test.cpp)
+target_link_libraries(strut_diagnostic_tests PRIVATE strut_compiler)
+add_test(NAME strut_diagnostic_tests COMMAND strut_diagnostic_tests)

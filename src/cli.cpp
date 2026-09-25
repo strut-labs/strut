@@ -8,6 +8,7 @@
 
 #include "json.h"
 #include "strut/lexer.h"
+#include "strut/diagnostic.h"
 #include "strut/parser.h"
 #include "strut/source.h"
 #include "strut/token.h"
@@ -52,8 +53,7 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     Lexer lexer(*source);
     auto result = lexer.lex();
     for (const auto& diagnostic : result.diagnostics) {
-        err << path.string() << ':' << diagnostic.span.begin.line << ':' << diagnostic.span.begin.column
-            << ": error: " << diagnostic.message << '\n';
+        err << format_diagnostic(path.string(), diagnostic) << '\n';
     }
     if (!result.ok()) return 1;
 
@@ -75,15 +75,13 @@ int check_source(const std::filesystem::path& path, std::ostream& out, std::ostr
     Lexer lexer(*source);
     auto lexed = lexer.lex();
     for (const auto& diagnostic : lexed.diagnostics) {
-        err << path.string() << ':' << diagnostic.span.begin.line << ':' << diagnostic.span.begin.column
-            << ": error: " << diagnostic.message << '\n';
+        err << format_diagnostic(path.string(), diagnostic) << '\n';
     }
     if (!lexed.ok()) return 1;
     Parser parser(lexed.tokens);
     auto parsed = parser.parse();
     for (const auto& diagnostic : parsed.diagnostics) {
-        err << path.string() << ':' << diagnostic.span.begin.line << ':' << diagnostic.span.begin.column
-            << ": error: " << diagnostic.message << '\n';
+        err << format_diagnostic(path.string(), diagnostic) << '\n';
     }
     return parsed.ok() ? 0 : 1;
 }

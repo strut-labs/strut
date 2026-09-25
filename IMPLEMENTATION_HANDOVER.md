@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP14 complete; CP15 is next.**
+Current implementation progress: **CP0–CP15 complete; CP16 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -146,11 +146,11 @@ Current implementation progress: **CP0–CP14 complete; CP15 is next.**
 - [x] Tests + regressions.
 
 ### CP15 — Diagnostic foundation
-- [ ] Stable error reporting format.
-- [ ] file/line/column spans.
-- [ ] useful parser recovery where practical.
-- [ ] no cascades of nonsense after one obvious parse failure.
-- [ ] snapshot/select diagnostics in the regression suite.
+- [x] Stable error reporting format.
+- [x] file/line/column spans.
+- [x] useful parser recovery where practical.
+- [x] no cascades of nonsense after one obvious parse failure.
+- [x] snapshot/select diagnostics in the regression suite.
 
 ## Phase 4 — Semantic analysis, types, aliases, first codegen
 
