@@ -145,7 +145,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::call: {
             for (const auto& arg : expr.arguments) infer_expression(result, *arg);
-            if(expr.left && expr.left->kind==Expr::Kind::identifier){auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
+            if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
                 if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
@@ -391,7 +391,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); unsafe_depth_=0; catch_all_depth_=0;
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0;
     named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out"); named_types_.insert("mutex"); named_types_.insert("MutexError");
     struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
@@ -405,7 +405,7 @@ SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){auto& errs=function_errors_[st->name];for(const auto& e:st->error_types)errs.insert(resolved_type_name(e.name));}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){if(st->is_extern_c)extern_c_functions_.insert(st->name);auto& errs=function_errors_[st->name];for(const auto& e:st->error_types)errs.insert(resolved_type_name(e.name));}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=resolved_type_name(st->parameters[i].type.name);}const std::string fixity=st->parameters.size()==1?"prefix":"infix";operator_returns_[fixity+":"+st->op+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }

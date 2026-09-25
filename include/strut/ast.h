@@ -70,6 +70,7 @@ struct Stmt {
     bool has_body = false;
     bool include_is_package = false;
     bool is_async = false;
+    bool is_extern_c = false;
 };
 
 struct LambdaData {

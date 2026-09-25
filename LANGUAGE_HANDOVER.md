@@ -639,6 +639,7 @@ Support:
 - ordinary dynamically linked binaries;
 - mixed builds with selected dependencies linked statically or dynamically;
 - native static libraries and dynamic libraries (`.a`, `.so`, `.dylib`, `.dll`/import libraries as appropriate);
+- C ABI declarations use `extern "C" function name(args) -> type;`; calls cross an explicit `unsafe` boundary;
 - package/FFI metadata that can express link mode cleanly.
 
 Executable size is a first-class benchmark dimension alongside speed, memory and startup time. Dead-code elimination and stripped release output should be measured explicitly.

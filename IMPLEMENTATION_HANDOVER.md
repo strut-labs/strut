@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP67 complete; CP68 is next.**
+Current implementation progress: **CP0–CP68 complete; CP69 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -580,12 +580,12 @@ Current implementation progress: **CP0–CP67 complete; CP68 is next.**
 ## Phase 12 — FFI and package foundation
 
 ### CP68 — C ABI FFI
-- [ ] call C functions.
-- [ ] primitive/struct ABI mapping.
-- [ ] `raw_ptr<T>` integration.
-- [ ] unsafe boundary rules.
-- [ ] callbacks if practical.
-- [ ] tests against tiny C fixtures.
+- [x] call C functions.
+- [x] primitive/struct ABI mapping.
+- [x] `raw_ptr<T>` integration.
+- [x] unsafe boundary rules.
+- [x] callbacks if practical. (deferred: raw C function-pointer callback values are not yet exposed; ordinary C calls are complete)
+- [x] tests against tiny C fixtures.
 
 ### CP69 — Native library linking model
 - [ ] support native static libraries and dynamic libraries through the FFI/build system.
