@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP91 complete; CP92 is next.**
+Current implementation progress: **CP0–CP92 complete; CP93 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -783,11 +783,11 @@ Current implementation progress: **CP0–CP91 complete; CP92 is next.**
 - [x] commit website changes.
 
 ### CP92 — Regression-suite maintenance audit 1
-- [ ] ensure every shipped syntax/type/memory/error/concurrency feature has coverage.
-- [ ] add missing negative tests.
-- [ ] add first multi-file/project/package fixtures.
-- [ ] add CI if toolchain is ready.
-- [ ] commit suite changes.
+- [x] ensure every shipped syntax/type/memory/error/concurrency feature has coverage.
+- [x] add missing negative tests.
+- [x] add first multi-file/project/package fixtures.
+- [x] add CI if toolchain is ready.
+- [x] commit suite changes.
 
 ## Phase 16 — Optimisation, tooling, platforms
 
