@@ -60,7 +60,7 @@ TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
 bool SemanticAnalyzer::compatible(const TypeInfo& from, const TypeInfo& to) const {
     if (!from.valid() || !to.valid()) return true; // later phases refine currently opaque compound/user types
     if (from.kind == TypeKind::named && from.name == "opaque") return true;
-    if (from.kind == TypeKind::null_type) return to.kind == TypeKind::null_type || is_nullable_type(to.name);
+    if (from.kind == TypeKind::null_type) return to.kind == TypeKind::null_type || is_nullable_type(to.name) || to.name.rfind("ptr<",0)==0 || to.name.rfind("weak_ptr<",0)==0 || to.name.rfind("raw_ptr<",0)==0;
     if (is_nullable_type(to.name) && !is_nullable_type(from.name)) return compatible(from, resolve_type(strip_nullable(to.name)));
     if (is_nullable_type(from.name) && is_nullable_type(to.name)) return strip_nullable(from.name) == strip_nullable(to.name);
     if (from.kind == to.kind && from.bits == to.bits) return true;

@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP34 complete; CP35 is next.**
+Current implementation progress: **CP0–CP35 complete; CP36 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -314,12 +314,12 @@ Current implementation progress: **CP0–CP34 complete; CP35 is next.**
 ## Phase 7 — Safe memory model, reference counting, weak refs, unsafe
 
 ### CP35 — Prototype `ptr<T>` runtime ownership
-- [ ] implement safe reference-counted owning pointer prototype.
-- [ ] copy increments count.
-- [ ] release decrements count.
-- [ ] zero count destroys deterministically.
-- [ ] define nullability interaction.
-- [ ] benchmark baseline overhead before optimizing.
+- [x] implement safe reference-counted owning pointer prototype.
+- [x] copy increments count.
+- [x] release decrements count.
+- [x] zero count destroys deterministically.
+- [x] define nullability interaction.
+- [x] benchmark baseline overhead before optimizing.
 
 ### CP36 — Const pointer semantics
 - [ ] `ptr<T>`.

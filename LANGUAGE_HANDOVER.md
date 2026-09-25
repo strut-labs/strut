@@ -790,3 +790,7 @@ Nift-style/server-side templating is intentionally not part of the active Strut 
 ## Lambda capture baseline
 
 Lambdas capture referenced outer values by value by default. This makes escaping closures lifetime-safe and keeps captures effectively const. Mutation of external state should be explicit through safe reference/pointer facilities rather than implicit mutable capture. Uppercase undeclared lambda parameter types such as `T` are inferred generic parameters.
+
+## Reference-counted ownership baseline
+
+`ptr<T>` is the ordinary safe owning pointer and is reference counted. Copying a `ptr<T>` shares ownership, release decrements the count, and the object is destroyed deterministically when the last owner disappears. `ptr<T>` may be `null`; `ref<T>` is the non-null borrowing facility. The bootstrap C++17 backend currently maps this contract to `std::shared_ptr` while runtime optimisation remains open. There is no tracing garbage collector.
