@@ -2,11 +2,12 @@
 
 #include <string>
 #include <unordered_map>
-#include <vector>
 #include <unordered_set>
+#include <vector>
 
 #include "strut/ast.h"
 #include "strut/lexer.h"
+#include "strut/type.h"
 
 namespace strut {
 
@@ -17,6 +18,7 @@ struct Symbol {
     SymbolNamespace name_space = SymbolNamespace::value;
     SourceSpan span;
     bool is_const = false;
+    std::string type_name;
 };
 
 struct SemanticResult {
@@ -38,11 +40,16 @@ private:
     void push_scope();
     void pop_scope();
     bool declare(SemanticResult& result, Symbol symbol);
+    Symbol* lookup(std::string_view name, SymbolNamespace name_space);
     void analyze_statements(SemanticResult& result, const std::vector<StmtPtr>& statements, bool create_scope);
     void analyze_statement(SemanticResult& result, const Stmt& statement);
+    TypeInfo infer_expression(SemanticResult& result, const Expr& expression);
+    TypeInfo resolve_type(std::string_view name) const;
+    std::string resolved_type_name(std::string_view name) const;
+    bool compatible(const TypeInfo& from, const TypeInfo& to) const;
     static std::unordered_map<std::string, Symbol>& namespace_map(Scope& scope, SymbolNamespace name_space);
-
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
+
     std::unordered_map<std::string, std::string> aliases_;
     std::vector<Scope> scopes_;
 };

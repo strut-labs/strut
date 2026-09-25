@@ -9,19 +9,19 @@ TypeInfo builtin_type(std::string_view n) {
     if (n == "int") n = "int_32";
     if (n == "uint") n = "uint_32";
     if (n == "double") n = "double_32";
-    if (n == "void") return {TypeKind::void_type, 0, n};
-    if (n == "bool") return {TypeKind::bool_type, 0, n};
-    if (n == "string") return {TypeKind::string_type, 0, n};
-    if (n == "int_8") return {TypeKind::signed_int, 8, n};
-    if (n == "int_16") return {TypeKind::signed_int, 16, n};
-    if (n == "int_32") return {TypeKind::signed_int, 32, n};
-    if (n == "int_64") return {TypeKind::signed_int, 64, n};
-    if (n == "uint_8") return {TypeKind::unsigned_int, 8, n};
-    if (n == "uint_16") return {TypeKind::unsigned_int, 16, n};
-    if (n == "uint_32") return {TypeKind::unsigned_int, 32, n};
-    if (n == "uint_64") return {TypeKind::unsigned_int, 64, n};
-    if (n == "double_32") return {TypeKind::floating, 32, n};
-    if (n == "double_64") return {TypeKind::floating, 64, n};
+    if (n == "void") return {TypeKind::void_type, 0, std::string(n)};
+    if (n == "bool") return {TypeKind::bool_type, 0, std::string(n)};
+    if (n == "string") return {TypeKind::string_type, 0, std::string(n)};
+    if (n == "int_8") return {TypeKind::signed_int, 8, std::string(n)};
+    if (n == "int_16") return {TypeKind::signed_int, 16, std::string(n)};
+    if (n == "int_32") return {TypeKind::signed_int, 32, std::string(n)};
+    if (n == "int_64") return {TypeKind::signed_int, 64, std::string(n)};
+    if (n == "uint_8") return {TypeKind::unsigned_int, 8, std::string(n)};
+    if (n == "uint_16") return {TypeKind::unsigned_int, 16, std::string(n)};
+    if (n == "uint_32") return {TypeKind::unsigned_int, 32, std::string(n)};
+    if (n == "uint_64") return {TypeKind::unsigned_int, 64, std::string(n)};
+    if (n == "double_32") return {TypeKind::floating, 32, std::string(n)};
+    if (n == "double_64") return {TypeKind::floating, 64, std::string(n)};
     return {};
 }
 

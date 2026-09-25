@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace strut {
@@ -10,7 +11,7 @@ enum class TypeKind { invalid, void_type, bool_type, string_type, null_type, sig
 struct TypeInfo {
     TypeKind kind = TypeKind::invalid;
     int bits = 0;
-    std::string_view name;
+    std::string name;
     bool valid() const { return kind != TypeKind::invalid; }
     bool numeric() const { return kind == TypeKind::signed_int || kind == TypeKind::unsigned_int || kind == TypeKind::floating; }
 };

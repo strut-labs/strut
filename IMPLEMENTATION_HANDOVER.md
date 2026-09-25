@@ -4,7 +4,7 @@ This is the ordered implementation roadmap. Checkpoints are intentionally concre
 
 Do not treat later checkpoint numbering as a reason to preserve a bad early decision. If implementation exposes a design problem, update the design docs and roadmap deliberately.
 
-Current implementation progress: **CP0–CP18 complete; CP19 is next.**
+Current implementation progress: **CP0–CP19 complete; CP20 is next.**
 
 ## Phase 0 — Project contract and repo foundations
 
@@ -179,12 +179,12 @@ Current implementation progress: **CP0–CP18 complete; CP19 is next.**
 - [x] Docs + regressions.
 
 ### CP19 — Core semantic typing
-- [ ] `bool`, numeric types, `string`, `void`, `null` foundations.
-- [ ] type inference for `:=`.
-- [ ] explicit annotation checking.
-- [ ] assignment compatibility.
-- [ ] const enforcement.
-- [ ] Tests + regressions.
+- [x] `bool`, numeric types, `string`, `void`, `null` foundations.
+- [x] type inference for `:=`.
+- [x] explicit annotation checking.
+- [x] assignment compatibility.
+- [x] const enforcement.
+- [x] Tests + regressions.
 
 ### CP20 — Typed IR
 - [ ] define stable typed IR distinct from parser AST.
