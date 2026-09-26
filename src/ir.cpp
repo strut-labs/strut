@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "strut/type.h"
+#include "strut/api_registry.h"
 
 namespace strut {
 namespace {
@@ -86,12 +87,13 @@ public:
         }
         if (expr->kind == Expr::Kind::call && out->left && out->left->kind == IRExpr::Kind::identifier) {
             const auto& name = out->left->text;
-            if (name == "http_get_json") out->type_name = "json";
-            else if (name == "http_get" || name == "http_request") out->type_name = "http_response";
-            else if (name == "sqlite_open") out->type_name = "sqlite_db";
-            else if (name == "exec" || name == "exec_shell" || name == "pipe_exec") out->type_name = "exec_result";
-            else if (name == "ls" || name == "walk") out->type_name = "string[]";
-            else if (name == "read_file" || name == "cwd" || name == "absolute" || name == "canonical" || name == "parent" || name == "filename" || name == "extension" || name == "stem" || name == "join_path") out->type_name = "string";
+            if(name=="new"&&!out->arguments.empty())out->type_name="ptr<"+out->arguments.front()->type_name+">";
+            else if((name=="weak"||name=="ptr"||name=="ref")&&!out->arguments.empty()){
+                auto argument=intern_type(out->arguments.front()->type_name);auto element=type_element(argument);
+                if(name=="weak")out->type_name="weak_ptr<"+type_spelling(element)+">";
+                else if(name=="ptr")out->type_name="raw_ptr<"+type_spelling(element)+">";
+                else out->type_name="ref<"+out->arguments.front()->type_name+">";
+            }else if(const auto* callable=api_callable(name);callable&&!callable->overloads.empty())out->type_name=type_spelling(callable->overloads.front().return_type);
         }
         out->type_id=intern_type(out->type_name);
         return out;

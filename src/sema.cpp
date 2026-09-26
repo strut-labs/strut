@@ -1,4 +1,5 @@
 #include "strut/sema.h"
+#include "strut/api_registry.h"
 
 #include <algorithm>
 #include <cctype>
@@ -115,7 +116,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::array_literal: {
             if (expr.arguments.empty()) return {TypeKind::named,0,"opaque[]"};
             auto first=infer_expression(result,*expr.arguments.front());
-            for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i]);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch"});}
+            for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i]);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch: expected "+first.name+", found "+next.name+"\nhelp: use one compatible element type or declare and populate separate typed arrays"});}
             return {TypeKind::named,0,(first.name.empty()?std::string("opaque"):first.name)+"[]"};
         }
         case Expr::Kind::tuple_literal: {
@@ -235,22 +236,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "file_size" || name == "modified") { require_module(result, "filesystem", expr.span, name); return builtin_type("int_64"); }
                 if (name == "cwd" || name == "absolute" || name == "canonical" || name == "parent" || name == "filename" || name == "extension" || name == "stem" || name == "join_path" || name == "read_file") { require_module(result, "filesystem", expr.span, name); return builtin_type("string"); }
                 if (name == "read_bytes") { require_module(result, "filesystem", expr.span, name); return {TypeKind::named,0,"bytes"}; }
-                if (name == "env") return {TypeKind::named,0,"string?"};
-                if (name == "exec" || name == "exec_shell" || name == "pipe_exec") return {TypeKind::named,0,"exec_result"};
-                if (name == "process") return {TypeKind::named,0,"process"};
                 if (name == "mutex") return {TypeKind::named,0,"mutex"};
-                if (name == "tcp_connect") return {TypeKind::named,0,"tcp_socket"};
-                if (name == "tcp_connect_async") return {TypeKind::named,0,"future<tcp_socket>"};
-                if (name == "tcp_listen") return {TypeKind::named,0,"tcp_listener"};
-                if (name == "tls_connect") return {TypeKind::named,0,"tls_stream"};
-                if (name == "http_get" || name == "http_request") return {TypeKind::named,0,"http_response"};
-                if (name == "http_server") return {TypeKind::named,0,"http_server"};
-                if (name == "http_text" || name == "http_html" || name == "http_json_response") return {TypeKind::named,0,"http_server_response"};
-                if (name == "sqlite_open") return {TypeKind::named,0,"sqlite_db"};
-                if (name == "embed_file") return builtin_type("string");
-                if (name == "embed_dir") return {TypeKind::named,0,"map<string,string>"};
-                if (name == "http_get_json") return builtin_type("json");
-                if (name == "http_get_async" || name == "http_request_async") return {TypeKind::named,0,"future<http_response>"};
                 if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(type_is(t.id,TypeNodeKind::reference))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"T& cannot be passed directly across a thread boundary; use T* or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
                 if (name == "make_dir" || name == "remove" || name == "remove_all" || name == "copy" || name == "move" || name == "touch" || name == "cd" || name == "write_file" || name == "append_file") {
@@ -266,6 +252,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                     return {TypeKind::void_type,0,"void"};
                 }
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
+                if (const auto* callable=api_callable(name);callable&&!callable->overloads.empty())return resolve_type(type_spelling(callable->overloads.front().return_type));
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value)) { if(value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name)); if(value->type_name=="async_function") return {TypeKind::named,0,"future<opaque>"}; }
             }
@@ -515,20 +502,13 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
-    named_types_.insert("http_request"); named_types_.insert("http_server_response"); named_types_.insert("http_server"); named_types_.insert("SqliteError"); named_types_.insert("sqlite_db"); named_types_.insert("EmbedError"); named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out"); named_types_.insert("mutex"); named_types_.insert("MutexError"); named_types_.insert("NetworkError"); named_types_.insert("tcp_socket"); named_types_.insert("tcp_listener"); named_types_.insert("TlsError"); named_types_.insert("tls_stream"); named_types_.insert("HttpError"); named_types_.insert("http_response");
+    named_types_.insert(api_named_types().begin(),api_named_types().end());
     struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     struct_fields_["http_response"]={{"status","int"},{"body","string"},{"headers","map<string,string>"}};
     struct_fields_["http_request"]={{"method","string"},{"path","string"},{"body","string"},{"headers","map<string,string>"},{"query","map<string,string>"},{"params","map<string,string>"}};
     struct_fields_["http_server_response"]={{"status","int"},{"body","string"},{"content_type","string"},{"headers","map<string,string>"}};
     struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
-    for(const auto& t:{std::string("istream"),std::string("ostream"),std::string("sstream"),std::string("ifstream"),std::string("ofstream"),std::string("bytes")})named_types_.insert(t);
-    for(const auto& name:{std::string("exists"),std::string("is_file"),std::string("is_dir"),std::string("file_size"),std::string("modified"),std::string("make_dir"),std::string("remove"),std::string("remove_all"),std::string("copy"),std::string("move"),std::string("touch"),std::string("ls"),std::string("walk"),std::string("cwd"),std::string("cd"),std::string("absolute"),std::string("canonical"),std::string("read_file"),std::string("read_bytes"),std::string("write_file"),std::string("append_file")})function_errors_[name].insert("FilesystemError");
-    for(const auto& name:{std::string("set_env"),std::string("unset_env")})function_errors_[name].insert("EnvironmentError");
-    function_errors_["sleep_ms"].insert("TimeError");
-    function_errors_["http_get"].insert("HttpError"); function_errors_["http_request"].insert("HttpError"); function_errors_["http_get_json"].insert("HttpError"); function_errors_["http_get_async"].insert("HttpError"); function_errors_["http_request_async"].insert("HttpError");
-    function_errors_["sqlite_open"].insert("SqliteError"); function_errors_["embed_file"].insert("EmbedError"); function_errors_["embed_dir"].insert("EmbedError");
-    function_errors_["tls_connect"].insert("TlsError"); function_errors_["tcp_connect"].insert("NetworkError"); function_errors_["tcp_connect_async"].insert("NetworkError"); function_errors_["tcp_listen"].insert("NetworkError");
-    function_errors_["exec"].insert("ExecError"); function_errors_["exec_shell"].insert("ExecError"); function_errors_["process"].insert("ExecError"); function_errors_["pipe_exec"].insert("ExecError");
+    for(const auto& callable:api_callables())if(callable.owner.empty())for(const auto& error:callable.checked_errors)function_errors_[callable.name].insert(error);
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}

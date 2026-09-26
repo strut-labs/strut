@@ -30,6 +30,7 @@ add_library(strut_compiler STATIC
     src/ir.cpp
     src/codegen.cpp
     src/runtime_components.cpp
+    src/api_registry.cpp
     src/package.cpp
     src/project.cpp
     src/formatter.cpp
@@ -110,6 +111,9 @@ add_test(NAME strut_codegen_tests COMMAND strut_codegen_tests)
 add_executable(strut_runtime_component_tests tests/unit/runtime_components_test.cpp)
 target_link_libraries(strut_runtime_component_tests PRIVATE strut_compiler)
 add_test(NAME strut_runtime_component_tests COMMAND strut_runtime_component_tests)
+add_executable(strut_api_registry_tests tests/unit/api_registry_test.cpp)
+target_link_libraries(strut_api_registry_tests PRIVATE strut_compiler)
+add_test(NAME strut_api_registry_tests COMMAND strut_api_registry_tests)
 
 add_executable(strut_package_tests tests/unit/package_test.cpp)
 target_link_libraries(strut_package_tests PRIVATE strut_compiler)

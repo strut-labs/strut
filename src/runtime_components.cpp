@@ -1,4 +1,5 @@
 #include "strut/runtime_components.h"
+#include "strut/api_registry.h"
 
 #include <algorithm>
 #include <array>
@@ -77,19 +78,11 @@ void request_expr(std::vector<Id>& out,const IRExpr* e) {
     if(e->lambda_async)out.push_back(Id::async);
     if(e->kind==IRExpr::Kind::identifier){
         static const std::unordered_map<std::string,Id> operations={
-            {"input",Id::io},{"istream",Id::io},{"ostream",Id::io},{"sstream",Id::io},{"ifstream",Id::io},{"ofstream",Id::io},
-            {"env",Id::environment},{"set_env",Id::environment},{"unset_env",Id::environment},{"now_ms",Id::time},{"unix_ms",Id::time},{"sleep_ms",Id::time},
-            {"exec",Id::process},{"exec_shell",Id::process},{"process",Id::process},{"pipe_exec",Id::process},
-            {"thread",Id::threading},{"mutex",Id::mutex},{"new",Id::safe_pointer},{"weak",Id::weak_pointer},{"ptr",Id::raw_pointer},{"ref",Id::safe_pointer},
-            {"http_get",Id::http_client},{"http_request",Id::http_client},{"http_get_json",Id::http_client},{"http_get_async",Id::http_client},{"http_request_async",Id::http_client},
-            {"http_server",Id::http_server},{"http_text",Id::http_server},{"http_html",Id::http_server},{"http_json_response",Id::http_server},
-            {"tcp_connect",Id::networking},{"tcp_connect_async",Id::networking},{"tcp_listen",Id::networking},{"tls_connect",Id::http_client},
-            {"sqlite_open",Id::sqlite},{"embed_file",Id::embedded_assets},{"embed_dir",Id::embedded_assets},
+            {"istream",Id::io},{"ostream",Id::io},{"sstream",Id::io},{"ifstream",Id::io},{"ofstream",Id::io},
+            {"thread",Id::threading},{"mutex",Id::mutex},
         };
         if(auto it=operations.find(e->text);it!=operations.end())out.push_back(it->second);
-        if(e->text=="tcp_connect_async"||e->text=="http_get_async"||e->text=="http_request_async")out.push_back(Id::async);
-        static const std::set<std::string> fs={"exists","is_file","is_dir","file_size","modified","make_dir","remove","remove_all","copy","move","touch","ls","walk","cwd","cd","absolute","canonical","parent","filename","extension","stem","join_path","read_file","read_bytes","write_file","append_file"};
-        if(fs.count(e->text))out.push_back(Id::filesystem);
+        if(const auto* callable=api_callable(e->text))out.insert(out.end(),callable->runtime_components.begin(),callable->runtime_components.end());
     }
     request_expr(out,e->left.get());request_expr(out,e->right.get());request_expr(out,e->lambda_expression.get());for(const auto& a:e->arguments)request_expr(out,a.get());for(const auto& s:e->lambda_body)request_stmt(out,s.get());
 }

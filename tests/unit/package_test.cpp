@@ -23,5 +23,15 @@ int main(){
     TestTempDirectory temp("strut-package-test"); const auto tmp=temp.path(); std::filesystem::create_directories(tmp/"pkg");
     { std::ofstream f(tmp/"pkg"/"strut.json"); f << R"({"name":"local","version":"1.2.3","entry":"main.p"})"; } { std::ofstream f(tmp/"pkg"/"main.p"); f << "function answer() -> int { return 42; }\n"; }
     std::filesystem::path cached; strut::PackageManifest local; req(strut::cache_local_package(tmp/"pkg",cached,local,error),error.c_str()); req(local.name=="local","local package metadata");
+    const auto isolated=tmp/"home";
+#ifdef _WIN32
+    _putenv_s("STRUT_HOME",isolated.string().c_str());
+#else
+    setenv("STRUT_HOME",isolated.string().c_str(),1);
+#endif
+    std::filesystem::create_directories(isolated/"cache/packages/broken/1.0.0");
+    {std::ofstream f(isolated/"cache/packages/broken/1.0.0/strut.json");f<<R"({"name":"other","version":"1.0.0"})";}
+    strut::PackageManifest project;project.name="project";project.version="0.1.0";project.dependencies["broken"]="1.0.0";
+    std::string cache_error;req(!strut::write_lockfile(tmp,project,cache_error),"broken cache metadata rejected");req(cache_error.find("stale or invalid metadata")!=std::string::npos&&cache_error.find("strut add")!=std::string::npos,"broken cache diagnostic is actionable");
     return 0;
 }
