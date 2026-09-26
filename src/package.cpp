@@ -312,7 +312,7 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
             if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement+" required by "+requester;return false;}
             root=acquired;
         }else root=resolve_cached_package(name,requirement,&cache_error);
-        if(!root){error=cache_error.empty()?"dependency '"+name+"' required by "+requester+" is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
+        if(!root){error=cache_error.empty()?"dependency '"+name+"' is not present in the package cache\nnote: "+requester+" requires version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
         PackageManifest package;
         if(!load_package_manifest_file(*root/"strut.json",package,cache_error)||package.name!=name||!satisfies(package.version,requirement)){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(cache_error.empty()?std::string{}:": "+cache_error);return false;}
         for(const auto& source:package.dependency_sources)if(!register_source(source.first,source.second,"package '"+name+"'"))return false;
