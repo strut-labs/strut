@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include "strut/lsp.h"
+#include "strut/package.h"
 #include "temp_directory.h"
 
 namespace {
@@ -15,10 +16,17 @@ std::string quoted(std::string value){std::string out="\"";for(char c:value){if(
 
 int main(){
     TestTempDirectory temp("strut-lsp-project");const auto root=temp.path();
-    std::ofstream(root/"strut.json")<<R"({"name":"lsp-test","version":"0.1.0","dependencies":{"local":"1.0.0"}})";
+    const auto home=root/"package-home";
+#ifdef _WIN32
+    _putenv_s("STRUT_HOME",home.string().c_str());
+#else
+    setenv("STRUT_HOME",home.string().c_str(),1);
+#endif
+    const auto package_source=root/"package-source";std::filesystem::create_directories(package_source);std::ofstream(package_source/"strut.json")<<R"({"name":"local","version":"1.0.0","entry":"main.p"})";std::ofstream(package_source/"main.p")<<"function package_symbol(string value) -> int { return 2; }\n";std::filesystem::path cached;strut::PackageManifest package;std::string package_error;require(strut::cache_local_package(package_source,cached,package,package_error),"cache LSP package",package_error);
+    strut::PackageManifest project;project.name="lsp-test";project.version="0.1.0";project.dependencies["local"]="1.0.0";require(strut::write_package_manifest_file(root/"strut.json",project,package_error),"write LSP manifest",package_error);require(strut::write_lockfile(root,project,package_error),"write LSP lock",package_error);
     std::ofstream(root/"helper.p")<<"function helper(string value) -> int { return 1; }\n";
     const auto uri="file://"+(root/"main.p").generic_string();
-    const std::string source="function main() -> int : HttpError {\n  http_response response := http_get(\"https://example.test\");\n  response.;\n  result := exec(\"echo\", [\"ok\"]);\n  helper(\"x\");\n  return 0;\n}\n";
+    const std::string source="function main() -> int : HttpError {\n  http_response response := http_get(\"https://example.test\");\n  response.;\n  result := exec(\"echo\", [\"ok\"]);\n  helper(\"x\");\n  package_symbol(\"x\");\n  return 0;\n}\n";
     std::stringstream in,out,err;
     request(in,R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
     request(in,"{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+",\"text\":"+quoted(source)+"}}}");
@@ -28,6 +36,7 @@ int main(){
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":4,\"character\":4}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"textDocument/completion\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":5,\"character\":2}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"textDocument/documentSymbol\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"}}}");
+    request(in,"{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":5,\"character\":5}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"contentChanges\":[{\"text\":\"function main( {\\n  pri\\n\"}]}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"textDocument/completion\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":1,\"character\":5}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didClose\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"}}}");
@@ -40,9 +49,12 @@ int main(){
     require(s.find("\"activeParameter\": 1")!=std::string::npos,"active argument",s);
     require(s.find("Checked errors: HttpError")!=std::string::npos,"checked error hover",s);
     require(s.find("helper.p")!=std::string::npos,"project definition",s);
+    require(s.find(cached.generic_string()+"/main.p")!=std::string::npos,"package definition",s);
+    require(s.find("\"label\": \"package_symbol\"")!=std::string::npos,"package completion",s);
     require(s.find("additionalTextEdits")!=std::string::npos,"module import edit",s);
     require(s.find("\"code\":")!=std::string::npos,"structured diagnostics",s);
     require(s.find("\"label\": \"print\"")!=std::string::npos,"incomplete source recovery",s);
     require(s.find("\"diagnostics\": []")!=std::string::npos,"didClose clears diagnostics",s);
+    std::filesystem::remove_all(cached);std::stringstream missing_in,missing_out,missing_err;request(missing_in,"{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+",\"text\":"+quoted(source)+"}}}");request(missing_in,R"({"jsonrpc":"2.0","id":11,"method":"shutdown","params":{}})");request(missing_in,R"({"jsonrpc":"2.0","method":"exit","params":{}})");require(strut::run_lsp(missing_in,missing_out,missing_err)==0,"missing package server exit",missing_out.str()+missing_err.str());require(missing_out.str().find("package `local` is locked but not present in the verified cache")!=std::string::npos,"missing package diagnostic",missing_out.str());require(missing_out.str().find("run `strut install`")!=std::string::npos,"missing package help",missing_out.str());
     return 0;
 }
