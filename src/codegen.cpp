@@ -1021,14 +1021,14 @@ private: std::stringstream stream_;
 };
 
 struct strut_endl_t{};
-inline strut_endl_t endl{};
+static strut_endl_t endl{};
 template<class T> strut_ostream& operator<<(strut_ostream& s,const T& value){return s.write_value(value);}
 inline strut_ostream& operator<<(strut_ostream& s,strut_endl_t){s.write_value('\n');s.flush();return s;}
 template<class T> strut_istream& operator>>(strut_istream& s,T& value){return s.read_value(value);}
 inline strut_istream& operator>>(strut_istream& s,strut_string& value){std::string tmp;s.read_value(tmp);value=strut_string(tmp);return s;}
-inline strut_istream in{std::cin};
-inline strut_ostream out{std::cout};
-inline strut_ostream err{std::cerr};
+static strut_istream in{std::cin};
+static strut_ostream out{std::cout};
+static strut_ostream err{std::cerr};
 inline strut_string strut_input(){std::string value;std::getline(std::cin,value);return value;}
 template<class T> void strut_input(T& value){std::cin>>value;}
 inline void strut_input(strut_string& value){std::string tmp;std::cin>>tmp;value=strut_string(tmp);}
