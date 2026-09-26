@@ -40,8 +40,11 @@ ExprPtr Parser::parse_lambda(ParseResult& result, bool is_async) {
     if (!check(")")) {
         do {
             TypeSyntax type{"", peek().span, false}; std::string name;
-            if (peek().kind == TokenKind::identifier && peek(1).kind == TokenKind::identifier) {
+            const bool typed_parameter = check("const") || check("function") ||
+                (peek().kind == TokenKind::identifier && peek(1).lexeme != "," && peek(1).lexeme != ")");
+            if (typed_parameter) {
                 type = parse_type(result); if (type.name.empty()) return nullptr; name = advance().lexeme;
+                if (previous().kind != TokenKind::identifier) { error(result, previous(), "expected lambda parameter name"); return nullptr; }
                 bool upper = !type.name.empty(); for(char c:type.name) if(c>='a'&&c<='z') upper=false;
                 if (upper) data->generic_parameters.push_back(type.name);
             } else if (peek().kind == TokenKind::identifier) {

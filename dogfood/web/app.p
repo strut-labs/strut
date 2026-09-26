@@ -1,3 +1,5 @@
+include <map>;
+
 function main() -> void : (SqliteError, NetworkError, EmbedError) {
     sqlite_db db := sqlite_open("dogfood.db");
     db.exec("CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, name TEXT)");

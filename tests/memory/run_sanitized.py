@@ -7,7 +7,9 @@ source=Path(__file__).with_name('runtime_stress.p').resolve()
 with tempfile.TemporaryDirectory(prefix='strut-memory-') as td:
     exe=Path(td)/'runtime_stress'
     env=os.environ.copy()
-    env['CXX']='clang++ -fsanitize=address,undefined -fno-omit-frame-pointer'
+    sanitizer_flags='-fsanitize=address,undefined -fno-omit-frame-pointer'
+    existing_flags=env.get('STRUT_CXXFLAGS','').strip()
+    env['STRUT_CXXFLAGS']=' '.join(filter(None,(existing_flags,sanitizer_flags)))
     c=subprocess.run([str(compiler),str(source),'-o',str(exe)],env=env,text=True,capture_output=True)
     if c.returncode:
         print(c.stderr,file=sys.stderr);raise SystemExit(c.returncode)

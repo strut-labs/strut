@@ -1,3 +1,5 @@
+include <vector>;
+
 function main() -> void {
     int[] xs := [1,2,3,4,5,6,7,8];
     ys := xs.map((x) => x * 3).filter((x) => x > 9);

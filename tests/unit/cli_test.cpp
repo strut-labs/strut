@@ -4,6 +4,8 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <random>
+#include <stdexcept>
 
 #include "strut/cli.h"
 
@@ -13,6 +15,16 @@ void require(bool condition, const char* message) {
         std::cerr << "FAIL: " << message << '\n';
         std::exit(1);
     }
+}
+std::filesystem::path unique_test_directory(const char* prefix) {
+    std::random_device random;
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        auto path = std::filesystem::temp_directory_path() /
+            (std::string(prefix) + "-" + std::to_string(random()));
+        std::error_code ec;
+        if (std::filesystem::create_directory(path, ec)) return path;
+    }
+    throw std::runtime_error("unable to create unique test directory");
 }
 }
 
@@ -43,8 +55,8 @@ int main() {
 
     {
         const auto old = std::filesystem::current_path();
-        auto root = std::filesystem::temp_directory_path() / "strut-cli-make-test";
-        std::error_code ec; std::filesystem::remove_all(root, ec); std::filesystem::create_directories(root / ".strut", ec);
+        auto root = unique_test_directory("strut-cli-make-test");
+        std::error_code ec; std::filesystem::create_directories(root / ".strut", ec);
         std::ofstream(root / "main.p") << "function main() -> void { print(\"make-ok\"); return; }\n";
         std::ofstream(root / ".strut/config.json") << R"({"entrypoint":"main.p","output":"app","target":"native","mode":"debug","linking":"dynamic","incremental":"modified"})";
         std::filesystem::current_path(root);
@@ -62,8 +74,8 @@ int main() {
 
     {
         const auto old = std::filesystem::current_path();
-        auto root = std::filesystem::temp_directory_path() / "strut-cli-test-command";
-        std::error_code ec; std::filesystem::remove_all(root, ec); std::filesystem::create_directories(root / ".strut", ec); std::filesystem::create_directories(root / "tests", ec);
+        auto root = unique_test_directory("strut-cli-test-command");
+        std::error_code ec; std::filesystem::create_directories(root / ".strut", ec); std::filesystem::create_directories(root / "tests", ec);
         std::ofstream(root / "main.p") << "function main() -> void { return; }\n";
         std::ofstream(root / "tests/smoke_test.p") << "function main() -> void { print(\"test-ok\"); return; }\n";
         std::ofstream(root / ".strut/config.json") << R"({"entrypoint":"main.p","output":"app","target":"native","mode":"debug","linking":"dynamic","incremental":"modified"})";

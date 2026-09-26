@@ -630,10 +630,13 @@ bool expr_uses_async_http_client(const IRExpr* e){
     return false;
 }
 bool stmt_uses_async_http_client(const IRStmt* s){if(!s)return false;if(s->is_async||expr_uses_async_http_client(s->value.get())||expr_uses_async_http_client(s->target.get())||expr_uses_async_http_client(s->condition.get())||expr_uses_async_http_client(s->increment.get()))return true;if(s->initializer&&stmt_uses_async_http_client(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_async_http_client(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_async_http_client(c.get()))return true;return false;}
+bool stmt_uses_environment_runtime(const IRStmt* s);
+bool expr_uses_environment_runtime(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text=="env"||e->text=="set_env"||e->text=="unset_env"))return true;if(expr_uses_environment_runtime(e->left.get())||expr_uses_environment_runtime(e->right.get())||expr_uses_environment_runtime(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_environment_runtime(a.get()))return true;for(const auto& st:e->lambda_body)if(stmt_uses_environment_runtime(st.get()))return true;return false;}
+bool stmt_uses_environment_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_environment_runtime(s->value.get())||expr_uses_environment_runtime(s->target.get())||expr_uses_environment_runtime(s->condition.get())||expr_uses_environment_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_environment_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_environment_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_environment_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_environment_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_environment_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_environment_runtime(st.get()))return true;return false;}
 bool program_uses_light_http_client_runtime(const IRProgram& p){
     if(!program_uses_curl(p)||program_uses_sqlite(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
-    for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get()))return false;
+    for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_environment_runtime(st.get()))return false;
     return true;
 }
 void emit_light_http_client_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){

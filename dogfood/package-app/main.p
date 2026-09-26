@@ -1,12 +1,11 @@
-include <http>;
-include <sqlite>;
-include <tls>;
-include <system>;
+include "config.h";
+include <vector>;
+
 function main() -> void : (ExecError, SqliteError) {
-    db := package_sqlite_open("package-dogfood.db");
+    db := sqlite_open(database_path());
     db.exec("CREATE TABLE IF NOT EXISTS values_table(value INTEGER)");
     db.close();
-    text := run_capture("printf", ["package-ok"]);
-    print(text);
+    result := exec("printf", ["package-ok"]);
+    print(result.stdout);
     return;
 }
