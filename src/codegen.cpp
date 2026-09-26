@@ -294,6 +294,7 @@ struct MinimalRuntimeFeatures {
     bool deque=false;
     bool list=false;
     bool priority_queue=false;
+    bool priority_queue_min=false;
     bool tuple=false;
     bool contains=false;
     bool map_insert=false;
@@ -304,11 +305,11 @@ void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& 
     if(t.find("[]")!=std::string::npos||t.find("vector<")!=std::string::npos)f.vector=true;
     if(t.find("ordered_map<")!=std::string::npos)f.ordered_map=true; else if(t.find("map<")!=std::string::npos)f.hash_map=true;
     if(t.find("ordered_set<")!=std::string::npos)f.ordered_set=true; else if(t.find("set<")!=std::string::npos)f.hash_set=true;
-    if(t.find("queue<")!=std::string::npos)f.queue=true;
+    if(t.find("priority_queue<")!=std::string::npos){f.priority_queue=true;if(t.find(",min>")!=std::string::npos)f.priority_queue_min=true;}
+    else if(t.find("queue<")!=std::string::npos)f.queue=true;
     if(t.find("stack<")!=std::string::npos)f.stack=true;
     if(t.find("deque<")!=std::string::npos)f.deque=true;
     if(t.find("list<")!=std::string::npos)f.list=true;
-    if(t.find("priority_queue<")!=std::string::npos)f.priority_queue=true;
     if(t.find("tuple<")!=std::string::npos)f.tuple=true;
     if(array_extent(t).has_value())f.array=true;
     if(!t.empty()&&t.back()=='?')f.nullable=true;
@@ -342,7 +343,7 @@ void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
 MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);return f;}
 void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
     o << "#include <cstdint>\n#include <iostream>\n";
-    if(f.vector||f.map||f.filter||f.reduce||f.any||f.all||f.find||f.count||f.sort||f.priority_queue)o << "#include <vector>\n";
+    if(f.vector||f.map||f.filter||f.reduce||f.any||f.all||f.find||f.count||f.sort||f.priority_queue_min)o << "#include <vector>\n";
     if(f.hash_map)o << "#include <unordered_map>\n";
     if(f.ordered_map)o << "#include <map>\n";
     if(f.hash_set)o << "#include <unordered_set>\n";
@@ -351,7 +352,7 @@ void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f)
     if(f.stack)o << "#include <stack>\n";
     if(f.deque)o << "#include <deque>\n";
     if(f.list)o << "#include <list>\n";
-    if(f.priority_queue)o << "#include <functional>\n";
+    if(f.priority_queue_min)o << "#include <functional>\n";
     if(f.tuple)o << "#include <tuple>\n";
     if(f.array)o << "#include <array>\n";
     if(f.function)o << "#include <functional>\n";
@@ -614,6 +615,43 @@ inline void strut_await(strut_future<void>& f){f.get();}
 }
 
 
+
+bool expr_uses_async_http_client(const IRExpr* e){
+    if(!e)return false;
+    if(e->kind==IRExpr::Kind::identifier&&(e->text=="http_get_async"||e->text=="http_request_async"||e->text.rfind("tls_",0)==0))return true;
+    if(expr_uses_async_http_client(e->left.get())||expr_uses_async_http_client(e->right.get())||expr_uses_async_http_client(e->lambda_expression.get()))return true;
+    for(const auto& a:e->arguments)if(expr_uses_async_http_client(a.get()))return true;
+    for(const auto& st:e->lambda_body){if(st->is_async||expr_uses_async_http_client(st->value.get())||expr_uses_async_http_client(st->condition.get()))return true;}
+    return false;
+}
+bool stmt_uses_async_http_client(const IRStmt* s){if(!s)return false;if(s->is_async||expr_uses_async_http_client(s->value.get())||expr_uses_async_http_client(s->target.get())||expr_uses_async_http_client(s->condition.get())||expr_uses_async_http_client(s->increment.get()))return true;if(s->initializer&&stmt_uses_async_http_client(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_async_http_client(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_async_http_client(c.get()))return true;return false;}
+bool program_uses_light_http_client_runtime(const IRProgram& p){
+    if(!program_uses_curl(p)||program_uses_sqlite(p))return false;
+    for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
+    for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get()))return false;
+    return true;
+}
+void emit_light_http_client_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
+    emit_light_json_runtime(o,f);
+    o << "#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n#include <unordered_map>\n";
+    o << R"STRHTTPCLI(
+struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_curl_global{strut_curl_global(){if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw strut_checked_error("HttpError","libcurl global initialization failed");}~strut_curl_global(){curl_global_cleanup();}};
+inline void strut_curl_init(){static strut_curl_global g;(void)g;}
+struct strut_http_response {
+    std::int32_t status=0; strut_string body; std::unordered_map<strut_string,strut_string> headers;
+    json::Document json() const { json::Document d;json::ParseDiagnostic diag;if(!json::Document::parse(body.v,d,diag))throw strut_checked_error("HttpError","response body is not valid JSON");return d; }
+};
+inline size_t strut_http_write_cb(char* p,size_t size,size_t nmemb,void* u){auto* body=static_cast<std::string*>(u);body->append(p,size*nmemb);return size*nmemb;}
+inline size_t strut_http_header_cb(char* p,size_t size,size_t nmemb,void* u){const size_t n=size*nmemb;std::string line(p,n);auto* headers=static_cast<std::unordered_map<strut_string,strut_string>*>(u);auto colon=line.find(':');if(colon!=std::string::npos){std::string k=line.substr(0,colon),v=line.substr(colon+1);while(!v.empty()&&(v.front()==' '||v.front()=='\t'))v.erase(v.begin());while(!v.empty()&&(v.back()=='\r'||v.back()=='\n'||v.back()==' '||v.back()=='\t'))v.pop_back();(*headers)[strut_string(k)]=strut_string(v);}return n;}
+inline strut_http_response http_request(const strut_string& method,const strut_string& url,const json::Document& options){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("HttpError","curl_easy_init failed");strut_http_response response;curl_slist* list=nullptr;std::string body;long timeout=30000;bool follow=true;if(options.type!=json::Type::Null&&options.type!=json::Type::Object){curl_easy_cleanup(c);throw strut_checked_error("HttpError","HTTP options must be JSON object or null");}if(options.type==json::Type::Object){if(options.has("timeout_ms")&&options["timeout_ms"].type==json::Type::Number)timeout=static_cast<long>(options["timeout_ms"].num);if(options.has("follow_redirects")&&options["follow_redirects"].type==json::Type::Boolean)follow=options["follow_redirects"].boolean;if(options.has("body")){const auto& b=options["body"];body=b.type==json::Type::String?b.string:b.dump();}if(options.has("headers")){const auto& h=options["headers"];if(h.type!=json::Type::Object){curl_easy_cleanup(c);throw strut_checked_error("HttpError","headers must be JSON object");}for(const auto& kv:h.object){if(kv.second.type!=json::Type::String){curl_easy_cleanup(c);throw strut_checked_error("HttpError","header values must be strings");}const std::string line=kv.first+": "+kv.second.string;list=curl_slist_append(list,line.c_str());}}}
+curl_easy_setopt(c,CURLOPT_URL,url.v.c_str());curl_easy_setopt(c,CURLOPT_CUSTOMREQUEST,method.v.c_str());curl_easy_setopt(c,CURLOPT_FOLLOWLOCATION,follow?1L:0L);curl_easy_setopt(c,CURLOPT_MAXREDIRS,10L);curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,timeout);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,strut_http_write_cb);curl_easy_setopt(c,CURLOPT_WRITEDATA,&response.body.v);curl_easy_setopt(c,CURLOPT_HEADERFUNCTION,strut_http_header_cb);curl_easy_setopt(c,CURLOPT_HEADERDATA,&response.headers);if(list)curl_easy_setopt(c,CURLOPT_HTTPHEADER,list);if(!body.empty()){curl_easy_setopt(c,CURLOPT_POSTFIELDS,body.data());curl_easy_setopt(c,CURLOPT_POSTFIELDSIZE,static_cast<long>(body.size()));}auto rc=curl_easy_perform(c);if(rc==CURLE_OK){long status=0;curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&status);response.status=static_cast<std::int32_t>(status);}if(list)curl_slist_free_all(list);curl_easy_cleanup(c);if(rc!=CURLE_OK)throw strut_checked_error("HttpError",curl_easy_strerror(rc));return response;}
+inline strut_http_response http_request(const strut_string& method,const strut_string& url){return http_request(method,url,json::Document(nullptr));}
+inline strut_http_response http_get(const strut_string& url){return http_request(strut_string("GET"),url);}
+inline json::Document http_get_json(const strut_string& url){return http_get(url).json();}
+)STRHTTPCLI";
+}
+
 bool light_http_expr_ok(const IRExpr* e,bool& found){
     if(!e)return true;
     const auto& t=e->type_name;
@@ -865,7 +903,7 @@ inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(
 )STRUT_FS_MUT";
 }
 
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;if(program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;if(program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
