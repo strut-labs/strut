@@ -114,6 +114,7 @@ private:
 }
 IRResult IRLowerer::lower(const Program& program) {
     IRResult result; LoweringContext ctx;
+    result.program.standard_modules = program.standard_modules;
     for (const auto& statement : program.statements) {if(statement->kind==Stmt::Kind::function_decl) ctx.register_function(*statement);if(statement->kind==Stmt::Kind::operator_decl)ctx.register_operator(*statement);}
     for (const auto& statement : program.statements) result.program.statements.push_back(ctx.statement(*statement));
     return result;

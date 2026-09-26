@@ -41,7 +41,10 @@ std::string highlight_line(std::string_view line, bool color) {
     auto is_ident=[](unsigned char c){return std::isalnum(c)||c=='_';};
     auto is_kw=[](std::string_view w){
         static constexpr std::string_view kws[]={"function","return","if","else","while","for","in","const","include","struct","enum","type","match","switch","case","default","break","continue","try","catch","throw","unsafe","async","await","void","true","false","null"};
-        for(auto k:kws)if(w==k)return true;return false;
+        for (auto k : kws) {
+            if (w == k) return true;
+        }
+        return false;
     };
     for(std::size_t i=0;i<line.size();){
         if(i+1<line.size()&&line[i]=='/'&&line[i+1]=='/'){out<<comment<<line.substr(i)<<reset;break;}
