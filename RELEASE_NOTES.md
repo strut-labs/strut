@@ -5,9 +5,10 @@ pre-1.0 language and toolchain baseline across Linux, macOS, and Windows.
 
 ## Highlights
 
-- Executables use `function main() -> int` or `function main(string[] args) -> int`;
-  the returned value becomes the process exit status, `args` excludes the
-  executable name, and `program_path()` exposes that name separately.
+- Executables use `function main() -> int` or
+  `function main(string cmd, string[] args) -> int`; the returned value becomes
+  the process exit status, `cmd` receives native `argv[0]`, and `args` contains
+  only user-supplied arguments.
 - Dynamic arrays (`T[]`) are a core language facility and no longer require
   `include <vector>;`; `vector<T>` remains available as a compatibility spelling.
 - Filesystem `copy`, `move`, and `remove` operations accept compatible iterable

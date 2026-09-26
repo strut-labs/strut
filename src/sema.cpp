@@ -237,7 +237,6 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});if(a.kind==Expr::Kind::index&&a.left){auto owner=infer_expression(result,*a.left);if(owner.name.size()>2&&owner.name.compare(owner.name.size()-2,2,"[]")==0)result.diagnostics.push_back(Diagnostic{a.span,"T& cannot borrow a dynamic-array element because later mutation could invalidate the reference"});}auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
                 if (name == "print") return {TypeKind::void_type, 0, "void"};
                 if (name == "println") return {TypeKind::void_type, 0, "void"};
-                if (name == "program_path") { if(!expr.arguments.empty())result.diagnostics.push_back(Diagnostic{expr.span,"program_path() takes no arguments"}); return builtin_type("string"); }
                 if (name == "input") return expr.arguments.empty()?builtin_type("string"):TypeInfo{TypeKind::void_type,0,"void"};
                 if (name == "istream" || name == "ostream" || name == "sstream" || name == "ifstream" || name == "ofstream") return {TypeKind::named,0,name};
                 if (name == "exists" || name == "is_file" || name == "is_dir") { require_module(result, "filesystem", expr.span, name); return builtin_type("bool"); }
@@ -423,8 +422,8 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
             if(st.name=="main"&&st.owner.empty()){
                 const std::string result_type=st.return_type?resolved_type_name(st.return_type->name):"void";
-                const bool params_ok=st.parameters.empty()||(st.parameters.size()==1&&resolved_type_name(st.parameters[0].type.name)=="string[]");
-                if(st.is_async||!params_ok||(result_type!="int_32"&&result_type!="void"))result.diagnostics.push_back(Diagnostic{st.span,"main must have signature function main() -> int or function main(string[] args) -> int"});
+                const bool params_ok=st.parameters.empty()||(st.parameters.size()==2&&resolved_type_name(st.parameters[0].type.name)=="string"&&resolved_type_name(st.parameters[1].type.name)=="string[]");
+                if(st.is_async||!params_ok||(result_type!="int_32"&&result_type!="void"))result.diagnostics.push_back(Diagnostic{st.span,"main must have signature function main() -> int or function main(string cmd, string[] args) -> int"});
                 if(result_type=="int_32"&&st.has_body&&!block_returns(st.body))result.diagnostics.push_back(Diagnostic{st.span,"main -> int must explicitly return an integer value on every reachable path"});
             }
             if (st.has_body) {
