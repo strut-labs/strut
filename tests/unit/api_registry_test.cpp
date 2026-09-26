@@ -22,6 +22,10 @@ int main(){
     }
     require(api_callable("http_get")!=nullptr,"free function lookup");
     require(api_callable("query","sqlite_db")!=nullptr,"method lookup");
+    require(api_callable("stop","http_server")!=nullptr,"HTTP stop method lookup");
+    require(api_callable("running","http_server")!=nullptr,"HTTP running method lookup");
+    require(api_callable("listen_tls","http_server")!=nullptr,"HTTPS listen method lookup");
+    require(api_callable("limits","http_server")->checked_errors==std::vector<std::string>{"NetworkError"},"HTTP limits checked error metadata");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
     return 0;

@@ -28,6 +28,7 @@ enum class RuntimeComponentId {
     networking,
     http_client,
     http_server,
+    http_server_tls,
     sqlite,
     embedded_assets,
     ffi,

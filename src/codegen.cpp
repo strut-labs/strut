@@ -724,8 +724,96 @@ inline strut_http_response http_request(const strut_string& method,const strut_s
 curl_easy_setopt(c,CURLOPT_URL,url.v.c_str());curl_easy_setopt(c,CURLOPT_CUSTOMREQUEST,method.v.c_str());curl_easy_setopt(c,CURLOPT_FOLLOWLOCATION,follow?1L:0L);curl_easy_setopt(c,CURLOPT_MAXREDIRS,10L);curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,timeout);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,strut_http_write_cb);curl_easy_setopt(c,CURLOPT_WRITEDATA,&response.body.v);curl_easy_setopt(c,CURLOPT_HEADERFUNCTION,strut_http_header_cb);curl_easy_setopt(c,CURLOPT_HEADERDATA,&response.headers);if(list)curl_easy_setopt(c,CURLOPT_HTTPHEADER,list);if(!body.empty()){curl_easy_setopt(c,CURLOPT_POSTFIELDS,body.data());curl_easy_setopt(c,CURLOPT_POSTFIELDSIZE,static_cast<long>(body.size()));}auto rc=curl_easy_perform(c);if(rc==CURLE_OK){long status=0;curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&status);response.status=static_cast<std::int32_t>(status);}if(list)curl_slist_free_all(list);curl_easy_cleanup(c);if(rc!=CURLE_OK)throw strut_checked_error("HttpError",curl_easy_strerror(rc));return response;}
 inline strut_http_response http_request(const strut_string& method,const strut_string& url){return http_request(method,url,json::Document(nullptr));}
 inline strut_http_response http_get(const strut_string& url){return http_request(strut_string("GET"),url);}
+inline strut_http_response http_get_ca(const strut_string& url,const strut_string& ca_file){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("HttpError","curl_easy_init failed");strut_http_response response;curl_easy_setopt(c,CURLOPT_URL,url.v.c_str());curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_CAINFO,ca_file.v.c_str());curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,30000L);curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,strut_http_write_cb);curl_easy_setopt(c,CURLOPT_WRITEDATA,&response.body.v);curl_easy_setopt(c,CURLOPT_HEADERFUNCTION,strut_http_header_cb);curl_easy_setopt(c,CURLOPT_HEADERDATA,&response.headers);auto rc=curl_easy_perform(c);if(rc==CURLE_OK){long status=0;curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&status);response.status=static_cast<std::int32_t>(status);}curl_easy_cleanup(c);if(rc!=CURLE_OK)throw strut_checked_error("HttpError",curl_easy_strerror(rc));return response;}
 inline json::Document http_get_json(const strut_string& url){return http_get(url).json();}
 )STRHTTPCLI";
+}
+
+void emit_http_server_lifecycle(std::ostringstream& o,bool async_handlers,bool tls){
+    if(tls)o<<"#define STRUT_USE_SERVER_TLS 1\n#include <openssl/ssl.h>\n#include <openssl/err.h>\n";
+    o << R"STRUT_SERVER(
+#include <atomic>
+#include <csignal>
+class strut_http_server {
+public:
+    using handler=std::function<strut_server_response(strut_server_request)>;
+    strut_http_server():s_(std::make_shared<state>()){}
+    void get(const strut_string& path,handler h) const{add_route("GET",path,std::move(h));}
+    void post(const strut_string& path,handler h) const{add_route("POST",path,std::move(h));}
+)STRUT_SERVER";
+    if(async_handlers)o << R"STRUT_SERVER(
+    void get_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h) const{get(path,[h=std::move(h)](strut_server_request r){return strut_await(h(std::move(r)));});}
+    void post_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h) const{post(path,[h=std::move(h)](strut_server_request r){return strut_await(h(std::move(r)));});}
+)STRUT_SERVER";
+    o << R"STRUT_SERVER(
+    void serve_static(const strut_string& prefix,const std::unordered_map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()) const{require_stopped("configure static files");s_->static_prefix=prefix.v;s_->static_files=files;s_->static_fallback=fallback.v;}
+    void timeouts(std::int32_t read_ms,std::int32_t write_ms,std::int32_t idle_ms,std::int32_t shutdown_ms) const{require_stopped("configure timeouts");if(read_ms<=0||write_ms<=0||idle_ms<=0||shutdown_ms<0)throw strut_checked_error("NetworkError","HTTP timeouts must be positive (shutdown may be zero)");s_->read_timeout_ms=read_ms;s_->write_timeout_ms=write_ms;s_->idle_timeout_ms=idle_ms;s_->shutdown_timeout_ms=shutdown_ms;}
+    void limits(std::int64_t body_bytes,std::int64_t header_bytes,std::int32_t header_count,std::int32_t connections) const{require_stopped("configure limits");if(body_bytes<0||header_bytes<1024||header_count<=0||connections<=0)throw strut_checked_error("NetworkError","invalid HTTP server limits");s_->max_body_bytes=static_cast<std::size_t>(body_bytes);s_->max_header_bytes=static_cast<std::size_t>(header_bytes);s_->max_header_count=header_count;s_->max_connections=connections;}
+    bool running() const{return s_->running.load();}
+    void stop() const{auto s=s_;if(!s->running.load())return;s->stopping.store(true);s->listener.close();std::unique_lock<std::mutex> lock(s->mutex);if(!s->cv.wait_for(lock,std::chrono::milliseconds(s->shutdown_timeout_ms),[&]{return s->active==0;})){for(auto& socket:s->active_sockets)socket.close();}}
+    void listen(const strut_string& host,std::int32_t port,std::int32_t max_requests=0) const{
+#ifndef _WIN32
+        std::signal(SIGPIPE,SIG_IGN);
+#endif
+        auto s=s_;bool expected=false;if(!s->running.compare_exchange_strong(expected,true))throw strut_checked_error("NetworkError","HTTP server is already running");
+        {std::lock_guard<std::mutex> lock(s->mutex);if(s->active!=0){s->running.store(false);throw strut_checked_error("NetworkError","HTTP server shutdown is still in progress");}}
+        s->stopping.store(false);try{s->listener=tcp_listen(host,port);}catch(...){s->running.store(false);throw;}
+        std::vector<std::thread> workers;std::int32_t served=0;
+        try{while(!s->stopping.load()&&(max_requests<=0||served<max_requests)){
+            strut_tcp_socket socket;try{socket=s->listener.accept();}catch(...){if(s->stopping.load())break;throw;}
+            bool saturated=false;{std::lock_guard<std::mutex> lock(s->mutex);saturated=s->active>=s->max_connections;if(!saturated){++s->active;s->active_sockets.push_back(socket);}}
+            if(saturated){send_error(socket,503,"Service Unavailable");continue;}
+            workers.emplace_back([s,socket]() mutable{serve_one(s,socket);{std::lock_guard<std::mutex> lock(s->mutex);--s->active;}s->cv.notify_all();});++served;
+        }}catch(...){s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);throw;}
+        s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);s->stopping.store(false);
+    }
+)STRUT_SERVER";
+    if(tls)o << R"STRUT_SERVER(
+private:
+    class tls_socket{public:tls_socket(strut_tcp_socket socket,SSL* ssl):socket_(std::move(socket)),ssl_(ssl){}tls_socket(const tls_socket&)=delete;tls_socket& operator=(const tls_socket&)=delete;tls_socket(tls_socket&& other) noexcept:socket_(std::move(other.socket_)),ssl_(other.ssl_){other.ssl_=nullptr;}~tls_socket(){close();}strut_socket_handle native_handle() const{return socket_.native_handle();}strut_string read(std::int64_t max_bytes=4096){if(max_bytes<=0)return {};std::string out(static_cast<std::size_t>(max_bytes),'\0');int n=SSL_read(ssl_,out.data(),static_cast<int>(out.size()));if(n<=0)throw strut_checked_error("TlsError","TLS request read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}void write(const strut_string& data){std::size_t offset=0;while(offset<data.v.size()){int n=SSL_write(ssl_,data.v.data()+offset,static_cast<int>(data.v.size()-offset));if(n<=0)throw strut_checked_error("TlsError","TLS response write failed");offset+=static_cast<std::size_t>(n);}}void close(){if(ssl_){SSL_shutdown(ssl_);SSL_free(ssl_);ssl_=nullptr;}socket_.close();}private:strut_tcp_socket socket_;SSL* ssl_=nullptr;};
+public:
+    void listen_tls(const strut_string& host,std::int32_t port,const strut_string& certificate,const strut_string& private_key,std::int32_t max_requests=0) const{
+#ifndef _WIN32
+        std::signal(SIGPIPE,SIG_IGN);
+#endif
+        SSL_CTX* raw=SSL_CTX_new(TLS_server_method());if(!raw)throw strut_checked_error("TlsError","unable to initialize the TLS server context");std::shared_ptr<SSL_CTX> context(raw,SSL_CTX_free);SSL_CTX_set_min_proto_version(raw,TLS1_2_VERSION);
+        if(SSL_CTX_use_certificate_chain_file(raw,certificate.v.c_str())!=1)throw strut_checked_error("TlsError","unable to load TLS certificate chain from '"+certificate.v+"'");
+        if(SSL_CTX_use_PrivateKey_file(raw,private_key.v.c_str(),SSL_FILETYPE_PEM)!=1)throw strut_checked_error("TlsError","unable to load TLS private key from '"+private_key.v+"'");
+        if(SSL_CTX_check_private_key(raw)!=1)throw strut_checked_error("TlsError","TLS certificate and private key do not match");
+        auto s=s_;bool expected=false;if(!s->running.compare_exchange_strong(expected,true))throw strut_checked_error("NetworkError","HTTP server is already running");{std::lock_guard<std::mutex> lock(s->mutex);if(s->active!=0){s->running.store(false);throw strut_checked_error("NetworkError","HTTP server shutdown is still in progress");}}s->stopping.store(false);try{s->listener=tcp_listen(host,port);}catch(...){s->running.store(false);throw;}
+        std::vector<std::thread> workers;std::int32_t served=0;try{while(!s->stopping.load()&&(max_requests<=0||served<max_requests)){strut_tcp_socket socket;try{socket=s->listener.accept();}catch(...){if(s->stopping.load())break;throw;}bool saturated=false;{std::lock_guard<std::mutex> lock(s->mutex);saturated=s->active>=s->max_connections;if(!saturated){++s->active;s->active_sockets.push_back(socket);}}if(saturated){socket.close();continue;}workers.emplace_back([s,socket,context]() mutable{SSL* ssl=SSL_new(context.get());if(ssl){SSL_set_fd(ssl,static_cast<int>(socket.native_handle()));if(SSL_accept(ssl)==1){tls_socket secure(std::move(socket),ssl);serve_one(s,std::move(secure));ssl=nullptr;}if(ssl)SSL_free(ssl);}socket.close();{std::lock_guard<std::mutex> lock(s->mutex);--s->active;}s->cv.notify_all();});++served;}}catch(...){s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);throw;}s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);s->stopping.store(false);
+    }
+)STRUT_SERVER";
+    o << R"STRUT_SERVER(
+private:
+    struct route{std::string method,path;handler fn;};
+    struct state{std::vector<route> routes;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false},stopping{false};strut_tcp_listener listener;std::mutex mutex;std::condition_variable cv;std::int32_t active=0;std::vector<strut_tcp_socket> active_sockets;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;};
+    std::shared_ptr<state> s_;
+    void require_stopped(const char* action) const{if(s_->running.load())throw strut_checked_error("NetworkError",std::string("cannot ")+action+" while HTTP server is running");}
+    void add_route(const char* method,const strut_string& path,handler h) const{require_stopped("register routes");s_->routes.push_back({method,path.v,std::move(h)});}
+    static void finish_workers(const std::shared_ptr<state>& s,std::vector<std::thread>& workers){bool drained;{std::unique_lock<std::mutex> lock(s->mutex);drained=s->cv.wait_for(lock,std::chrono::milliseconds(s->shutdown_timeout_ms),[&]{return s->active==0;});if(!drained)for(auto& socket:s->active_sockets)socket.close();s->active_sockets.clear();}for(auto& worker:workers){if(!worker.joinable())continue;if(drained)worker.join();else worker.detach();}}
+    template<class Socket> static void set_socket_timeouts(const Socket& socket,std::int32_t read_ms,std::int32_t write_ms){
+#ifdef _WIN32
+        DWORD read=static_cast<DWORD>(read_ms),write=static_cast<DWORD>(write_ms);setsockopt(socket.native_handle(),SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&read),sizeof(read));setsockopt(socket.native_handle(),SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<const char*>(&write),sizeof(write));
+#else
+        timeval read{read_ms/1000,(read_ms%1000)*1000},write{write_ms/1000,(write_ms%1000)*1000};setsockopt(socket.native_handle(),SOL_SOCKET,SO_RCVTIMEO,&read,sizeof(read));setsockopt(socket.native_handle(),SOL_SOCKET,SO_SNDTIMEO,&write,sizeof(write));
+#endif
+    }
+    template<class Socket> static void send_error(Socket& socket,std::int32_t status,const char* message){try{std::string body=message;std::ostringstream out;out<<"HTTP/1.1 "<<status<<' '<<message<<"\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: "<<body.size()<<"\r\nConnection: close\r\n\r\n"<<body;socket.write(strut_string(out.str()));socket.close();}catch(...){socket.close();}}
+    static strut_string mime(const std::string& p){auto dot=p.rfind('.');auto e=dot==std::string::npos?std::string():p.substr(dot);if(e==".html")return "text/html; charset=utf-8";if(e==".css")return "text/css; charset=utf-8";if(e==".js")return "application/javascript";if(e==".json")return "application/json";if(e==".svg")return "image/svg+xml";if(e==".png")return "image/png";return "application/octet-stream";}
+    static std::string etag(const std::string& data){std::uint64_t h=1469598103934665603ull;for(unsigned char c:data){h^=c;h*=1099511628211ull;}std::ostringstream out;out<<'"'<<std::hex<<h<<'"';return out.str();}
+    template<class Socket> static void serve_one(const std::shared_ptr<state>& s,Socket socket){
+        try{set_socket_timeouts(socket,std::min(s->read_timeout_ms,s->idle_timeout_ms),s->write_timeout_ms);std::string raw;std::size_t header_end=std::string::npos;for(;;){auto chunk=socket.read(4096).v;if(chunk.empty()){send_error(socket,400,"Bad Request");return;}raw+=chunk;if(raw.size()>s->max_header_bytes){send_error(socket,431,"Request Header Fields Too Large");return;}header_end=raw.find("\r\n\r\n");if(header_end!=std::string::npos)break;}
+            strut_server_request req;auto line_end=raw.find("\r\n");if(line_end==std::string::npos){send_error(socket,400,"Bad Request");return;}std::istringstream first(raw.substr(0,line_end));std::string target,version,extra;if(!(first>>req.method.v>>target>>version)||(first>>extra)||version.rfind("HTTP/",0)!=0){send_error(socket,400,"Bad Request");return;}auto q=target.find('?');req.path=strut_string(target.substr(0,q));if(q!=std::string::npos)strut_parse_query(target.substr(q+1),req.query);
+            std::size_t p=line_end+2,content_len=0;std::int32_t count=0;while(p<header_end){auto e=raw.find("\r\n",p);if(e==std::string::npos||e>header_end){send_error(socket,400,"Bad Request");return;}auto line=raw.substr(p,e-p);auto colon=line.find(':');if(colon==std::string::npos||++count>s->max_header_count){send_error(socket,count>s->max_header_count?431:400,count>s->max_header_count?"Request Header Fields Too Large":"Bad Request");return;}auto key=strut_trim_ascii(line.substr(0,colon)),value=strut_trim_ascii(line.substr(colon+1));req.headers[strut_string(key)]=strut_string(value);if(key=="Content-Length"){if(value.empty()||!std::all_of(value.begin(),value.end(),[](unsigned char c){return std::isdigit(c); })){send_error(socket,400,"Bad Request");return;}content_len=static_cast<std::size_t>(std::strtoull(value.c_str(),nullptr,10));if(content_len>s->max_body_bytes){send_error(socket,413,"Payload Too Large");return;}}p=e+2;}
+            req.body=strut_string(raw.substr(header_end+4));if(req.body.v.size()>content_len)req.body.v.resize(content_len);while(req.body.v.size()<content_len){auto more=socket.read(static_cast<std::int64_t>(content_len-req.body.v.size())).v;if(more.empty()){send_error(socket,400,"Bad Request");return;}req.body.v+=more;}
+            strut_server_response response;bool found=false,method_mismatch=false;for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=req.method.v){method_mismatch=true;continue;}try{response=route.fn(req);}catch(const std::exception&){send_error(socket,500,"Internal Server Error");return;}catch(...){send_error(socket,500,"Internal Server Error");return;}found=true;break;}
+            if(!found&&!s->static_files.empty()&&req.method.v=="GET"){std::string key=req.path.v;if(!s->static_prefix.empty()&&key.rfind(s->static_prefix,0)==0)key=key.substr(s->static_prefix.size());while(!key.empty()&&key.front()=='/')key.erase(key.begin());if(key.empty())key="index.html";if(key.find("..")!=std::string::npos){response.status=400;response.body="Bad Request";found=true;}else{auto it=s->static_files.find(strut_string(key));if(it==s->static_files.end()&&!s->static_fallback.empty())it=s->static_files.find(strut_string(s->static_fallback));if(it!=s->static_files.end()){response.status=200;response.body=it->second;response.content_type=mime(key);response.headers[strut_string("ETag")]=strut_string(etag(response.body.v));response.headers[strut_string("Cache-Control")]=strut_string("public, max-age=0, must-revalidate");found=true;}}}
+            if(!found){response.status=method_mismatch?405:404;response.body=method_mismatch?"Method Not Allowed":"Not Found";}std::ostringstream out;out<<"HTTP/1.1 "<<response.status<<' '<<(response.status==200?"OK":response.status==404?"Not Found":response.status==405?"Method Not Allowed":"Response")<<"\r\nContent-Type: "<<response.content_type.v<<"\r\nContent-Length: "<<response.body.v.size()<<"\r\nConnection: close\r\n";for(auto& header:response.headers)out<<header.first.v<<": "<<header.second.v<<"\r\n";out<<"\r\n"<<response.body.v;socket.write(strut_string(out.str()));socket.close();
+        }catch(...){socket.close();}
+    }
+};
+)STRUT_SERVER";
 }
 
 bool light_http_expr_ok(const IRExpr* e,bool& found){
@@ -738,7 +826,7 @@ bool light_http_expr_ok(const IRExpr* e,bool& found){
         static const char* heavy[]={"http_json_response","http_get","http_request","http_get_json","http_get_async","http_request_async","sqlite_open","exec","exec_shell","process","pipe_exec","embed_file","embed_dir"};
         for(const char* h:heavy)if(e->text==h)return false;
     }
-    if(e->kind==IRExpr::Kind::member&&(e->text=="get_async"||e->text=="post_async"||e->text=="json"))return false;
+    if(e->kind==IRExpr::Kind::member&&(e->text=="get_async"||e->text=="post_async"||e->text=="listen_tls"||e->text=="json"))return false;
     if(!light_http_expr_ok(e->left.get(),found)||!light_http_expr_ok(e->right.get(),found)||!light_http_expr_ok(e->lambda_expression.get(),found))return false;
     for(const auto& a:e->arguments)if(!light_http_expr_ok(a.get(),found))return false;
     for(const auto& st:e->lambda_body){
@@ -760,13 +848,14 @@ bool light_http_stmt_ok(const IRStmt* st,bool& found){
     return true;
 }
 bool program_uses_light_http_runtime(const IRProgram& p){
-    if(analyze_runtime_components(p).contains(RuntimeComponentId::sqlite)||analyze_runtime_components(p).contains(RuntimeComponentId::http_client))return false;
+    const auto components=analyze_runtime_components(p);
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
     emit_minimal_runtime(o,f);
-    o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n";
+    o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n#include <algorithm>\n#include <cctype>\n#include <atomic>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <chrono>\n";
     o << "#ifdef _WIN32\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n#endif\n";
     o << R"STRUT_HTTP(
 struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
@@ -782,12 +871,12 @@ inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 #ifdef _WIN32
 using strut_socket_handle=SOCKET; constexpr strut_socket_handle strut_invalid_socket=INVALID_SOCKET;
-inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket)closesocket(h);}
+inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){shutdown(h,SD_BOTH);closesocket(h);}}
 struct strut_winsock_runtime{strut_winsock_runtime(){WSADATA d{};if(WSAStartup(MAKEWORD(2,2),&d)!=0)throw strut_checked_error("NetworkError","WSAStartup failed");}~strut_winsock_runtime(){WSACleanup();}};
 inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runtime;}
 #else
 using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socket=-1;
-inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket)::close(h);}
+inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){::shutdown(h,SHUT_RDWR);::close(h);}}
 inline void strut_socket_init(){}
 #endif
 struct strut_socket_state{strut_socket_handle handle=strut_invalid_socket;~strut_socket_state(){strut_socket_close(handle);}};
@@ -809,6 +898,7 @@ public:
         ssize_t n=::recv(s_->handle,out.data(),out.size(),0);
 #endif
         if(n<0)throw strut_checked_error("NetworkError","socket read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}
+    strut_socket_handle native_handle() const{return s_->handle;}
 private:std::shared_ptr<strut_socket_state> s_;
 };
 class strut_tcp_listener {
@@ -818,7 +908,7 @@ public:
     strut_tcp_socket accept(){if(!is_open())throw strut_checked_error("NetworkError","accept on closed listener");auto h=::accept(s_->handle,nullptr,nullptr);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP accept failed");return strut_tcp_socket(h);}
 private:std::shared_ptr<strut_socket_state> s_;
 };
-inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed");return strut_tcp_listener(h);}
+inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed: address unavailable or port already in use");return strut_tcp_listener(h);}
 struct strut_server_request {strut_string method,path,body;std::unordered_map<strut_string,strut_string> headers,query,params;};
 struct strut_server_response {std::int32_t status=200;strut_string body;strut_string content_type="text/plain; charset=utf-8";std::unordered_map<strut_string,strut_string> headers;};
 inline strut_server_response strut_http_text(const strut_string& s){return {200,s,"text/plain; charset=utf-8",{}};}
@@ -826,7 +916,7 @@ inline strut_server_response strut_http_html(const strut_string& s){return {200,
 inline std::string strut_trim_ascii(std::string s){while(!s.empty()&&(s.back()=='\r'||s.back()==' '||s.back()=='\t'))s.pop_back();std::size_t i=0;while(i<s.size()&&(s[i]==' '||s[i]=='\t'))++i;return s.substr(i);}
 inline void strut_parse_query(const std::string& raw,std::unordered_map<strut_string,strut_string>& out){std::size_t p=0;while(p<=raw.size()){auto amp=raw.find('&',p);auto part=raw.substr(p,amp==std::string::npos?std::string::npos:amp-p);auto eq=part.find('=');out[strut_string(part.substr(0,eq))]=strut_string(eq==std::string::npos?"":part.substr(eq+1));if(amp==std::string::npos)break;p=amp+1;}}
 inline bool strut_route_match(const std::string& pattern,const std::string& path,std::unordered_map<strut_string,strut_string>& params){std::stringstream a(pattern),b(path);std::string x,y;while(true){bool ax=static_cast<bool>(std::getline(a,x,'/')),by=static_cast<bool>(std::getline(b,y,'/'));if(!ax||!by)return ax==by;if(x.empty()&&y.empty())continue;if(!x.empty()&&x[0]==':')params[strut_string(x.substr(1))]=strut_string(y);else if(x!=y)return false;}}
-class strut_http_server {
+class strut_http_server_legacy {
 public:
     using handler=std::function<strut_server_response(strut_server_request)>;
     void get(const strut_string& path,handler h){routes_.push_back({"GET",path.v,std::move(h)});}void post(const strut_string& path,handler h){routes_.push_back({"POST",path.v,std::move(h)});}
@@ -839,6 +929,7 @@ private:
     void serve_one(strut_tcp_socket& sock){std::string raw;for(;;){auto chunk=sock.read(4096).v;if(chunk.empty())break;raw+=chunk;if(raw.find("\r\n\r\n")!=std::string::npos)break;}strut_server_request req;auto line_end=raw.find("\r\n");if(line_end==std::string::npos)return;std::istringstream first(raw.substr(0,line_end));std::string target,version;first>>req.method.v>>target>>version;auto q=target.find('?');req.path=strut_string(target.substr(0,q));if(q!=std::string::npos)strut_parse_query(target.substr(q+1),req.query);auto header_end=raw.find("\r\n\r\n");std::size_t p=line_end+2,content_len=0;while(p<header_end){auto e=raw.find("\r\n",p);auto ln=raw.substr(p,e-p);auto colon=ln.find(':');if(colon!=std::string::npos){auto k=strut_trim_ascii(ln.substr(0,colon));auto v=strut_trim_ascii(ln.substr(colon+1));req.headers[strut_string(k)]=strut_string(v);if(k=="Content-Length")content_len=static_cast<std::size_t>(std::strtoull(v.c_str(),nullptr,10));}p=e+2;}if(header_end!=std::string::npos){req.body=strut_string(raw.substr(header_end+4));while(req.body.v.size()<content_len){auto more=sock.read(static_cast<std::int64_t>(content_len-req.body.v.size())).v;if(more.empty())break;req.body.v+=more;}}strut_server_response res;bool found=false;for(auto& r:routes_){if(r.method!=req.method.v)continue;req.params.clear();if(strut_route_match(r.path,req.path.v,req.params)){res=r.fn(req);found=true;break;}}if(!found&&!static_files_.empty()&&req.method.v=="GET"){std::string key=req.path.v;if(!static_prefix_.empty()&&key.rfind(static_prefix_,0)==0)key=key.substr(static_prefix_.size());while(!key.empty()&&key.front()=='/')key.erase(key.begin());if(key.empty())key="index.html";if(key.find("..")!=std::string::npos){res.status=400;res.body="Bad Request";found=true;}else{auto it=static_files_.find(strut_string(key));if(it==static_files_.end()&&!static_fallback_.empty())it=static_files_.find(strut_string(static_fallback_));if(it!=static_files_.end()){res.status=200;res.body=it->second;res.content_type=mime(key);res.headers[strut_string("ETag")]=strut_string(etag(res.body.v));res.headers[strut_string("Cache-Control")]=strut_string("public, max-age=0, must-revalidate");found=true;}}}if(!found){res.status=404;res.body="Not Found";}std::ostringstream out;out<<"HTTP/1.1 "<<res.status<<" "<<(res.status==200?"OK":res.status==404?"Not Found":"Response")<<"\r\nContent-Type: "<<res.content_type.v<<"\r\nContent-Length: "<<res.body.v.size()<<"\r\nConnection: close\r\n";for(auto& h:res.headers)out<<h.first.v<<": "<<h.second.v<<"\r\n";out<<"\r\n"<<res.body.v;sock.write(strut_string(out.str()));sock.close();}
 };
 )STRUT_HTTP";
+    emit_http_server_lifecycle(o,false,false);
 }
 
 bool light_filesystem_type_ok(const std::string& t){
@@ -1219,6 +1310,10 @@ inline void strut_unset_env(const strut_string& name){
 inline std::int64_t strut_now_ms(){return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
 inline std::int64_t strut_unix_ms(){return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();}
 inline void strut_sleep_ms(std::int64_t value){if(value<0)throw strut_checked_error("TimeError","sleep_ms requires a non-negative duration");std::this_thread::sleep_for(std::chrono::milliseconds(value));}
+#include <csignal>
+inline volatile std::sig_atomic_t strut_shutdown_signal_flag=0;
+inline void strut_shutdown_signal_handler(int){strut_shutdown_signal_flag=1;}
+inline void wait_for_shutdown_signal(){strut_shutdown_signal_flag=0;auto old_int=std::signal(SIGINT,strut_shutdown_signal_handler);auto old_term=std::signal(SIGTERM,strut_shutdown_signal_handler);while(!strut_shutdown_signal_flag)std::this_thread::sleep_for(std::chrono::milliseconds(25));std::signal(SIGINT,old_int);std::signal(SIGTERM,old_term);}
 #ifdef _WIN32
 #undef stdout
 #undef stderr
@@ -1458,12 +1553,12 @@ inline strut_exec_result strut_pipe_exec(const strut_string& first,const std::ve
 
 #ifdef _WIN32
 using strut_socket_handle=SOCKET; constexpr strut_socket_handle strut_invalid_socket=INVALID_SOCKET;
-inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket)closesocket(h);}
+inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){shutdown(h,SD_BOTH);closesocket(h);}}
 struct strut_winsock_runtime{strut_winsock_runtime(){WSADATA d{};if(WSAStartup(MAKEWORD(2,2),&d)!=0)throw strut_checked_error("NetworkError","WSAStartup failed");}~strut_winsock_runtime(){WSACleanup();}};
 inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runtime;}
 #else
 using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socket=-1;
-inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket)::close(h);}
+inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){::shutdown(h,SHUT_RDWR);::close(h);}}
 inline void strut_socket_init(){}
 #endif
 struct strut_socket_state{strut_socket_handle handle=strut_invalid_socket;~strut_socket_state(){strut_socket_close(handle);}};
@@ -1501,7 +1596,7 @@ public:
     strut_future<strut_tcp_socket> accept_async(){auto copy=*this;return strut_async([copy]() mutable{return copy.accept();});}
 private: std::shared_ptr<strut_socket_state> s_;
 };
-inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed");return strut_tcp_listener(h);}
+inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed: address unavailable or port already in use");return strut_tcp_listener(h);}
 
 
 #ifdef STRUT_USE_CURL
@@ -1532,6 +1627,7 @@ inline strut_http_response http_request(const strut_string& method,const strut_s
 curl_easy_setopt(c,CURLOPT_URL,url.v.c_str());curl_easy_setopt(c,CURLOPT_CUSTOMREQUEST,method.v.c_str());curl_easy_setopt(c,CURLOPT_FOLLOWLOCATION,follow?1L:0L);curl_easy_setopt(c,CURLOPT_MAXREDIRS,10L);curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,timeout);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,strut_http_write_cb);curl_easy_setopt(c,CURLOPT_WRITEDATA,&response.body.v);curl_easy_setopt(c,CURLOPT_HEADERFUNCTION,strut_http_header_cb);curl_easy_setopt(c,CURLOPT_HEADERDATA,&response.headers);if(list)curl_easy_setopt(c,CURLOPT_HTTPHEADER,list);if(!body.empty()){curl_easy_setopt(c,CURLOPT_POSTFIELDS,body.data());curl_easy_setopt(c,CURLOPT_POSTFIELDSIZE,static_cast<long>(body.size()));}auto rc=curl_easy_perform(c);if(rc==CURLE_OK){long status=0;curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&status);response.status=static_cast<std::int32_t>(status);}if(list)curl_slist_free_all(list);curl_easy_cleanup(c);if(rc!=CURLE_OK)throw strut_checked_error("HttpError",curl_easy_strerror(rc));return response;}
 inline strut_http_response http_request(const strut_string& method,const strut_string& url){return http_request(method,url,json::Document(nullptr));}
 inline strut_http_response http_get(const strut_string& url){return http_request(strut_string("GET"),url);}
+inline strut_http_response http_get_ca(const strut_string& url,const strut_string& ca_file){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("HttpError","curl_easy_init failed");strut_http_response response;curl_easy_setopt(c,CURLOPT_URL,url.v.c_str());curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_CAINFO,ca_file.v.c_str());curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,30000L);curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,strut_http_write_cb);curl_easy_setopt(c,CURLOPT_WRITEDATA,&response.body.v);curl_easy_setopt(c,CURLOPT_HEADERFUNCTION,strut_http_header_cb);curl_easy_setopt(c,CURLOPT_HEADERDATA,&response.headers);auto rc=curl_easy_perform(c);if(rc==CURLE_OK){long status=0;curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&status);response.status=static_cast<std::int32_t>(status);}curl_easy_cleanup(c);if(rc!=CURLE_OK)throw strut_checked_error("HttpError",curl_easy_strerror(rc));return response;}
 inline json::Document http_get_json(const strut_string& url){return http_get(url).json();}
 inline strut_future<strut_http_response> http_get_async(const strut_string& url){return strut_async([url]{return http_get(url);});}
 inline strut_future<strut_http_response> http_request_async(const strut_string& method,const strut_string& url,const json::Document& options){return strut_async([method,url,options]{return http_request(method,url,options);});}
@@ -1549,7 +1645,7 @@ inline strut_server_response strut_http_json_response(const json::Document& j){r
 inline std::string strut_trim_ascii(std::string s){while(!s.empty()&&(s.back()=='\r'||s.back()==' '||s.back()=='\t'))s.pop_back();std::size_t i=0;while(i<s.size()&&(s[i]==' '||s[i]=='\t'))++i;return s.substr(i);}
 inline void strut_parse_query(const std::string& raw,std::unordered_map<strut_string,strut_string>& out){std::size_t p=0;while(p<=raw.size()){auto amp=raw.find('&',p);auto part=raw.substr(p,amp==std::string::npos?std::string::npos:amp-p);auto eq=part.find('=');out[strut_string(part.substr(0,eq))]=strut_string(eq==std::string::npos?"":part.substr(eq+1));if(amp==std::string::npos)break;p=amp+1;}}
 inline bool strut_route_match(const std::string& pattern,const std::string& path,std::unordered_map<strut_string,strut_string>& params){std::stringstream a(pattern),b(path);std::string x,y;while(true){bool ax=static_cast<bool>(std::getline(a,x,'/')),by=static_cast<bool>(std::getline(b,y,'/'));if(!ax||!by)return ax==by;if(x.empty()&&y.empty())continue;if(!x.empty()&&x[0]==':')params[strut_string(x.substr(1))]=strut_string(y);else if(x!=y)return false;}}
-class strut_http_server {
+class strut_http_server_legacy {
 public:
     using handler=std::function<strut_server_response(strut_server_request)>;
     void get(const strut_string& path,handler h){routes_.push_back({"GET",path.v,std::move(h)});} void post(const strut_string& path,handler h){routes_.push_back({"POST",path.v,std::move(h)});}
@@ -1586,7 +1682,7 @@ inline strut_string strut_embed_file(const strut_string& path){std::ifstream f(p
 inline std::unordered_map<strut_string,strut_string> strut_embed_dir(const strut_string& root){std::unordered_map<strut_string,strut_string> out;for(auto& e:std::filesystem::recursive_directory_iterator(root.v)){if(!e.is_regular_file())continue;std::ifstream f(e.path(),std::ios::binary);std::ostringstream o;o<<f.rdbuf();out[strut_string(std::filesystem::relative(e.path(),root.v).generic_string())]=strut_string(o.str());}return out;}
 
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
-)CPP";emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
+)CPP";if(has(RuntimeComponentId::http_server))emit_http_server_lifecycle(o,true,has(RuntimeComponentId::http_server_tls));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
 
 namespace {
 std::string env_flags(const char* name) { const char* value=std::getenv(name); return value&&*value ? std::string(" ")+value : std::string(); }

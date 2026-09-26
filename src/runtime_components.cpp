@@ -31,7 +31,8 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::async,"async",{Id::threading,Id::channels},{"future"},{}},
         {Id::networking,"networking",{Id::strings,Id::safe_pointer},{},{}},
         {Id::http_client,"http_client",{Id::networking,Id::json},{"curl/curl.h"},{"curl"}},
-        {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io},{},{}},
+        {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io,Id::threading,Id::mutex},{},{}},
+        {Id::http_server_tls,"http_server_tls",{Id::http_server},{"openssl/ssl.h","openssl/err.h"},{"ssl","crypto"}},
         {Id::sqlite,"sqlite",{Id::json,Id::safe_pointer},{"sqlite3.h"},{"sqlite3"}},
         {Id::embedded_assets,"embedded_assets",{Id::filesystem,Id::collections},{},{}},
         {Id::ffi,"ffi",{Id::core},{},{}},
@@ -84,6 +85,7 @@ void request_expr(std::vector<Id>& out,const IRExpr* e) {
         if(auto it=operations.find(e->text);it!=operations.end())out.push_back(it->second);
         if(const auto* callable=api_callable(e->text))out.insert(out.end(),callable->runtime_components.begin(),callable->runtime_components.end());
     }
+    if(e->kind==IRExpr::Kind::member&&e->left){if(const auto* callable=api_callable(e->text,e->left->type_name))out.insert(out.end(),callable->runtime_components.begin(),callable->runtime_components.end());}
     request_expr(out,e->left.get());request_expr(out,e->right.get());request_expr(out,e->lambda_expression.get());for(const auto& a:e->arguments)request_expr(out,a.get());for(const auto& s:e->lambda_body)request_stmt(out,s.get());
 }
 } // namespace
@@ -93,7 +95,7 @@ bool RuntimeResolution::contains(RuntimeComponentId id) const{return std::find(o
 std::vector<std::string> RuntimeResolution::link_libraries() const{std::vector<std::string> out;for(auto id:ordered)if(auto c=runtime_component(id))for(auto lib:c->link_libraries)if(std::find(out.begin(),out.end(),lib)==out.end())out.emplace_back(lib);return out;}
 std::string RuntimeResolution::describe() const{std::ostringstream o;for(std::size_t i=0;i<ordered.size();++i){if(i)o<<',';if(auto c=runtime_component(ordered[i]))o<<c->name;}return o.str();}
 RuntimeResolution resolve_runtime_component_graph(const std::vector<RuntimeComponent>& graph,const std::vector<RuntimeComponentId>& requested){
-    RuntimeResolution r;std::array<unsigned,24> state{};auto find=[&](Id id)->const RuntimeComponent*{for(const auto& c:graph)if(c.id==id)return &c;return nullptr;};
+    RuntimeResolution r;std::array<unsigned,25> state{};auto find=[&](Id id)->const RuntimeComponent*{for(const auto& c:graph)if(c.id==id)return &c;return nullptr;};
     std::function<bool(Id)> visit=[&](Id id){auto n=static_cast<std::size_t>(id);auto component=n<state.size()?find(id):nullptr;if(!component){r.error="unknown runtime component";return false;}if(state[n]==2)return true;if(state[n]==1){r.error="runtime component dependency cycle";return false;}state[n]=1;for(auto dep:component->dependencies)if(!visit(dep))return false;state[n]=2;r.ordered.push_back(id);return true;};
     auto roots=requested;std::sort(roots.begin(),roots.end(),[](Id a,Id b){return static_cast<int>(a)<static_cast<int>(b);});roots.erase(std::unique(roots.begin(),roots.end()),roots.end());for(auto id:roots)if(!visit(id))break;r.fallback=r.contains(Id::full_fallback);return r;
 }

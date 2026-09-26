@@ -207,7 +207,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(base.name=="tls_stream"){if(m=="read")return builtin_type("string");if(m=="is_open")return builtin_type("bool");if(m=="write"||m=="close")return {TypeKind::void_type,0,"void"};}
                 if(base.name=="http_response"&&m=="json")return builtin_type("json");
                 if(base.name=="http_request"&&m=="json")return builtin_type("json");
-                if(base.name=="http_server"&&(m=="get"||m=="post"||m=="get_async"||m=="post_async"||m=="listen"||m=="static"))return {TypeKind::void_type,0,"void"};
+                if(base.name=="http_server"&&m=="running")return builtin_type("bool");
+                if(base.name=="http_server"&&(m=="get"||m=="post"||m=="get_async"||m=="post_async"||m=="listen"||m=="listen_tls"||m=="stop"||m=="timeouts"||m=="limits"||m=="static"))return {TypeKind::void_type,0,"void"};
                 if(base.name=="sqlite_db"){if(m=="query")return builtin_type("json");if(m=="exec"||m=="close"||m=="transaction")return {TypeKind::void_type,0,"void"};}
                 if(base.name=="mutex"&&(m=="lock"||m=="unlock"))return {TypeKind::void_type,0,"void"};
                 if(base.name.rfind("channel<",0)==0){auto elem=generic_inner(base.name,"channel<");if(m=="send"||m=="close")return {TypeKind::void_type,0,"void"};if(m=="receive")return {TypeKind::named,0,elem+"?"};if(m=="closed")return builtin_type("bool");}

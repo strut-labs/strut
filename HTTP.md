@@ -14,3 +14,19 @@ function main() -> void : HttpError {
 Custom requests use a JSON options object for headers, body, timeouts and redirect policy. `http_get_json(url)` and `response.json()` parse through core JSON/JSONIC support. `http_get_async` and `http_request_async` run on Strut's shared executor.
 
 Redirects are followed by default with a maximum of 10 hops. The default timeout is 30 seconds. Response streaming is explicitly not part of CP76.
+
+## Server lifecycle
+
+`http_server` accepts connections concurrently and owns its listener and active request workers. `listen` blocks until `stop()` is requested or the optional finite request count is reached. `stop()` is safe before start and idempotent; it closes the listener, permits active handlers to drain until the configured shutdown timeout, then closes remaining client sockets. `running()` exposes the accepting/draining state. A stopped server may be started again after its previous handlers have drained.
+
+```strut
+app := http_server();
+app.timeouts(30000, 30000, 5000, 5000);
+app.limits(1048576, 65536, 100, 1024);
+app.get("/health", (http_request request) => { return http_text("ok"); });
+app.listen("127.0.0.1", 8080);
+```
+
+The timeout arguments are read, write, idle and graceful-shutdown milliseconds. The limit arguments are maximum body bytes, header bytes, header count and active connections. Defaults match the values above. Malformed requests and operational limits produce controlled 400, 405, 413, 431, 500 or 503 responses; handler failures do not expose native C++ details.
+
+For signal-driven services, start `listen` on a Strut thread, call `wait_for_shutdown_signal()`, then `stop()` and join the listener thread. The runtime signal handler only records the event; ordinary Strut code runs outside raw OS signal context.
