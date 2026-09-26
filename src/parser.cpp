@@ -209,6 +209,10 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         text += "<"; int depth = 1;
         while (!at_end() && depth > 0) {
             if (check("<")) { ++depth; text += advance().lexeme; continue; }
+            if (check(">>")) {
+                if (depth < 2) { error(result, peek(), "unexpected extra '>' in generic type"); return TypeSyntax{"", begin.span, false}; }
+                depth -= 2; text += advance().lexeme; span.end = previous().span.end; continue;
+            }
             if (check(">")) { --depth; text += advance().lexeme; span.end = previous().span.end; continue; }
             if (check("const")) { text += "const "; advance(); continue; }
             text += advance().lexeme;

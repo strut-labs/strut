@@ -1,19 +1,36 @@
 # Dogfood first-attempt log
 
 Recorded during the independent ecosystem audit. A cycle means one edit followed by
-another compiler invocation.
+another compiler invocation. The checked-in program is the final resolution; where
+the initial attempt predated this log, the table says so rather than reconstructing
+code from memory.
 
-| Program | Purpose | First attempt | Feedback cycles | Observation |
-| --- | --- | --- | ---: | --- |
-| `cli/file_stats.p` | CLI/stream input | compiled | 0 | Environment fallback and stream APIs were predictable. |
-| `fs/source_index.p` | Recursive filesystem statistics | failed | 2 | The first signature omitted `FilesystemError`; then runtime use showed that `walk` entries are root-relative. Diagnostics were strong, but the traversal path contract needed clearer docs. |
-| `json/transform.p` | JSON transformation | failed | 1 | An array argument now requires `include <vector>;`; the checked-in dogfood had drifted. The diagnostic was actionable. |
-| `http/endpoint_check.p` | HTTP endpoint check | compiled | 0 | The documented `HttpError` contract and response fields were sufficient. Runtime deliberately requires network access. |
-| `service/concurrent_service.p` | Threads/channels/async | compiled and ran | 0 | Ownership across the worker boundary was straightforward. |
-| `web/app.p` | SQLite/embedded HTTP application | failed | 1 | `embed_dir` returns a map, so explicit modules require `include <map>;`. The diagnostic identified the missing module. |
-| `package-app` | Manifest-backed multi-file application | failed | 3 | The old example named undeclared packages and wrappers; successive diagnostics identified the vector module and the removed `run_capture` API, which is now `exec(...).stdout`. |
-| `nift-info/main.p` | Real JSON metadata reader | compiled and ran | 0 | Nullable environment fallback plus JSON indexing was concise. |
+| Program | First attempt | Cycles | Error class | Docs used | Diagnostics sufficient | Internals inspected | Final resolution |
+| --- | --- | ---: | --- | --- | --- | --- | --- |
+| `cli/file_stats.p` | compiled | 0 | — | yes | n/a | no | Environment fallback and stream APIs worked as documented. |
+| `fs/source_index.p` | failed | 2 | checked error, then path contract | yes | yes for the error; no for path semantics | no | Declared `FilesystemError`, joined each root-relative `walk` entry to its root, and clarified docs. |
+| `json/transform.p` | failed | 1 | missing standard module | yes | yes | no | Added `include <vector>;`. |
+| `http/endpoint_check.p` | compiled | 0 | — | yes | n/a | no | Runtime remains opt-in because it requires network access. |
+| `service/concurrent_service.p` | compiled and ran | 0 | — | yes | n/a | no | Ownership, channels, mutexes, and async worked as documented. |
+| `web/app.p` | failed | 1 | missing standard module | yes | yes | no | Added `include <map>;` for `embed_dir`'s result. |
+| `package-app` | failed | 3 | undeclared packages, missing module, obsolete API | yes | yes | no | Converted it to a local multi-file project and replaced `run_capture` with `exec(...).stdout`. |
+| `nift-info/main.p` | compiled and ran | 0 | — | yes | n/a | no | Nullable environment fallback plus JSON indexing worked directly. |
 
-The two failures were ecosystem drift, not guessed-syntax failures in newly written
-programs. Both are retained here because unchecked examples that stop compiling are
-an important AI-DX signal.
+Four failures were ecosystem drift rather than fresh syntax guesses. They remain
+important AI-DX evidence because unchecked examples are part of the effective docs.
+
+## Protocol for future runs
+
+For each new task, save the initial source before the first compilation and record:
+
+1. compiler version and documentation revision;
+2. exact task statement and pages consulted before coding;
+3. initial source (or a path to a committed snapshot);
+4. compiler/runtime result and error class for every cycle;
+5. whether diagnostics alone were sufficient;
+6. the first point, if any, where compiler source or generated C++ was inspected;
+7. final source and total cycles.
+
+The original audit predates this protocol, so it is a useful retrospective baseline
+but not a controlled, independently repeatable benchmark. New rows should follow the
+protocol above.

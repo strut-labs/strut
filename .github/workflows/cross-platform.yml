@@ -8,6 +8,8 @@ on:
       - 'src/**'
       - 'include/**'
       - 'tests/**'
+      - 'dogfood/**'
+      - 'benchmarks/programs/**'
       - 'third_party/**'
       - 'CMakeLists.txt'
       - '.github/workflows/cross-platform.yml'
@@ -16,6 +18,8 @@ on:
       - 'src/**'
       - 'include/**'
       - 'tests/**'
+      - 'dogfood/**'
+      - 'benchmarks/programs/**'
       - 'third_party/**'
       - 'CMakeLists.txt'
       - '.github/workflows/cross-platform.yml'
@@ -56,6 +60,11 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Certify generated C++ and dogfood
+        if: runner.os != 'Windows'
+        env:
+          STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
+        run: python3 dogfood/check.py build/strut
 
   linux-arm64:
     name: linux-arm64-gcc
@@ -65,3 +74,7 @@ jobs:
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
+      - name: Certify generated C++ and dogfood
+        env:
+          STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
+        run: python3 dogfood/check.py build/strut

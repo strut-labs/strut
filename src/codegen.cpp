@@ -126,8 +126,8 @@ bool stmt_assigns_name(const IRStmt& s,const std::string& name){
 bool body_assigns_name(const std::vector<IRStmtPtr>& body,const std::string& name){for(const auto& s:body)if(stmt_assigns_name(*s,name))return true;return false;}
 std::string function_param_cpp(const IRStmt& fn,const Parameter& p){
     const auto type=cpp_type(p.type.name);
-    if(!fn.is_extern_c && p.type.name.rfind("ptr<",0)==0 && !body_assigns_name(fn.body,p.name))return "const "+type+"& "+p.name;
-    return type+" "+p.name;
+    if(!fn.is_extern_c && p.type.name.rfind("ptr<",0)==0 && !body_assigns_name(fn.body,p.name))return "[[maybe_unused]] const "+type+"& "+p.name;
+    return "[[maybe_unused]] "+type+" "+p.name;
 }
 std::string json_expr(const IRExpr& e){
     switch(e.kind){
@@ -186,7 +186,7 @@ std::string expr(const IRExpr& e){
             if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="is_file") name="strut_fs_is_file"; else if(name=="is_dir") name="strut_fs_is_dir"; else if(name=="file_size") name="strut_fs_file_size"; else if(name=="modified") name="strut_fs_modified"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="remove_all") name="strut_fs_remove_all"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="walk") name="strut_fs_walk"; else if(name=="cwd") name="strut_fs_cwd"; else if(name=="cd") name="strut_fs_cd"; else if(name=="absolute") name="strut_fs_absolute"; else if(name=="canonical") name="strut_fs_canonical"; else if(name=="parent") name="strut_fs_parent"; else if(name=="filename") name="strut_fs_filename"; else if(name=="extension") name="strut_fs_extension"; else if(name=="stem") name="strut_fs_stem"; else if(name=="join_path") name="strut_fs_join_path"; else if(name=="read_file") name="strut_fs_read_file"; else if(name=="read_bytes") name="strut_fs_read_bytes"; else if(name=="write_file") name="strut_fs_write_file"; else if(name=="append_file") name="strut_fs_append_file"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
-        case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
+        case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<"[[maybe_unused]] "<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
     } return {};
 }
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');emit_source_line(o,s);
@@ -391,7 +391,7 @@ struct strut_null_t {
     template<class T> operator std::optional<T>() const{return std::nullopt;}
 )CPP"; if(f.pointers)o << "    template<class T> operator std::shared_ptr<T>() const{return {};}\n"; o << R"CPP(
 };
-constexpr strut_null_t strut_null{};
+[[maybe_unused]] constexpr strut_null_t strut_null{};
 )CPP";}
     if(f.nullable)o << R"CPP(
 template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f)->std::optional<typename std::decay<decltype(f(*value))>::type>{if(!value)return std::nullopt;return f(*value);}
@@ -630,13 +630,23 @@ bool expr_uses_async_http_client(const IRExpr* e){
     return false;
 }
 bool stmt_uses_async_http_client(const IRStmt* s){if(!s)return false;if(s->is_async||expr_uses_async_http_client(s->value.get())||expr_uses_async_http_client(s->target.get())||expr_uses_async_http_client(s->condition.get())||expr_uses_async_http_client(s->increment.get()))return true;if(s->initializer&&stmt_uses_async_http_client(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_async_http_client(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_async_http_client(c.get()))return true;return false;}
-bool stmt_uses_environment_runtime(const IRStmt* s);
-bool expr_uses_environment_runtime(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text=="env"||e->text=="set_env"||e->text=="unset_env"))return true;if(expr_uses_environment_runtime(e->left.get())||expr_uses_environment_runtime(e->right.get())||expr_uses_environment_runtime(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_environment_runtime(a.get()))return true;for(const auto& st:e->lambda_body)if(stmt_uses_environment_runtime(st.get()))return true;return false;}
-bool stmt_uses_environment_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_environment_runtime(s->value.get())||expr_uses_environment_runtime(s->target.get())||expr_uses_environment_runtime(s->condition.get())||expr_uses_environment_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_environment_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_environment_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_environment_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_environment_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_environment_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_environment_runtime(st.get()))return true;return false;}
+bool stmt_uses_non_http_client_runtime(const IRStmt* s);
+bool expr_uses_non_http_client_runtime(const IRExpr* e){
+    if(!e)return false;
+    if(e->kind==IRExpr::Kind::identifier){
+        static const char* helpers[]={"input","istream","ostream","sstream","ifstream","ofstream","exists","is_file","is_dir","file_size","modified","make_dir","remove","remove_all","copy","move","touch","ls","walk","cwd","cd","absolute","canonical","parent","filename","extension","stem","join_path","read_file","read_bytes","write_file","append_file","env","set_env","unset_env","now_ms","unix_ms","sleep_ms","exec","exec_shell","process","pipe_exec","thread","mutex","tcp_connect","tcp_connect_async","tcp_listen","tls_connect","http_server","http_text","http_html","http_json_response","sqlite_open","embed_file","embed_dir","new","ptr","ref","weak"};
+        for(const char* helper:helpers)if(e->text==helper)return true;
+    }
+    if(expr_uses_non_http_client_runtime(e->left.get())||expr_uses_non_http_client_runtime(e->right.get())||expr_uses_non_http_client_runtime(e->lambda_expression.get()))return true;
+    for(const auto& a:e->arguments)if(expr_uses_non_http_client_runtime(a.get()))return true;
+    for(const auto& st:e->lambda_body)if(stmt_uses_non_http_client_runtime(st.get()))return true;
+    return false;
+}
+bool stmt_uses_non_http_client_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_non_http_client_runtime(s->value.get())||expr_uses_non_http_client_runtime(s->target.get())||expr_uses_non_http_client_runtime(s->condition.get())||expr_uses_non_http_client_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_non_http_client_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_non_http_client_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;return false;}
 bool program_uses_light_http_client_runtime(const IRProgram& p){
     if(!program_uses_curl(p)||program_uses_sqlite(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
-    for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_environment_runtime(st.get()))return false;
+    for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_non_http_client_runtime(st.get()))return false;
     return true;
 }
 void emit_light_http_client_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
@@ -934,7 +944,7 @@ struct strut_null_t {
     template<class T> operator std::weak_ptr<T>() const { return {}; }
     template<class T> operator T*() const { return nullptr; }
 };
-constexpr strut_null_t strut_null{};
+[[maybe_unused]] constexpr strut_null_t strut_null{};
 template<class T> bool operator==(const std::optional<T>& v,strut_null_t){return !v;}
 template<class T> bool operator!=(const std::optional<T>& v,strut_null_t){return static_cast<bool>(v);}
 template<class T> bool operator==(strut_null_t,const std::optional<T>& v){return !v;}
@@ -1024,7 +1034,7 @@ private: std::stringstream stream_;
 };
 
 struct strut_endl_t{};
-static strut_endl_t endl{};
+[[maybe_unused]] static strut_endl_t endl{};
 template<class T> strut_ostream& operator<<(strut_ostream& s,const T& value){return s.write_value(value);}
 inline strut_ostream& operator<<(strut_ostream& s,strut_endl_t){s.write_value('\n');s.flush();return s;}
 template<class T> strut_istream& operator>>(strut_istream& s,T& value){return s.read_value(value);}

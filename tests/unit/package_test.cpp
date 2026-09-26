@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include "strut/package.h"
+#include "temp_directory.h"
 namespace { void req(bool ok,const char* msg){if(!ok){std::cerr<<"FAIL: "<<msg<<'\n';std::exit(1);}} }
 int main(){
     req(strut::valid_package_name("http"),"package name");
@@ -19,7 +20,7 @@ int main(){
     strut::PackageManifest bad; std::string bad_error;
     req(!strut::parse_package_manifest(R"({"name":"demo","version":"0.1.0","sources":["../bad"]})",bad,bad_error),"reject escaping source path");
     req(!strut::package_cache_root().empty(),"cache root");
-    const auto tmp=std::filesystem::temp_directory_path()/"strut-package-test"; std::filesystem::remove_all(tmp); std::filesystem::create_directories(tmp/"pkg");
+    TestTempDirectory temp("strut-package-test"); const auto tmp=temp.path(); std::filesystem::create_directories(tmp/"pkg");
     { std::ofstream f(tmp/"pkg"/"strut.json"); f << R"({"name":"local","version":"1.2.3","entry":"main.p"})"; } { std::ofstream f(tmp/"pkg"/"main.p"); f << "function answer() -> int { return 42; }\n"; }
     std::filesystem::path cached; strut::PackageManifest local; req(strut::cache_local_package(tmp/"pkg",cached,local,error),error.c_str()); req(local.name=="local","local package metadata");
     return 0;

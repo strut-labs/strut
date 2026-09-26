@@ -40,15 +40,35 @@ def main() -> int:
             run([str(compiler), str(source), "-o", str(output)], cwd=ROOT)
             binaries[relative] = output
 
+        input_path = temp / "input.txt"
+        input_path.write_text("a\nb\n", encoding="utf-8")
+        cli_env = os.environ.copy()
+        cli_env["STRUT_INPUT"] = str(input_path)
+        cli = run([str(binaries["dogfood/cli/file_stats.p"])], cwd=temp, env=cli_env)
+        if cli.stdout != "4\n3\n":
+            raise RuntimeError(f"unexpected file-stats output: {cli.stdout!r}")
+
         source_env = os.environ.copy()
         source_env["STRUT_SOURCE_ROOT"] = str(ROOT / "dogfood")
         run([str(binaries["dogfood/fs/source_index.p"])], cwd=temp, env=source_env)
         run([str(binaries["dogfood/json/transform.p"])], cwd=temp)
         run([str(binaries["dogfood/service/concurrent_service.p"])], cwd=temp)
+
+        nift_info = temp / "index.info.json"
+        nift_info.write_text(
+            '{"name":"demo","content":"source","output":"page","dependencies":[]}',
+            encoding="utf-8",
+        )
+        nift_env = os.environ.copy()
+        nift_env["NIFT_INFO"] = str(nift_info)
+        nift = run([str(binaries["dogfood/nift-info/main.p"])], cwd=temp, env=nift_env)
+        if nift.stdout != '"demo"\n"source"\n"page"\n[]\n':
+            raise RuntimeError(f"unexpected nift-info output: {nift.stdout!r}")
+
         package = run([str(binaries["dogfood/package-app/main.p"])], cwd=temp)
         if package.stdout != "package-ok\n":
             raise RuntimeError(f"unexpected package-app output: {package.stdout!r}")
-    print(f"dogfood: {len(SOURCES)} programs compiled, 4 offline programs ran")
+    print(f"dogfood: {len(SOURCES)} programs compiled, 6 offline programs ran")
     return 0
 
 

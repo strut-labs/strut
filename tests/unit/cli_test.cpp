@@ -4,10 +4,9 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
-#include <random>
-#include <stdexcept>
 
 #include "strut/cli.h"
+#include "temp_directory.h"
 
 namespace {
 void require(bool condition, const char* message) {
@@ -15,16 +14,6 @@ void require(bool condition, const char* message) {
         std::cerr << "FAIL: " << message << '\n';
         std::exit(1);
     }
-}
-std::filesystem::path unique_test_directory(const char* prefix) {
-    std::random_device random;
-    for (int attempt = 0; attempt < 100; ++attempt) {
-        auto path = std::filesystem::temp_directory_path() /
-            (std::string(prefix) + "-" + std::to_string(random()));
-        std::error_code ec;
-        if (std::filesystem::create_directory(path, ec)) return path;
-    }
-    throw std::runtime_error("unable to create unique test directory");
 }
 }
 
@@ -55,7 +44,7 @@ int main() {
 
     {
         const auto old = std::filesystem::current_path();
-        auto root = unique_test_directory("strut-cli-make-test");
+        TestTempDirectory temp("strut-cli-make-test"); auto root = temp.path();
         std::error_code ec; std::filesystem::create_directories(root / ".strut", ec);
         std::ofstream(root / "main.p") << "function main() -> void { print(\"make-ok\"); return; }\n";
         std::ofstream(root / ".strut/config.json") << R"({"entrypoint":"main.p","output":"app","target":"native","mode":"debug","linking":"dynamic","incremental":"modified"})";
@@ -68,13 +57,13 @@ int main() {
 #else
         require(std::filesystem::exists(root / "app"), "make output");
 #endif
-        std::filesystem::current_path(old); std::filesystem::remove_all(root, ec);
+        std::filesystem::current_path(old);
     }
 
 
     {
         const auto old = std::filesystem::current_path();
-        auto root = unique_test_directory("strut-cli-test-command");
+        TestTempDirectory temp("strut-cli-test-command"); auto root = temp.path();
         std::error_code ec; std::filesystem::create_directories(root / ".strut", ec); std::filesystem::create_directories(root / "tests", ec);
         std::ofstream(root / "main.p") << "function main() -> void { return; }\n";
         std::ofstream(root / "tests/smoke_test.p") << "function main() -> void { print(\"test-ok\"); return; }\n";
@@ -84,7 +73,7 @@ int main() {
         std::ostringstream out; std::ostringstream err;
         require(strut::run_cli(3, argv, out, err) == 0, "test command");
         require(out.str().find("1/1 tests passed") != std::string::npos, "test summary");
-        std::filesystem::current_path(old); std::filesystem::remove_all(root, ec);
+        std::filesystem::current_path(old);
     }
 
 
