@@ -43,7 +43,7 @@ def main() -> int:
         (package / "main.p").write_text("include <missing>;\nfunction main() -> int { return 0; }\n", encoding="utf-8")
         (package / "strut.json").write_text(json.dumps({"name":"diagnostic","version":"0.0.1","entry":"main.p","dependencies":{}}), encoding="utf-8")
         result = invoke(compiler, package / "main.p")
-        if result.returncode == 0 or "not declared in project dependencies" not in result.stderr or "strut add" not in result.stderr:
+        if result.returncode == 0 or "package graph is not locked" not in result.stderr or "run `strut install`" not in result.stderr:
             failures.append(f"package-resolution: {result.stderr!r}")
 
         native = root / "native.p"
