@@ -46,6 +46,7 @@ void print_help(std::ostream& out) {
         << "  remove <name>     Remove a package dependency\n"
         << "  list              List project dependencies\n"
         << "  install           Resolve dependencies from the shared cache\n"
+        << "  update            Refresh dependency resolutions and the lockfile\n"
         << "  project [--json]  Inspect project root, manifest and package cache\n"
         << "  api [query]       Browse the authoritative API index (--json supported)\n"
         << "  lsp               Run the Language Server Protocol server on stdio\n"
@@ -88,7 +89,8 @@ void print_command_help(std::string_view command, std::ostream& out) {
     else if (command == "add") out << "Usage: strut add <local-package-path>\n";
     else if (command == "remove") out << "Usage: strut remove <package-name>\n";
     else if (command == "list") out << "Usage: strut list\n";
-    else if (command == "install") out << "Usage: strut install\n";
+    else if (command == "install") out << "Usage: strut install [--offline]\nInstalls the exact lockfile graph; without a lockfile, resolves and creates one.\n";
+    else if (command == "update") out << "Usage: strut update\nRe-resolves manifest dependencies and rewrites strut.lock.json.\n";
     else if (command == "project") out << "Usage: strut project [--json]\nShows the discovered project root, build configuration, manifest and package cache.\n";
     else if (command == "api") out << "Usage: strut api [--json] [query]\nBrowses built-ins, methods, modules, checked errors and native dependencies. Query by name, module, category, summary, or `checked-errors`.\n";
     else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout with contextual completion, signature help, hover, diagnostics, symbols, formatting, and go-to-definition.\n";
@@ -116,7 +118,7 @@ json::Document api_index(std::string_view query) {
     }
     root["functions"]=functions;
     root["methods"]=methods;
-    json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
+    json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","update","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
     json::Document notes=json::Document::make_object();notes["range_loop"]="for (item : items)";notes["core_array"]="T[] (no include required)";notes["custom_checked_errors"]="Custom error declarations are not currently supported; use documented built-in checked error types.";root["language_notes"]=notes;
     return root;
 }
@@ -413,6 +415,7 @@ int run_fmt_command(const std::filesystem::path& requested, bool check_only, std
 int run_package_command(const std::string& command, const std::string& argument, std::ostream& out, std::ostream& err) {
     const auto root = std::filesystem::current_path(); PackageManifest project; std::string error;
     if (!load_package_manifest_file(root / "strut.json", project, error)) { err << "strut: " << error << '\n'; return 2; }
+    if(command=="install"||command=="update"){PackageLock lock;const bool offline=argument=="--offline";if(!install_packages(root,offline,command=="update",lock,error)){err<<"strut: "<<error<<'\n';return 1;}out<<(command=="update"?"updated ":"installed ")<<lock.packages.size()<<" locked package(s)"<<(offline?" offline":"")<<'\n';return 0;}
     if (command == "list") { for (const auto& dep : project.dependencies) out << dep.first << " " << dep.second << '\n'; return 0; }
     if (command == "add") { if (argument.empty()) { err << "strut: add requires a local package path\n"; return 2; } PackageManifest package; std::filesystem::path cached; if (!cache_local_package(argument,cached,package,error)) { err << "strut: " << error << '\n'; return 1; } project.dependencies[package.name]=package.version; if(!write_package_manifest_file(root/"strut.json",project,error)||!write_lockfile(root,project,error)){err<<"strut: "<<error<<'\n';return 1;} out<<"added "<<package.name<<" "<<package.version<<'\n'; return 0; }
     if (command == "remove") { if (argument.empty()) { err << "strut: remove requires a package name\n"; return 2; } if(!project.dependencies.erase(argument)){err<<"strut: package '"<<argument<<"' is not a dependency\n";return 2;} if(!write_package_manifest_file(root/"strut.json",project,error)){err<<"strut: "<<error<<'\n';return 1;} if(!project.dependencies.empty()&&!write_lockfile(root,project,error)){err<<"strut: "<<error<<'\n';return 1;} if(project.dependencies.empty()){std::error_code ec;std::filesystem::remove(root/"strut.lock.json",ec);} out<<"removed "<<argument<<'\n';return 0; }
@@ -502,9 +505,11 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             }
             return run_make_command(release, make_verbose, out, err);
         }
-        if (command == "add" || command == "remove" || command == "list" || command == "install") {
+        if (command == "add" || command == "remove" || command == "list" || command == "install" || command == "update") {
             const std::string argument = argc >= 3 ? argv[2] : std::string();
-            if ((command == "list" || command == "install") && argc > 2) { err << "strut: " << command << " takes no argument\n"; return 2; }
+            if(command=="list"&&argc>2){err<<"strut: list takes no argument\n";return 2;}
+            if(command=="install"&&(argc>3||(argc==3&&argument!="--offline"))){err<<"strut: install accepts only --offline\n";return 2;}
+            if(command=="update"&&argc>2){err<<"strut: update takes no argument\n";return 2;}
             if ((command == "add" || command == "remove") && argc != 3) { err << "strut: " << command << " requires exactly one argument\n"; return 2; }
             return run_package_command(command, argument, out, err);
         }

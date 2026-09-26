@@ -61,5 +61,6 @@ bool write_package_lock_file(const std::filesystem::path& path, const PackageLoc
 bool validate_package_lock(const PackageLock& lock, const PackageManifest* manifest, std::string& error);
 bool package_content_checksum(const std::filesystem::path& root, std::string& checksum, std::string& error);
 bool write_lockfile(const std::filesystem::path& project_root, const PackageManifest& manifest, std::string& error);
+bool install_packages(const std::filesystem::path& project_root, bool offline, bool update, PackageLock& lock, std::string& error);
 
 } // namespace strut

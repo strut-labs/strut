@@ -93,3 +93,7 @@ CP71 defined the base contract; CP72–CP73 added the `strut-packages` repositor
 `strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. `strut remove <name>`, `strut list`, and `strut install` manage the local dependency set. Remote fetching is intentionally not guessed at before the HTTP client exists; CP73 operates against explicit local checkouts and cached versions.
 
 `include <name>` loads the package entry declared by the resolved cached package. `include <name/path.h>` loads an explicit file inside that package. Package includes must also appear in the project manifest.
+
+## Install, update, and offline behavior
+
+`strut install` consumes an existing valid lockfile exactly. It verifies every content-addressed cache entry and restores missing or corrupt Git packages from the locked URL and exact commit, rejecting any checksum mismatch without rewriting the lock. When no lockfile exists, it resolves the manifest and writes one. `strut update` is the explicit operation that re-resolves current manifest sources and rewrites the lockfile. `strut install --offline` never performs acquisition: it requires a valid lockfile and every exact locked digest to already be cached, otherwise it fails with the missing identity and remediation.

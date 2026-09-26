@@ -269,8 +269,8 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
         if(active.count(name)){error="cyclic package dependency involving '"+name+"'";return false;}
         auto existing=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const auto&p){return p.name==name;});
         if(complete.count(name)){if(existing==lock.packages.end()||!satisfies(existing->version,requirement)){error="incompatible requirements for package '"+name+"'";return false;}existing->direct=existing->direct||direct;return true;}
-        std::string cache_error;auto root=resolve_cached_package(name,requirement,&cache_error);
-        if(!root){auto remote=sources.find(name);if(remote!=sources.end()){std::filesystem::path acquired;PackageManifest acquired_manifest;if(!acquire_git_package(remote->second,acquired,acquired_manifest,cache_error)){error=cache_error;return false;}if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement;return false;}root=acquired;}}
+        std::string cache_error;std::optional<std::filesystem::path> root;auto remote=sources.find(name);
+        if(remote!=sources.end()){std::filesystem::path acquired;PackageManifest acquired_manifest;if(!acquire_git_package(remote->second,acquired,acquired_manifest,cache_error)){error=cache_error;return false;}if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement;return false;}root=acquired;}else root=resolve_cached_package(name,requirement,&cache_error);
         if(!root){error=cache_error.empty()?"dependency '"+name+"' is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
         PackageManifest package;
         if(!load_package_manifest_file(*root/"strut.json",package,cache_error)||package.name!=name||!satisfies(package.version,requirement)){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(cache_error.empty()?std::string{}:": "+cache_error);return false;}
@@ -286,5 +286,25 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
     for(auto& package:lock.packages){auto source=sources.find(package.name);if(source!=sources.end()){package.source_kind="git";package.source=source->second.url;package.revision=source->second.revision;}}
     if(!validate_package_lock(lock,&manifest,error))return false;
     return write_package_lock_file(project_root/"strut.lock.json",lock,error);
+}
+
+bool install_packages(const std::filesystem::path& project_root,bool offline,bool update,PackageLock& lock,std::string& error){
+    PackageManifest manifest;if(!load_package_manifest_file(project_root/"strut.json",manifest,error))return false;
+    const auto lock_path=project_root/"strut.lock.json";
+    if(update||!std::filesystem::exists(lock_path)){
+        if(offline){error="offline install requires an existing strut.lock.json";return false;}
+        if(!write_lockfile(project_root,manifest,error))return false;
+    }
+    if(!load_package_lock_file(lock_path,lock,error)||!validate_package_lock(lock,&manifest,error))return false;
+    for(const auto& package:lock.packages){
+        const auto cached=package_cache_root()/package.name/package.version/package.checksum.substr(7);std::string actual,cache_error;
+        if(verify_cached_package(cached,actual,cache_error)&&actual==package.checksum)continue;
+        if(offline){error="offline install is missing verified package '"+package.name+"' "+package.version+" ("+package.checksum+")\nhelp: populate the package cache before using --offline";return false;}
+        if(package.source_kind!="git"){error="locked local package '"+package.name+"' is missing or corrupt and has no reproducible remote source";return false;}
+        PackageSource source{"git",package.source,package.revision};std::filesystem::path acquired;PackageManifest acquired_manifest;
+        if(!acquire_git_package(source,acquired,acquired_manifest,error))return false;
+        if(acquired_manifest.name!=package.name||acquired_manifest.version!=package.version||!verify_cached_package(acquired,actual,error)||actual!=package.checksum){error="integrity mismatch while restoring locked package '"+package.name+"'; expected "+package.checksum+", received "+actual;return false;}
+    }
+    return true;
 }
 } // namespace strut
