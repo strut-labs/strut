@@ -41,9 +41,14 @@ target_include_directories(strut_compiler
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include
 )
 target_compile_definitions(strut_compiler PRIVATE
-    STRUT_JSONIC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include"
     STRUT_HOST_CXX="${CMAKE_CXX_COMPILER}"
 )
+
+# Keep generated-program support beside the build-tree compiler using the same
+# relative layout as an installed compiler. This avoids embedding checkout paths.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/share/strut/jsonic")
+configure_file(third_party/jsonic/include/json.h
+    "${CMAKE_CURRENT_BINARY_DIR}/share/strut/jsonic/json.h" COPYONLY)
 
 if(MSVC)
     target_compile_definitions(strut_compiler PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -68,6 +73,8 @@ install(FILES third_party/jsonic/include/json.h
     DESTINATION ${CMAKE_INSTALL_DATADIR}/strut/jsonic)
 install(FILES LICENSE BUILDING.md COMPATIBILITY.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES third_party/jsonic/LICENSE third_party/jsonic/README.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/third-party/jsonic)
 
 add_executable(strut_unit_tests tests/unit/cli_test.cpp)
 target_link_libraries(strut_unit_tests PRIVATE strut_compiler)

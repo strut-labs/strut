@@ -1562,12 +1562,12 @@ std::filesystem::path jsonic_include_dir() {
         return override_dir;
     const auto executable = executable_path();
     if (!executable.empty()) {
+        const auto build_tree = executable.parent_path() / "share" / "strut" / "jsonic";
+        if (std::filesystem::exists(build_tree / "json.h")) return build_tree;
         const auto installed = executable.parent_path().parent_path() / "share" / "strut" / "jsonic";
         if (std::filesystem::exists(installed / "json.h")) return installed;
     }
-    const std::filesystem::path build_dir = STRUT_JSONIC_INCLUDE_DIR;
-    if (std::filesystem::exists(build_dir / "json.h")) return build_dir;
-    return build_dir;
+    return {};
 }
 bool target_windows(const std::string& t) { return t == "windows-x64" || (t == "native"
 #ifdef _WIN32

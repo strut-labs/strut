@@ -56,4 +56,4 @@ Release-candidate certification should include, at minimum:
 
 ## Current limitations
 
-Strut is pre-release. macOS and Windows certification remain pending CI. The independent regression suite is intentionally broader/slower than the local command window available during development and must be run in CI before a release candidate is declared green.
+Strut is pre-1.0. The 0.0.1 release candidate is certified on Linux x64/ARM64, macOS ARM64, and Windows x64. The independent regression suite remains a required CI gate for release candidates.
