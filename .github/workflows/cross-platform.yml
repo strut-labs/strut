@@ -2,6 +2,15 @@ name: Cross-platform compiler certification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'third_party/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/cross-platform.yml'
   pull_request:
     paths:
       - 'src/**'
@@ -32,7 +41,10 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Enable MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Configure (POSIX)
         if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSTRUT_WARNINGS_AS_ERRORS=ON
@@ -49,7 +61,7 @@ jobs:
     name: linux-arm64-gcc
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure

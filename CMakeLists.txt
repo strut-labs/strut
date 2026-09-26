@@ -38,7 +38,10 @@ target_include_directories(strut_compiler
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include
 )
-target_compile_definitions(strut_compiler PRIVATE STRUT_JSONIC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include")
+target_compile_definitions(strut_compiler PRIVATE
+    STRUT_JSONIC_INCLUDE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include"
+    STRUT_HOST_CXX="${CMAKE_CXX_COMPILER}"
+)
 
 if(MSVC)
     target_compile_options(strut_compiler PRIVATE /W4 /permissive-)
