@@ -1,4 +1,5 @@
 #include "strut/codegen.h"
+#include "strut/runtime_components.h"
 #include "strut/type.h"
 #include <cstdlib>
 #include <cctype>
@@ -234,14 +235,6 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
         default:break;
     }}
 }
-bool expr_uses_curl(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text.rfind("tls_",0)==0||e->text=="http_get"||e->text=="http_request"||e->text=="http_get_json"||e->text=="http_get_async"||e->text=="http_request_async"))return true;if(expr_uses_curl(e->left.get())||expr_uses_curl(e->right.get())||expr_uses_curl(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_curl(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_curl(st->value.get()))return true;}return false;}
-bool stmt_uses_curl(const IRStmt* s){if(!s)return false;if(expr_uses_curl(s->value.get())||expr_uses_curl(s->target.get())||expr_uses_curl(s->condition.get())||expr_uses_curl(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_curl(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_curl(c.get()))return true;return false;}
-bool program_uses_curl(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_curl(s.get()))return true;return false;}
-
-bool expr_uses_sqlite(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&e->text.rfind("sqlite_",0)==0)return true;if(expr_uses_sqlite(e->left.get())||expr_uses_sqlite(e->right.get())||expr_uses_sqlite(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_sqlite(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_sqlite(st->value.get()))return true;}return false;}
-bool stmt_uses_sqlite(const IRStmt* s){if(!s)return false;if(expr_uses_sqlite(s->value.get())||expr_uses_sqlite(s->target.get())||expr_uses_sqlite(s->condition.get())||expr_uses_sqlite(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_sqlite(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_sqlite(c.get()))return true;return false;}
-bool program_uses_sqlite(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_sqlite(s.get()))return true;return false;}
-
 bool minimal_type_ok(const std::string& t){
     return t.find("string")==std::string::npos && t.find("json")==std::string::npos &&
            t.find("weak_ptr<")==std::string::npos &&
@@ -456,7 +449,7 @@ bool light_sqlite_stmt_ok(const IRStmt* st){
     return true;
 }
 bool program_uses_light_sqlite_runtime(const IRProgram& p){
-    if(!program_uses_sqlite(p)||program_uses_curl(p))return false;
+    if(!analyze_runtime_components(p).contains(RuntimeComponentId::sqlite)||analyze_runtime_components(p).contains(RuntimeComponentId::http_client))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(!light_sqlite_stmt_ok(st.get()))return false;
     return true;
@@ -527,7 +520,7 @@ bool light_json_stmt_ok(const IRStmt* st,bool& found){
     return true;
 }
 bool program_uses_light_json_runtime(const IRProgram& p){
-    if(program_uses_sqlite(p)||program_uses_curl(p))return false;
+    if(analyze_runtime_components(p).contains(RuntimeComponentId::sqlite)||analyze_runtime_components(p).contains(RuntimeComponentId::http_client))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_json_stmt_ok(st.get(),found))return false;return found;
 }
@@ -653,7 +646,7 @@ bool expr_uses_non_http_client_runtime(const IRExpr* e){
 }
 bool stmt_uses_non_http_client_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_non_http_client_runtime(s->value.get())||expr_uses_non_http_client_runtime(s->target.get())||expr_uses_non_http_client_runtime(s->condition.get())||expr_uses_non_http_client_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_non_http_client_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_non_http_client_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;return false;}
 bool program_uses_light_http_client_runtime(const IRProgram& p){
-    if(!program_uses_curl(p)||program_uses_sqlite(p))return false;
+    if(!analyze_runtime_components(p).contains(RuntimeComponentId::http_client)||analyze_runtime_components(p).contains(RuntimeComponentId::sqlite))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_non_http_client_runtime(st.get()))return false;
     return true;
@@ -711,7 +704,7 @@ bool light_http_stmt_ok(const IRStmt* st,bool& found){
     return true;
 }
 bool program_uses_light_http_runtime(const IRProgram& p){
-    if(program_uses_sqlite(p)||program_uses_curl(p))return false;
+    if(analyze_runtime_components(p).contains(RuntimeComponentId::sqlite)||analyze_runtime_components(p).contains(RuntimeComponentId::http_client))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
@@ -829,7 +822,7 @@ bool program_uses_light_filesystem_runtime(const IRProgram& p){
         if(m=="filesystem")filesystem=true;
         else if(m!="vector"&&m!="deque"&&m!="list"&&m!="map"&&m!="set"&&m!="ordered_map"&&m!="ordered_set"&&m!="queue"&&m!="stack"&&m!="priority_queue"&&m!="tuple")return false;
     }
-    if(!filesystem||program_uses_curl(p)||program_uses_sqlite(p))return false;
+    if(!filesystem||analyze_runtime_components(p).contains(RuntimeComponentId::http_client)||analyze_runtime_components(p).contains(RuntimeComponentId::sqlite))return false;
     for(const auto& st:p.statements)if(!light_filesystem_stmt_ok(st.get()))return false;
     return true;
 }
@@ -945,7 +938,7 @@ inline std::string strut_native_arg(const char* value){return value?value:"";}
 #endif
 )CPP";}
 
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;if(program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
@@ -1619,6 +1612,13 @@ std::string target_compiler(const std::string& target, bool& msvc) {
     if (target == "macos-x64") return "o64-clang++";
     return "c++";
 }
+void append_runtime_link_libraries(std::string& command,const IRProgram& program,bool msvc) {
+    const auto resolution=analyze_runtime_components(program);
+    for(const auto& library:resolution.link_libraries()) {
+        if(msvc) command += library=="curl" ? " libcurl.lib" : " "+library+".lib";
+        else command += " -l"+library;
+    }
+}
 }
 bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
  auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
@@ -1660,12 +1660,7 @@ bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string 
 }
  if(!msvc) cmd += env_flags("STRUT_LDFLAGS");
  if(!msvc && target_windows(link.target)) cmd += " -lws2_32";
- if(program_uses_sqlite(p)){
-if(msvc) cmd+=" sqlite3.lib"; else cmd+=" -lsqlite3";
- }
- if(program_uses_curl(p)){
-if(msvc) cmd+=" libcurl.lib"; else cmd+=" -lcurl";
- }
+ append_runtime_link_libraries(cmd,p,msvc);
  if(run_native_command(cmd)!=0){error="native linker failed";return false;}return true;
 }
 
@@ -1708,19 +1703,12 @@ const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;
 #ifndef _WIN32
  cmd += env_flags("STRUT_LDFLAGS");
 #endif
- if(g.cpp.find("#define STRUT_USE_SQLITE 1")!=std::string::npos){
+ append_runtime_link_libraries(cmd,p,
 #ifdef _WIN32
- cmd+=" sqlite3.lib";
+ true
 #else
- cmd+=" -lsqlite3";
+ false
 #endif
- }
- if(g.cpp.find("#define STRUT_USE_CURL 1")!=std::string::npos){
-#ifdef _WIN32
- cmd+=" libcurl.lib";
-#else
- cmd+=" -lcurl";
-#endif
- }
+ );
  int rc=run_native_command(cmd);std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error="native C++ compiler/linker failed";return false;}return true;}
 }

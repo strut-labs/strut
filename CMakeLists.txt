@@ -29,6 +29,7 @@ add_library(strut_compiler STATIC
     src/operator.cpp
     src/ir.cpp
     src/codegen.cpp
+    src/runtime_components.cpp
     src/package.cpp
     src/project.cpp
     src/formatter.cpp
@@ -106,6 +107,9 @@ add_test(NAME strut_ir_tests COMMAND strut_ir_tests)
 add_executable(strut_codegen_tests tests/unit/codegen_test.cpp)
 target_link_libraries(strut_codegen_tests PRIVATE strut_compiler)
 add_test(NAME strut_codegen_tests COMMAND strut_codegen_tests)
+add_executable(strut_runtime_component_tests tests/unit/runtime_components_test.cpp)
+target_link_libraries(strut_runtime_component_tests PRIVATE strut_compiler)
+add_test(NAME strut_runtime_component_tests COMMAND strut_runtime_component_tests)
 
 add_executable(strut_package_tests tests/unit/package_test.cpp)
 target_link_libraries(strut_package_tests PRIVATE strut_compiler)

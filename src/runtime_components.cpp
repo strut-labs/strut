@@ -1,0 +1,105 @@
+#include "strut/runtime_components.h"
+
+#include <algorithm>
+#include <array>
+#include <functional>
+#include <set>
+#include <sstream>
+#include <unordered_map>
+
+namespace strut { namespace {
+
+using Id = RuntimeComponentId;
+const std::vector<RuntimeComponent>& registry() {
+    static const std::vector<RuntimeComponent> value = {
+        {Id::core,"core",{}, {"cstdint","iostream","stdexcept"},{}},
+        {Id::strings,"strings",{Id::core},{"string","charconv","algorithm","cctype"},{}},
+        {Id::collections,"collections",{Id::core},{"vector","array","map","unordered_map","set","unordered_set","queue","stack","deque","list","tuple"},{}},
+        {Id::io,"io",{Id::strings},{"fstream","sstream"},{}},
+        {Id::json,"json",{Id::strings,Id::collections},{"json.h"},{}},
+        {Id::filesystem,"filesystem",{Id::strings,Id::collections,Id::io},{"filesystem"},{}},
+        {Id::environment,"environment",{Id::strings},{"cstdlib"},{}},
+        {Id::time,"time",{Id::core},{"chrono","thread"},{}},
+        {Id::process,"process",{Id::strings,Id::collections,Id::io,Id::threading},{"cerrno","cstring"},{}},
+        {Id::safe_pointer,"safe_pointer",{Id::core},{"memory"},{}},
+        {Id::weak_pointer,"weak_pointer",{Id::safe_pointer},{},{}},
+        {Id::raw_pointer,"raw_pointer",{Id::safe_pointer},{},{}},
+        {Id::threading,"threading",{Id::core,Id::safe_pointer},{"thread","functional"},{}},
+        {Id::channels,"channels",{Id::threading,Id::collections},{"mutex","condition_variable"},{}},
+        {Id::mutex,"mutex",{Id::threading},{"mutex"},{}},
+        {Id::async,"async",{Id::threading,Id::channels},{"future"},{}},
+        {Id::networking,"networking",{Id::strings,Id::safe_pointer},{},{}},
+        {Id::http_client,"http_client",{Id::networking,Id::json},{"curl/curl.h"},{"curl"}},
+        {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io},{},{}},
+        {Id::sqlite,"sqlite",{Id::json,Id::safe_pointer},{"sqlite3.h"},{"sqlite3"}},
+        {Id::embedded_assets,"embedded_assets",{Id::filesystem,Id::collections},{},{}},
+        {Id::ffi,"ffi",{Id::core},{},{}},
+        {Id::full_fallback,"full_fallback",{Id::core},{},{}},
+    };
+    return value;
+}
+void request_type(std::vector<Id>& out,const std::string& type) {
+    auto add=[&](Id id){out.push_back(id);};
+    if(type.find("ptr<")!=std::string::npos)add(Id::safe_pointer);
+    if(type.find("weak_ptr<")!=std::string::npos)add(Id::weak_pointer);
+    if(type.find("raw_ptr<")!=std::string::npos)add(Id::raw_pointer);
+    if(type.find("[]")!=std::string::npos||type.find("vector<")!=std::string::npos||type.find("map<")!=std::string::npos||type.find("set<")!=std::string::npos||type.find("list<")!=std::string::npos||type.find("deque<")!=std::string::npos||type.find("queue<")!=std::string::npos||type.find("stack<")!=std::string::npos||type.find("tuple<")!=std::string::npos)add(Id::collections);
+    if(type.find("json")!=std::string::npos)add(Id::json);
+    if(type.find("future<")!=std::string::npos)add(Id::async);
+    if(type.find("channel<")!=std::string::npos)add(Id::channels);
+    if(type.find("http_")!=std::string::npos)add(Id::networking);
+    if(type.find("sqlite_db")!=std::string::npos)add(Id::sqlite);
+    if(type.find("process")!=std::string::npos)add(Id::process);
+    if(type.find("thread")!=std::string::npos)add(Id::threading);
+}
+void request_expr(std::vector<Id>& out,const IRExpr* e);
+void request_stmt(std::vector<Id>& out,const IRStmt* s) {
+    if(!s)return;
+    request_type(out,s->type_name);request_type(out,s->return_type);
+    if(s->is_async)out.push_back(Id::async);
+    if(s->is_extern_c)out.push_back(Id::ffi);
+    for(const auto& p:s->parameters)request_type(out,p.type.name);
+    for(const auto& f:s->fields)request_type(out,f.type.name);
+    request_expr(out,s->value.get());request_expr(out,s->target.get());request_expr(out,s->condition.get());request_expr(out,s->increment.get());request_stmt(out,s->initializer.get());
+    for(const auto& c:s->body)request_stmt(out,c.get());
+    for(const auto& c:s->else_body)request_stmt(out,c.get());
+    for(const auto& c:s->switch_cases){request_expr(out,c.value.get());for(const auto& x:c.body)request_stmt(out,x.get());}
+    for(const auto& c:s->catches)for(const auto& x:c.body)request_stmt(out,x.get());
+}
+void request_expr(std::vector<Id>& out,const IRExpr* e) {
+    if(!e)return;
+    request_type(out,e->type_name);
+    if(e->lambda_async)out.push_back(Id::async);
+    if(e->kind==IRExpr::Kind::identifier){
+        static const std::unordered_map<std::string,Id> operations={
+            {"input",Id::io},{"istream",Id::io},{"ostream",Id::io},{"sstream",Id::io},{"ifstream",Id::io},{"ofstream",Id::io},
+            {"env",Id::environment},{"set_env",Id::environment},{"unset_env",Id::environment},{"now_ms",Id::time},{"unix_ms",Id::time},{"sleep_ms",Id::time},
+            {"exec",Id::process},{"exec_shell",Id::process},{"process",Id::process},{"pipe_exec",Id::process},
+            {"thread",Id::threading},{"mutex",Id::mutex},{"new",Id::safe_pointer},{"weak",Id::weak_pointer},{"ptr",Id::raw_pointer},{"ref",Id::safe_pointer},
+            {"http_get",Id::http_client},{"http_request",Id::http_client},{"http_get_json",Id::http_client},{"http_get_async",Id::http_client},{"http_request_async",Id::http_client},
+            {"http_server",Id::http_server},{"http_text",Id::http_server},{"http_html",Id::http_server},{"http_json_response",Id::http_server},
+            {"tcp_connect",Id::networking},{"tcp_connect_async",Id::networking},{"tcp_listen",Id::networking},{"tls_connect",Id::http_client},
+            {"sqlite_open",Id::sqlite},{"embed_file",Id::embedded_assets},{"embed_dir",Id::embedded_assets},
+        };
+        if(auto it=operations.find(e->text);it!=operations.end())out.push_back(it->second);
+        if(e->text=="tcp_connect_async"||e->text=="http_get_async"||e->text=="http_request_async")out.push_back(Id::async);
+        static const std::set<std::string> fs={"exists","is_file","is_dir","file_size","modified","make_dir","remove","remove_all","copy","move","touch","ls","walk","cwd","cd","absolute","canonical","parent","filename","extension","stem","join_path","read_file","read_bytes","write_file","append_file"};
+        if(fs.count(e->text))out.push_back(Id::filesystem);
+    }
+    request_expr(out,e->left.get());request_expr(out,e->right.get());request_expr(out,e->lambda_expression.get());for(const auto& a:e->arguments)request_expr(out,a.get());for(const auto& s:e->lambda_body)request_stmt(out,s.get());
+}
+} // namespace
+
+const RuntimeComponent* runtime_component(RuntimeComponentId id){for(const auto& c:registry())if(c.id==id)return &c;return nullptr;}
+bool RuntimeResolution::contains(RuntimeComponentId id) const{return std::find(ordered.begin(),ordered.end(),id)!=ordered.end();}
+std::vector<std::string> RuntimeResolution::link_libraries() const{std::vector<std::string> out;for(auto id:ordered)if(auto c=runtime_component(id))for(auto lib:c->link_libraries)if(std::find(out.begin(),out.end(),lib)==out.end())out.emplace_back(lib);return out;}
+std::string RuntimeResolution::describe() const{std::ostringstream o;for(std::size_t i=0;i<ordered.size();++i){if(i)o<<',';if(auto c=runtime_component(ordered[i]))o<<c->name;}return o.str();}
+RuntimeResolution resolve_runtime_component_graph(const std::vector<RuntimeComponent>& graph,const std::vector<RuntimeComponentId>& requested){
+    RuntimeResolution r;std::array<unsigned,24> state{};auto find=[&](Id id)->const RuntimeComponent*{for(const auto& c:graph)if(c.id==id)return &c;return nullptr;};
+    std::function<bool(Id)> visit=[&](Id id){auto n=static_cast<std::size_t>(id);auto component=n<state.size()?find(id):nullptr;if(!component){r.error="unknown runtime component";return false;}if(state[n]==2)return true;if(state[n]==1){r.error="runtime component dependency cycle";return false;}state[n]=1;for(auto dep:component->dependencies)if(!visit(dep))return false;state[n]=2;r.ordered.push_back(id);return true;};
+    auto roots=requested;std::sort(roots.begin(),roots.end(),[](Id a,Id b){return static_cast<int>(a)<static_cast<int>(b);});roots.erase(std::unique(roots.begin(),roots.end()),roots.end());for(auto id:roots)if(!visit(id))break;r.fallback=r.contains(Id::full_fallback);return r;
+}
+RuntimeResolution resolve_runtime_components(const std::vector<RuntimeComponentId>& requested){return resolve_runtime_component_graph(registry(),requested);}
+RuntimeResolution analyze_runtime_components(const IRProgram& program){std::vector<Id> requested={Id::core,Id::strings};for(const auto& s:program.statements)request_stmt(requested,s.get());return resolve_runtime_components(requested);}
+
+} // namespace strut

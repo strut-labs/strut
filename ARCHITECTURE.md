@@ -74,43 +74,36 @@ The C++ bootstrap backend emits a feature-minimal generated runtime for ordinary
 
 ### Runtime composition migration
 
-Runtime selection currently uses mutually exclusive minimal, SQLite, HTTP-client,
-JSON, async, HTTP-server, filesystem, and full-runtime emitters. Their eligibility
-walks inspect IR operations and, in some cases, textual type names. A conservative
-fallback to the full runtime prevents known mixed-feature programs from omitting
-helpers, but every eligibility list is a manually maintained dependency boundary.
-
-The target model is a deterministic component graph:
+Runtime requirements are represented by stable `RuntimeComponentId` values and a
+component registry in `runtime_components.cpp`. A single typed-IR traversal records
+requirements for operations and runtime-backed types, then resolves this graph:
 
 ```text
 IR operation/type -> required component IDs -> transitive closure -> ordered emit
 ```
 
-Initial component IDs should cover core values, strings, JSON, safe/weak/raw
-pointers, collections, checked errors, filesystem, environment/time, processes,
-async executor, threads/channels/mutexes, sockets, TLS, HTTP client, HTTP server,
-SQLite, and embedded assets. Each component owns its headers, declarations,
-definitions, platform variants, link libraries, and component dependencies. For
-example, HTTP client depends on strings, JSON, checked errors, and curl; async HTTP
-also depends on the async executor. A topological sort with a stable component-ID
-tie-break provides deterministic ordering, while a set of IDs deduplicates shared
-helpers.
+The implemented IDs cover core values, strings, collections, IO, JSON,
+filesystem, environment, time, processes, safe/weak/raw pointers, threading,
+channels, mutexes, async, networking, HTTP client/server, SQLite, embedded assets,
+FFI, and the explicit migration fallback. Resolution computes transitive closure,
+deduplicates IDs, emits dependencies before consumers in stable order, and rejects
+unknown IDs or dependency cycles. Component metadata owns external link libraries;
+the same resolved result now drives both source selection and native linking.
 
-Migration is checkpointed:
-
-1. Introduce a component manifest and compare its computed requirements with the
-   existing runtime choice in tests, without changing emitted code.
-2. Move external headers and link libraries to the manifest.
-3. Extract one low-risk slice at a time (filesystem, SQLite, HTTP client), retaining
-   full-runtime fallback whenever an operation has no declared component.
-4. Delete each legacy eligibility walk only after mixed-feature and generated-C++
-   certification covers the replacement.
-5. Make an unknown runtime operation a compiler error in development builds and a
-   full-runtime fallback in releases until the graph is complete.
+Runtime source bodies are still physically grouped into proven slices and a full
+compatibility body. Component requirements choose among those bodies; legacy slice
+eligibility predicates remain only as safety assertions while bodies are separated
+further. Mixed component sets conservatively use the full body, preventing helper
+under-generation. This fallback is migration debt, not the feature-selection API.
 
 Initialization and teardown are component-owned RAII declarations. Platform
 implementations share one component ID and select their body at emission time, so
 platform selection does not create a second dependency graph.
+
+To add a runtime-backed feature, add or reuse a component descriptor, request its
+ID from the IR operation/type traversal, declare its dependencies and libraries in
+the registry, and add direct resolver plus mixed-feature coverage. Do not add a
+second linker scan or a new top-level runtime-template decision.
 
 ### Structured type migration
 
