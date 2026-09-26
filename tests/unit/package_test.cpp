@@ -2,6 +2,7 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 #include "strut/package.h"
 #include "temp_directory.h"
 namespace { void req(bool ok,const char* msg){if(!ok){std::cerr<<"FAIL: "<<msg<<'\n';std::exit(1);}} }
@@ -30,7 +31,10 @@ int main(){
     std::filesystem::create_directories(tmp/"empty");std::string empty_checksum;req(strut::package_content_checksum(tmp/"empty",empty_checksum,error),error.c_str());req(empty_checksum=="sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","standard SHA-256");
     std::filesystem::create_directories(tmp/"pkg");
     { std::ofstream f(tmp/"pkg"/"strut.json"); f << R"({"name":"local","version":"1.2.3","entry":"main.p"})"; } { std::ofstream f(tmp/"pkg"/"main.p"); f << "function answer() -> int { return 42; }\n"; }
-    std::filesystem::path cached; strut::PackageManifest local; req(strut::cache_local_package(tmp/"pkg",cached,local,error),error.c_str()); req(local.name=="local","local package metadata");
+    std::filesystem::path cached; strut::PackageManifest local; req(strut::cache_local_package(tmp/"pkg",cached,local,error),error.c_str()); req(local.name=="local","local package metadata");req(cached.parent_path().filename()=="1.2.3"&&cached.filename().string().size()==64,"content-addressed cache layout");
+    std::filesystem::path cache_hit;strut::PackageManifest hit_manifest;req(strut::cache_local_package(tmp/"pkg",cache_hit,hit_manifest,error)&&cache_hit==cached,"verified cache hit");
+    {std::ofstream f(cached/"main.p",std::ios::app);f<<"corrupt";}std::string corruption;req(!strut::resolve_cached_package("local","1.2.3",&corruption)&&corruption.find("checksum")!=std::string::npos,"corrupt cache detected");req(strut::cache_local_package(tmp/"pkg",cached,local,error),error.c_str());req(strut::resolve_cached_package("local","1.2.3").has_value(),"local source repairs corrupt cache");
+    std::filesystem::remove_all(cached);std::filesystem::path concurrent_a,concurrent_b;strut::PackageManifest concurrent_ma,concurrent_mb;std::string concurrent_ea,concurrent_eb;bool concurrent_ok_a=false,concurrent_ok_b=false;std::thread a([&]{concurrent_ok_a=strut::cache_local_package(tmp/"pkg",concurrent_a,concurrent_ma,concurrent_ea);}),b([&]{concurrent_ok_b=strut::cache_local_package(tmp/"pkg",concurrent_b,concurrent_mb,concurrent_eb);});a.join();b.join();req(concurrent_ok_a&&concurrent_ok_b&&concurrent_a==concurrent_b,"concurrent atomic cache promotion");std::size_t staging_entries=0;std::error_code stage_ec;for(const auto& ignored:std::filesystem::directory_iterator(isolated/"cache/packages/.staging",stage_ec)){(void)ignored;++staging_entries;}req(!stage_ec&&staging_entries==0,"staging cleaned after acquisition");cached=concurrent_a;
     strut::PackageManifest app;app.name="app";app.version="0.1.0";app.dependencies["local"]="^1.0.0";req(strut::write_lockfile(tmp,app,error),error.c_str());
     std::ifstream first_file(tmp/"strut.lock.json");std::string first((std::istreambuf_iterator<char>(first_file)),{});req(first.find(tmp.generic_string())==std::string::npos,"lock excludes machine paths");req(first.find("\"schema_version\": 2")!=std::string::npos,"lock schema version");
     strut::PackageLock parsed;req(strut::parse_package_lock(first,parsed,error),error.c_str());req(parsed.packages.size()==1&&parsed.packages[0].name=="local"&&parsed.packages[0].direct,"lock round trip");req(strut::write_package_lock_file(tmp/"second.lock",parsed,error),error.c_str());std::ifstream second_file(tmp/"second.lock");std::string second((std::istreambuf_iterator<char>(second_file)),{});req(first==second,"deterministic lock bytes");
@@ -41,6 +45,6 @@ int main(){
     std::filesystem::create_directories(isolated/"cache/packages/broken/1.0.0");
     {std::ofstream f(isolated/"cache/packages/broken/1.0.0/strut.json");f<<R"({"name":"other","version":"1.0.0"})";}
     strut::PackageManifest project;project.name="project";project.version="0.1.0";project.dependencies["broken"]="1.0.0";
-    std::string cache_error;req(!strut::write_lockfile(tmp,project,cache_error),"broken cache metadata rejected");req(cache_error.find("stale or invalid metadata")!=std::string::npos&&cache_error.find("strut add")!=std::string::npos,"broken cache diagnostic is actionable");
+    std::string cache_error;req(!strut::write_lockfile(tmp,project,cache_error),"broken cache metadata rejected");req(cache_error.find("stale or invalid metadata")!=std::string::npos||cache_error.find("corrupted package cache")!=std::string::npos,"broken cache diagnostic is actionable");
     return 0;
 }

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -9,12 +10,19 @@
 #include <functional>
 #include <iomanip>
 #include <cstdint>
+#include <random>
 #include <set>
 #include <sstream>
 #include <string_view>
 
 #include "json.h"
 
+#define write_lockfile write_lockfile_legacy
+#define cache_local_package cache_local_package_legacy
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmisleading-indentation"
+#endif
 namespace strut {
 namespace {
 class Sha256 {
@@ -157,25 +165,19 @@ bool write_package_manifest_file(const std::filesystem::path& path, const Packag
     std::ofstream output(path); if(!output){error="unable to write " + path.string();return false;} output<<doc.dump(2)<<'\n'; return static_cast<bool>(output);
 }
 
-std::optional<std::filesystem::path> resolve_cached_package(const std::string& name, const std::string& requirement) {
-    const auto base=package_cache_root()/name; std::error_code ec; if(!std::filesystem::is_directory(base,ec))return std::nullopt; std::optional<std::pair<std::array<unsigned,3>,std::filesystem::path>> best;
-    for(const auto& e:std::filesystem::directory_iterator(base,ec)){if(ec||!e.is_directory())continue; const auto v=e.path().filename().string(); if(!satisfies(v,requirement))continue; bool ok=false;auto parts=semver_parts(v,ok); if(ok&&(!best||parts>best->first))best=std::make_pair(parts,e.path());} if(!best)return std::nullopt; return best->second;
+std::optional<std::filesystem::path> resolve_cached_package(const std::string& name,const std::string& requirement,std::string* error) {
+    const auto base=package_cache_root()/name;std::error_code ec;if(!std::filesystem::is_directory(base,ec))return std::nullopt;std::vector<std::pair<std::array<unsigned,3>,std::filesystem::path>> candidates;
+    for(const auto&e:std::filesystem::directory_iterator(base,ec)){if(ec||!e.is_directory())continue;const auto version=e.path().filename().string();if(!satisfies(version,requirement))continue;bool ok=false;auto parts=semver_parts(version,ok);if(!ok)continue;if(std::filesystem::exists(e.path()/"strut.json")){candidates.emplace_back(parts,e.path());continue;}for(const auto&content:std::filesystem::directory_iterator(e.path(),ec)){if(ec||!content.is_directory())continue;candidates.emplace_back(parts,content.path());}}
+    std::sort(candidates.begin(),candidates.end(),[](const auto&a,const auto&b){if(a.first!=b.first)return a.first>b.first;return a.second.filename().string()<b.second.filename().string();});for(const auto&candidate:candidates){std::string checksum,why;if(!verify_cached_package(candidate.second,checksum,why)){if(error&&error->empty())*error=why;continue;}const auto identity=candidate.second.filename().string();if(candidate.second.parent_path().filename().string()==name)return candidate.second;if(identity==checksum.substr(7))return candidate.second;if(error&&error->empty())*error="corrupted package cache entry "+candidate.second.string()+": directory identity does not match "+checksum;}return std::nullopt;
 }
 
 bool cache_local_package(const std::filesystem::path& source_root, std::filesystem::path& cached_root, PackageManifest& manifest, std::string& error) {
-    if (!load_package_manifest_file(source_root / "strut.json", manifest, error)) return false;
-    cached_root = package_cache_root() / manifest.name / manifest.version;
-    std::error_code ec;
-    if (std::filesystem::exists(cached_root, ec)) return true;
-    std::filesystem::create_directories(cached_root.parent_path(), ec);
-    if (ec) { error = ec.message(); return false; }
-    std::filesystem::copy(source_root, cached_root,
-                          std::filesystem::copy_options::recursive | std::filesystem::copy_options::copy_symlinks, ec);
-    if (ec) { error = ec.message(); return false; }
-    return true;
+    if(!load_package_manifest_file(source_root/"strut.json",manifest,error))return false;std::string checksum;if(!package_content_checksum(source_root,checksum,error))return false;const auto version_root=package_cache_root()/manifest.name/manifest.version;cached_root=version_root/checksum.substr(7);std::error_code ec;std::filesystem::create_directories(version_root,ec);if(ec){error="unable to create package cache: "+ec.message();return false;}if(std::filesystem::exists(cached_root,ec)){std::string actual;if(!verify_cached_package(cached_root,actual,error))return false;if(actual!=checksum){error="checksum mismatch for existing cache entry "+cached_root.string();return false;}return true;}const auto staging_root=package_cache_root()/".staging";std::filesystem::create_directories(staging_root,ec);if(ec){error="unable to create package staging directory: "+ec.message();return false;}std::random_device random;std::filesystem::path stage;for(unsigned attempt=0;attempt<32;++attempt){std::ostringstream id;id<<manifest.name<<'-'<<manifest.version<<'-'<<std::hex<<random()<<random();stage=staging_root/id.str();if(!std::filesystem::exists(stage,ec))break;stage.clear();}if(stage.empty()){error="unable to allocate unique package staging directory";return false;}std::filesystem::copy(source_root,stage,std::filesystem::copy_options::recursive,ec);if(ec){std::filesystem::remove_all(stage,ec);error="unable to stage package: "+ec.message();return false;}std::string staged;if(!package_content_checksum(stage,staged,error)||staged!=checksum){std::filesystem::remove_all(stage,ec);if(error.empty())error="package changed while it was being staged";return false;}std::filesystem::rename(stage,cached_root,ec);if(ec){if(std::filesystem::exists(cached_root)){std::filesystem::remove_all(stage,ec);std::string actual;if(verify_cached_package(cached_root,actual,error)&&actual==checksum)return true;}std::filesystem::remove_all(stage,ec);error="unable to atomically promote package into cache: "+ec.message();return false;}return true;
 }
 
 bool package_content_checksum(const std::filesystem::path& root,std::string& checksum,std::string& error){std::error_code ec;if(!std::filesystem::is_directory(root,ec)){error="package root is not a directory: "+root.string();return false;}std::vector<std::filesystem::path> files;for(std::filesystem::recursive_directory_iterator i(root,ec),e;i!=e&&!ec;i.increment(ec)){const auto rel=std::filesystem::relative(i->path(),root,ec);if(ec)break;if(!rel.empty()&&*rel.begin()==".git"){if(i->is_directory())i.disable_recursion_pending();continue;}if(i->is_symlink()){error="package contains unsupported symbolic link: "+rel.generic_string();return false;}if(i->is_regular_file())files.push_back(rel);}if(ec){error="unable to inspect package contents: "+ec.message();return false;}std::sort(files.begin(),files.end());Sha256 hash;for(const auto& rel:files){const auto name=rel.generic_string();hash.add(name);const char separator='\0';hash.add(&separator,1);std::ifstream in(root/rel,std::ios::binary);if(!in){error="unable to read package file: "+rel.generic_string();return false;}std::array<char,8192> buffer{};while(in){in.read(buffer.data(),static_cast<std::streamsize>(buffer.size()));const auto count=in.gcount();if(count>0)hash.add(buffer.data(),static_cast<std::size_t>(count));}hash.add(&separator,1);}checksum=hash.finish();return true;}
+
+bool verify_cached_package(const std::filesystem::path& cached_root,std::string& checksum,std::string& error){PackageManifest manifest;if(!load_package_manifest_file(cached_root/"strut.json",manifest,error)){error="corrupted package cache entry "+cached_root.string()+": "+error;return false;}if(!package_content_checksum(cached_root,checksum,error)){error="corrupted package cache entry "+cached_root.string()+": "+error;return false;}const auto parent=cached_root.parent_path();const bool content_addressed=parent.parent_path().parent_path()==package_cache_root();if(content_addressed&&cached_root.filename().string()!=checksum.substr(7)){error="corrupted package cache entry "+cached_root.string()+": checksum mismatch (computed "+checksum+")";return false;}return true;}
 
 bool validate_package_lock(const PackageLock& lock,const PackageManifest* manifest,std::string& error){if(lock.schema_version!=2){error="unsupported strut.lock.json schema version "+std::to_string(lock.schema_version)+"; regenerate it with `strut install`";return false;}std::map<std::string,const LockedPackage*> by_name;for(const auto& p:lock.packages){if(!valid_package_name(p.name)||!valid_version_requirement(p.version)||p.source_kind.empty()||p.source.empty()||p.revision.empty()||p.checksum.rfind("sha256:",0)!=0){error="invalid locked package record for '"+p.name+"'";return false;}if(!by_name.emplace(p.name,&p).second){error="duplicate locked package '"+p.name+"'";return false;}}if(manifest){for(const auto& d:manifest->dependencies){auto i=by_name.find(d.first);if(i==by_name.end()){error="lockfile is stale: dependency '"+d.first+"' has no locked entry\nhelp: run `strut install` to regenerate strut.lock.json";return false;}if(!i->second->direct||i->second->requested!=d.second||!satisfies(i->second->version,d.second)){error="lockfile is stale for dependency '"+d.first+"'\nhelp: run `strut install` to regenerate strut.lock.json";return false;}}for(const auto& p:lock.packages)if(p.direct&&!manifest->dependencies.count(p.name)){error="lockfile is stale: removed direct dependency '"+p.name+"' remains locked";return false;}}std::map<std::string,int> state;std::function<bool(const std::string&,std::vector<std::string>&)> visit=[&](const std::string& name,std::vector<std::string>& stack){auto found=by_name.find(name);if(found==by_name.end()){error="locked package graph references missing dependency '"+name+"'";return false;}if(state[name]==2)return true;if(state[name]==1){stack.push_back(name);error="cyclic package dependency: ";for(std::size_t i=0;i<stack.size();++i){if(i)error+=" -> ";error+=stack[i];}return false;}state[name]=1;stack.push_back(name);for(const auto& d:found->second->dependencies){auto child=by_name.find(d.first);if(child==by_name.end()){error="locked package '"+name+"' references missing dependency '"+d.first+"'";return false;}if(child->second->version!=d.second){error="locked dependency edge '"+name+"' -> '"+d.first+"' expects "+d.second+" but record resolves "+child->second->version;return false;}if(!visit(d.first,stack))return false;}stack.pop_back();state[name]=2;return true;};for(const auto& p:lock.packages){std::vector<std::string> stack;if(!visit(p.name,stack))return false;}return true;}
 
@@ -187,4 +189,68 @@ bool write_package_lock_file(const std::filesystem::path& path,const PackageLock
 
 bool write_lockfile(const std::filesystem::path& project_root,const PackageManifest& manifest,std::string& error){PackageLock lock;std::map<std::string,std::string> requested=manifest.dependencies;std::set<std::string> active,complete;std::function<bool(const std::string&,const std::string&,bool)> resolve=[&](const std::string& name,const std::string& requirement,bool direct){if(active.count(name)){error="cyclic package dependency involving '"+name+"'";return false;}if(complete.count(name)){auto i=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const auto&p){return p.name==name;});if(i==lock.packages.end()||!satisfies(i->version,requirement)){error="incompatible requirements for package '"+name+"'";return false;}i->direct=i->direct||direct;return true;}auto root=resolve_cached_package(name,requirement);if(!root){error="dependency '"+name+"' is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache";return false;}PackageManifest package;std::string metadata_error;if(!load_package_manifest_file(*root/"strut.json",package,metadata_error)||package.name!=name||package.version!=root->filename().string()){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(metadata_error.empty()?std::string{}:": "+metadata_error)+"\nhelp: remove that cache entry and run `strut add <local-package-path>` again";return false;}LockedPackage p;p.name=name;p.requested=requirement;p.version=package.version;p.source_kind="local-cache";p.source="local:"+name;p.revision=package.version;p.direct=direct;for(const auto&d:package.dependencies){auto child=resolve_cached_package(d.first,d.second);if(!child){error="transitive dependency '"+d.first+"' required by '"+name+"' is not present in the package cache";return false;}p.dependencies[d.first]=child->filename().string();}if(!package_content_checksum(*root,p.checksum,error))return false;lock.packages.push_back(p);active.insert(name);for(const auto&d:package.dependencies)if(!resolve(d.first,d.second,false))return false;active.erase(name);complete.insert(name);return true;};for(const auto&d:manifest.dependencies)if(!resolve(d.first,d.second,true))return false;if(!validate_package_lock(lock,&manifest,error))return false;return write_package_lock_file(project_root/"strut.lock.json",lock,error);}
 
+#undef write_lockfile
+#undef cache_local_package
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+bool cache_local_package(const std::filesystem::path& source_root,std::filesystem::path& cached_root,PackageManifest& manifest,std::string& error) {
+    if(!load_package_manifest_file(source_root/"strut.json",manifest,error))return false;
+    std::string checksum;if(!package_content_checksum(source_root,checksum,error))return false;
+    const auto version_root=package_cache_root()/manifest.name/manifest.version;
+    cached_root=version_root/checksum.substr(7);
+    std::error_code ec;std::filesystem::create_directories(version_root,ec);
+    if(ec){error="unable to create package cache: "+ec.message();return false;}
+    if(std::filesystem::exists(cached_root,ec)){
+        std::string actual,why;
+        if(verify_cached_package(cached_root,actual,why)&&actual==checksum)return true;
+        std::filesystem::remove_all(cached_root,ec);
+        if(ec){error=why+"; unable to remove corrupted entry: "+ec.message();return false;}
+    }
+    const auto staging_root=package_cache_root()/".staging";std::filesystem::create_directories(staging_root,ec);
+    if(ec){error="unable to create package staging directory: "+ec.message();return false;}
+    const auto stale_before=std::filesystem::file_time_type::clock::now()-std::chrono::hours(24);
+    for(std::filesystem::directory_iterator i(staging_root,ec),end;i!=end&&!ec;i.increment(ec)){
+        std::error_code time_error;const auto modified=std::filesystem::last_write_time(i->path(),time_error);
+        if(!time_error&&modified<stale_before){std::error_code cleanup_error;std::filesystem::remove_all(i->path(),cleanup_error);}
+    }
+    ec.clear();
+    std::random_device random;std::filesystem::path stage;
+    for(unsigned attempt=0;attempt<32;++attempt){std::ostringstream id;id<<manifest.name<<'-'<<manifest.version<<'-'<<std::hex<<random()<<random();stage=staging_root/id.str();if(!std::filesystem::exists(stage,ec))break;stage.clear();}
+    if(stage.empty()){error="unable to allocate unique package staging directory";return false;}
+    std::filesystem::copy(source_root,stage,std::filesystem::copy_options::recursive,ec);
+    if(ec){const auto why=ec.message();std::filesystem::remove_all(stage,ec);error="unable to stage package: "+why;return false;}
+    std::string staged;
+    if(!package_content_checksum(stage,staged,error)||staged!=checksum){std::filesystem::remove_all(stage,ec);if(error.empty())error="package changed while it was being staged";return false;}
+    std::filesystem::rename(stage,cached_root,ec);
+    if(ec){
+        const auto promotion_error=ec.message();
+        if(std::filesystem::exists(cached_root)){std::string actual,why;if(verify_cached_package(cached_root,actual,why)&&actual==checksum){std::filesystem::remove_all(stage,ec);return true;}}
+        std::filesystem::remove_all(stage,ec);error="unable to atomically promote package into cache: "+promotion_error;return false;
+    }
+    return true;
+}
+
+bool write_lockfile(const std::filesystem::path& project_root,const PackageManifest& manifest,std::string& error) {
+    PackageLock lock;std::set<std::string> active,complete;
+    std::function<bool(const std::string&,const std::string&,bool)> resolve;
+    resolve=[&](const std::string& name,const std::string& requirement,bool direct) {
+        if(active.count(name)){error="cyclic package dependency involving '"+name+"'";return false;}
+        auto existing=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const auto&p){return p.name==name;});
+        if(complete.count(name)){if(existing==lock.packages.end()||!satisfies(existing->version,requirement)){error="incompatible requirements for package '"+name+"'";return false;}existing->direct=existing->direct||direct;return true;}
+        std::string cache_error;auto root=resolve_cached_package(name,requirement,&cache_error);
+        if(!root){error=cache_error.empty()?"dependency '"+name+"' is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
+        PackageManifest package;
+        if(!load_package_manifest_file(*root/"strut.json",package,cache_error)||package.name!=name||!satisfies(package.version,requirement)){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(cache_error.empty()?std::string{}:": "+cache_error);return false;}
+        LockedPackage locked;locked.name=name;locked.requested=requirement;locked.version=package.version;locked.source_kind="local-cache";locked.source="local:"+name;locked.revision=package.version;locked.direct=direct;
+        for(const auto& dependency:package.dependencies){std::string child_error;auto child=resolve_cached_package(dependency.first,dependency.second,&child_error);PackageManifest child_manifest;if(!child||!load_package_manifest_file(*child/"strut.json",child_manifest,child_error)){error="transitive dependency '"+dependency.first+"' required by '"+name+"' is unavailable"+(child_error.empty()?std::string{}:": "+child_error);return false;}locked.dependencies[dependency.first]=child_manifest.version;}
+        if(!package_content_checksum(*root,locked.checksum,error))return false;
+        lock.packages.push_back(std::move(locked));active.insert(name);
+        for(const auto& dependency:package.dependencies)if(!resolve(dependency.first,dependency.second,false))return false;
+        active.erase(name);complete.insert(name);return true;
+    };
+    for(const auto& dependency:manifest.dependencies)if(!resolve(dependency.first,dependency.second,true))return false;
+    if(!validate_package_lock(lock,&manifest,error))return false;
+    return write_package_lock_file(project_root/"strut.lock.json",lock,error);
+}
 } // namespace strut

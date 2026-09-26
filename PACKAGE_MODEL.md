@@ -59,7 +59,7 @@ Downloaded package contents are shared across projects and addressed by immutabl
 - macOS: `~/Library/Caches/strut/packages`.
 - Windows: `%LOCALAPPDATA%\\Strut\\Cache\\packages`.
 
-A cached package never changes in place. A different checksum/revision receives a different cache entry. Project builds reference cached immutable sources rather than creating a `node_modules`-style dependency tree inside every project.
+A cached package never changes in place. Entries use `name/version/<sha256>` so different content at the same semantic version receives a different immutable cache entry. Local acquisition first validates source paths and content, copies into a cache-local staging directory, verifies the staged digest, and atomically renames it into its final identity. A concurrent installer either wins that atomic promotion or verifies and reuses the winner. Failed staging is removed, and abandoned staging directories older than 24 hours are cleaned on later acquisition. Cache reuse recomputes the content digest; local acquisition can safely repair a corrupt entry from its explicit source checkout. Project builds reference cached immutable sources rather than creating a `node_modules`-style dependency tree inside every project.
 
 ## Deterministic resolution
 
