@@ -38,7 +38,7 @@ No `latest`, git-branch-as-version, or arbitrary executable version scripts are 
 
 ## Lockfile and reproducibility
 
-Resolution will produce `strut.lock.json`. The lockfile is committed for applications and records every direct/transitive package as an exact immutable resolution including:
+Resolution produces `strut.lock.json` schema version 2. The lockfile is committed for applications and records every direct/transitive package as an exact immutable resolution including:
 
 - package name;
 - exact semantic version;
@@ -48,6 +48,8 @@ Resolution will produce `strut.lock.json`. The lockfile is committed for applica
 - exact transitive dependency edges.
 
 Entries are serialized in lexicographic package-name order (then version where needed) so two equivalent resolutions produce byte-stable lockfiles. Normal builds consume the lockfile without silently upgrading versions. Explicit package update operations are responsible for changing it.
+
+The schema uses a top-level `schema_version` and `packages` array. Each package records `name`, the original `requested` requirement, exact `version`, `source_kind`, logical `source`, immutable `revision`, SHA-256 `checksum`, whether it is `direct`, and an object of exact dependency edges. It contains no cache paths, checkout paths, timestamps, or other machine-specific state. Legacy version-1 files are rejected with instructions to regenerate rather than silently trusting their absolute cache paths.
 
 ## Shared package cache
 
@@ -70,7 +72,7 @@ The resolver checkpoint must:
 5. reject conflicting requirements with a dependency-path diagnostic rather than choosing nondeterministically;
 6. verify cached/downloaded content against the lockfile checksum before use.
 
-CP71 defined the base contract; CP72–CP73 added the `strut-packages` repository convention, local package development/cache flow, deterministic lockfile mutation, `strut add/remove/list/install`, and package include resolution. Remote fetching remains intentionally separate from the local/cache workflow.
+CP71 defined the base contract; CP72–CP73 added the `strut-packages` repository convention, local package development/cache flow, deterministic lockfile mutation, `strut add/remove/list/install`, and package include resolution. The reproducibility phase upgraded the lockfile to schema 2 with content digests, logical source identities, direct/transitive edges, round-trip validation, stale-entry checks, duplicate rejection, and cycle rejection. Remote fetching remains intentionally separate from the local/cache workflow.
 
 ## Package CLI (CP73)
 

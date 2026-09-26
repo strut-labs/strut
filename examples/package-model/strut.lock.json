@@ -1,21 +1,27 @@
 {
-  "lock_version": 1,
+  "schema_version": 2,
   "packages": [
     {
       "name": "http",
+      "requested": "^0.2.0",
       "version": "0.2.4",
-      "source": "github:strut-packages/http",
+      "source_kind": "git",
+      "source": "https://github.com/strut-packages/http.git",
       "revision": "example-immutable-revision",
       "checksum": "sha256:example",
-      "dependencies": []
+      "direct": true,
+      "dependencies": {}
     },
     {
       "name": "sqlite",
+      "requested": "~0.3.1",
       "version": "0.3.2",
-      "source": "github:strut-packages/sqlite",
+      "source_kind": "git",
+      "source": "https://github.com/strut-packages/sqlite.git",
       "revision": "example-immutable-revision",
       "checksum": "sha256:example",
-      "dependencies": []
+      "direct": true,
+      "dependencies": {}
     }
   ]
 }
