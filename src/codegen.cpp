@@ -1792,7 +1792,7 @@ std::string target_compiler(const std::string& target, bool& msvc) {
 void append_runtime_link_libraries(std::string& command,const IRProgram& program,bool msvc) {
     const auto resolution=analyze_runtime_components(program);
     for(const auto& library:resolution.link_libraries()) {
-        if(msvc) command += library=="curl" ? " libcurl.lib" : " "+library+".lib";
+        if(msvc) command += library=="curl" ? " libcurl.lib" : (library=="ssl"||library=="crypto" ? " lib"+library+".lib" : " "+library+".lib");
         else command += " -l"+library;
     }
 }

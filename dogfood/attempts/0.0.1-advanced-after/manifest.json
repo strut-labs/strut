@@ -13,6 +13,6 @@
     {"id":"09-multimodule-errors","expected":{"stdout":"ready\n"}},
     {"id":"10-project-discovery","expected":{"stdout":"module-ok\n"}},
     {"id":"11-project-init","kind":"cli","args":["init"],"reset":[".strut/config.json","strut.json"],"expected":{"exit_status":0,"stdout_contains":["strut.json"],"files":[".strut/config.json","strut.json"]}},
-    {"id":"12-missing-cache","kind":"cli","args":["install"],"env":{"STRUT_HOME":"{task}/isolated-home"},"expected":{"exit_status":1,"stderr_contains":["dependency 'missing' is not present in the package cache"]}}
+    {"id":"12-missing-cache","kind":"cli","args":["install"],"env":{"STRUT_HOME":"{task}/isolated-home"},"expected":{"exit_status":1,"stderr_contains":["official package 'missing' was not found","strut-packages/missing"]}}
   ]
 }

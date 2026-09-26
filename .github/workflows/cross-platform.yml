@@ -64,18 +64,20 @@ jobs:
         run: python3 tools/check_release.py
       - name: Install generated-program dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev
       - name: Install current LLVM toolchain (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install llvm
+          brew install llvm openssl@3
           echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
+          echo "CPATH=$(brew --prefix openssl@3)/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
       - name: Install generated-program dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install curl:x64-windows sqlite3:x64-windows
+          vcpkg install curl:x64-windows sqlite3:x64-windows openssl:x64-windows
           $vcpkgRoot = Split-Path -Parent (Get-Command vcpkg).Source
           $installed = "$vcpkgRoot\installed\x64-windows"
           "INCLUDE=$env:INCLUDE;$installed\include" >> $env:GITHUB_ENV
@@ -115,6 +117,7 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
+          python3 dogfood/http_lifecycle_certification.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -125,6 +128,7 @@ jobs:
           python dogfood/check.py build/Release/strut.exe
           python dogfood/diagnostics.py build/Release/strut.exe
           python dogfood/package_certification.py build/Release/strut.exe
+          python dogfood/http_lifecycle_certification.py build/Release/strut.exe
 
   linux-arm64:
     name: linux-arm64-gcc
@@ -140,7 +144,7 @@ jobs:
       - name: Check release metadata
         run: python3 tools/check_release.py
       - name: Install generated-program dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON
       - run: cmake --build build --parallel
       - name: Certify executable documentation
@@ -155,3 +159,4 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
+          python3 dogfood/http_lifecycle_certification.py build/strut
