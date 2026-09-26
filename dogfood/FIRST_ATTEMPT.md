@@ -31,6 +31,20 @@ For each new task, save the initial source before the first compilation and reco
 6. the first point, if any, where compiler source or generated C++ was inspected;
 7. final source and total cycles.
 
+Store controlled runs under `dogfood/attempts/<compiler-version>/<task>/` with an
+immutable `attempt-0.p`, each subsequent `attempt-N.p`, and a `result.json`. The
+result must record compiler commit, documentation commit, task text, consulted
+pages, commands, exit statuses, normalized diagnostics, reason for each edit, and
+the first point where implementation source was inspected. Do not overwrite an
+attempt: comparisons depend on retaining the exact unsuccessful source as well as
+the final program.
+
+During the first-attempt phase the agent may use only `strut --help`, published
+documentation, and compiler diagnostics. Compiler source, generated C++, existing
+regression fixtures, and prior solutions are prohibited until the run records a
+blocked attempt and its reason. Environment failures are classified separately
+from language, documentation, and diagnostic failures.
+
 The original audit predates this protocol, so it is a useful retrospective baseline
 but not a controlled, independently repeatable benchmark. New rows should follow the
 protocol above.

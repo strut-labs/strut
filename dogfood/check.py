@@ -38,6 +38,8 @@ def main() -> int:
             source = ROOT / relative
             output = temp / f"program-{index}"
             run([str(compiler), str(source), "-o", str(output)], cwd=ROOT)
+            if os.name == "nt":
+                output = output.with_suffix(".exe")
             binaries[relative] = output
 
         input_path = temp / "input.txt"

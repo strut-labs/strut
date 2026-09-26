@@ -71,3 +71,69 @@ The parser AST is not a backend contract. After semantic checking, `IRLowerer` c
 ## Bootstrap code-generation compile-time policy
 
 The C++ bootstrap backend emits a feature-minimal generated runtime for ordinary scalar, collection, lambda and safe-pointer programs instead of compiling the full JSON/network/filesystem/runtime surface into every translation unit. Full runtime support is emitted only when the program actually uses those facilities. Direct single-source release compilation intentionally skips LTO because the generated application and required inline runtime are already one translation unit; project/object builds retain LTO where it can optimise across translation units. This keeps cold compile time close to the equivalent host-C++ compilation while preserving `.strut` object caching for incremental builds.
+
+### Runtime composition migration
+
+Runtime selection currently uses mutually exclusive minimal, SQLite, HTTP-client,
+JSON, async, HTTP-server, filesystem, and full-runtime emitters. Their eligibility
+walks inspect IR operations and, in some cases, textual type names. A conservative
+fallback to the full runtime prevents known mixed-feature programs from omitting
+helpers, but every eligibility list is a manually maintained dependency boundary.
+
+The target model is a deterministic component graph:
+
+```text
+IR operation/type -> required component IDs -> transitive closure -> ordered emit
+```
+
+Initial component IDs should cover core values, strings, JSON, safe/weak/raw
+pointers, collections, checked errors, filesystem, environment/time, processes,
+async executor, threads/channels/mutexes, sockets, TLS, HTTP client, HTTP server,
+SQLite, and embedded assets. Each component owns its headers, declarations,
+definitions, platform variants, link libraries, and component dependencies. For
+example, HTTP client depends on strings, JSON, checked errors, and curl; async HTTP
+also depends on the async executor. A topological sort with a stable component-ID
+tie-break provides deterministic ordering, while a set of IDs deduplicates shared
+helpers.
+
+Migration is checkpointed:
+
+1. Introduce a component manifest and compare its computed requirements with the
+   existing runtime choice in tests, without changing emitted code.
+2. Move external headers and link libraries to the manifest.
+3. Extract one low-risk slice at a time (filesystem, SQLite, HTTP client), retaining
+   full-runtime fallback whenever an operation has no declared component.
+4. Delete each legacy eligibility walk only after mixed-feature and generated-C++
+   certification covers the replacement.
+5. Make an unknown runtime operation a compiler error in development builds and a
+   full-runtime fallback in releases until the graph is complete.
+
+Initialization and teardown are component-owned RAII declarations. Platform
+implementations share one component ID and select their body at emission time, so
+platform selection does not create a second dependency graph.
+
+### Structured type migration
+
+`TypeSyntax`, semantic types, and typed IR still carry canonicalized type names as
+strings. This requires repeated parsing and textual prefix/subsequence checks in
+semantic analysis, IR lowering, and C++ generation. Surface pointer/reference forms
+inside generic arguments must therefore be canonicalized by the parser just as
+top-level forms are.
+
+The target `Type` is an interned immutable tree with a kind (`primitive`, `named`,
+`const`, `reference`, `safe_pointer`, `raw_pointer`, `weak_pointer`, `nullable`,
+`array`, `tuple`, `generic`, or `function`), child type IDs, optional array extent,
+function parameters/result, and a resolved symbol ID for user-defined types.
+Source spans remain on syntax nodes rather than interned semantic types. Formatting
+and C++ spelling become visitors over this tree.
+
+Migration is likewise incremental:
+
+1. Add a single canonical type parser/interner and round-trip tests while retaining
+   the existing string field as a compatibility spelling.
+2. Store a `TypeId` beside type strings in semantic results and typed IR.
+3. Replace compatibility, module-requirement, ownership, and container-element
+   string checks with structural queries.
+4. Convert C++ type emission and runtime-feature discovery to `TypeId` visitors.
+5. Remove compatibility strings after all backends and diagnostics use structured
+   types.

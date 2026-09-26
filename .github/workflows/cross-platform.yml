@@ -49,6 +49,16 @@ jobs:
       - name: Install generated-program dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
+      - name: Install generated-program dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install curl:x64-windows
+          $vcpkgRoot = Split-Path -Parent (Get-Command vcpkg).Source
+          $installed = "$vcpkgRoot\installed\x64-windows"
+          "INCLUDE=$env:INCLUDE;$installed\include" >> $env:GITHUB_ENV
+          "LIB=$env:LIB;$installed\lib" >> $env:GITHUB_ENV
+          "$installed\bin" >> $env:GITHUB_PATH
       - name: Enable MSVC developer environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -68,6 +78,12 @@ jobs:
         env:
           STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
         run: python3 dogfood/check.py build/strut
+      - name: Certify generated C++ and dogfood (MSVC)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          STRUT_CXXFLAGS: /W4 /WX
+        run: python dogfood/check.py build/Release/strut.exe
 
   linux-arm64:
     name: linux-arm64-gcc

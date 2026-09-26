@@ -206,18 +206,22 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         span.end = previous().span.end;
         raw_pointer_surface = true;
     } else if (match("<")) {
-        text += "<"; int depth = 1;
-        while (!at_end() && depth > 0) {
-            if (check("<")) { ++depth; text += advance().lexeme; continue; }
-            if (check(">>")) {
-                if (depth < 2) { error(result, peek(), "unexpected extra '>' in generic type"); return TypeSyntax{"", begin.span, false}; }
-                depth -= 2; text += advance().lexeme; span.end = previous().span.end; continue;
+        text += "<";
+        bool first = true;
+        while (!at_end() && !check(">") && !check(">>") && pending_type_closers_ == 0) {
+            if (!first) {
+                if (!match(",")) { error(result, peek(), "expected ',' between generic type arguments"); return TypeSyntax{"", begin.span, false}; }
+                text += ",";
             }
-            if (check(">")) { --depth; text += advance().lexeme; span.end = previous().span.end; continue; }
-            if (check("const")) { text += "const "; advance(); continue; }
-            text += advance().lexeme;
+            auto argument = parse_type(result);
+            if (argument.name.empty()) return TypeSyntax{"", begin.span, false};
+            text += argument.name;
+            first = false;
         }
-        if (depth != 0) { error(result, peek(), "unterminated generic type"); return TypeSyntax{"", begin.span, false}; }
+        if (first) { error(result, peek(), "generic type requires at least one argument"); return TypeSyntax{"", begin.span, false}; }
+        if (!match_type_close()) { error(result, peek(), "expected '>' after generic type arguments"); return TypeSyntax{"", begin.span, false}; }
+        text += ">";
+        span.end = previous().span.end;
     }
     if (!raw_pointer_surface) {
         bool saw_reference = false;
