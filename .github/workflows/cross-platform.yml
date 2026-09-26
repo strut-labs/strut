@@ -82,7 +82,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          STRUT_CXXFLAGS: /W4 /WX
+          # `out`/`err` are intentional Strut globals; portable getenv is wrapped by the runtime.
+          STRUT_CXXFLAGS: /W4 /WX /wd4459 /D_CRT_SECURE_NO_WARNINGS
         run: python dogfood/check.py build/Release/strut.exe
 
   linux-arm64:
