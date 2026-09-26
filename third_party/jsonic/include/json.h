@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cctype>
-#include <cerrno>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -614,13 +613,6 @@ private:
             const char* number_start = source_.data() + start;
             const char* number_end = source_.data() + position_;
             double value = 0.0;
-#if defined(__APPLE__)
-            const std::string token(source_.substr(start, position_ - start));
-            char* parsed_end = nullptr;
-            errno = 0;
-            value = std::strtod(token.c_str(), &parsed_end);
-            if (parsed_end != token.c_str() + token.size()) fail("invalid JSON number");
-#else
             const std::from_chars_result converted =
                 std::from_chars(number_start, number_end, value, std::chars_format::general);
             if (converted.ec == std::errc::result_out_of_range) {
@@ -629,7 +621,6 @@ private:
             } else if (converted.ec != std::errc() || converted.ptr != number_end) {
                 fail("invalid JSON number");
             }
-#endif
             if (!std::isfinite(value)) fail("JSON number is outside the supported finite range");
 
             const std::string_view token(number_start, static_cast<std::size_t>(number_end - number_start));
