@@ -263,27 +263,71 @@ bool acquire_git_package(const PackageSource& source,std::filesystem::path& cach
 }
 
 bool write_lockfile(const std::filesystem::path& project_root,const PackageManifest& manifest,std::string& error) {
-    PackageLock lock;std::set<std::string> active,complete;std::map<std::string,PackageSource> sources=manifest.dependency_sources;
-    std::function<bool(const std::string&,const std::string&,bool)> resolve;
-    resolve=[&](const std::string& name,const std::string& requirement,bool direct) {
-        if(active.count(name)){error="cyclic package dependency involving '"+name+"'";return false;}
-        auto existing=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const auto&p){return p.name==name;});
-        if(complete.count(name)){if(existing==lock.packages.end()||!satisfies(existing->version,requirement)){error="incompatible requirements for package '"+name+"'";return false;}existing->direct=existing->direct||direct;return true;}
+    PackageLock lock;
+    std::map<std::string,PackageSource> sources;
+    std::map<std::string,std::string> source_origins;
+    std::map<std::string,std::size_t> resolved;
+    std::map<std::string,std::pair<std::string,std::string>> first_requirements;
+    std::set<std::string> active;
+    std::vector<std::string> stack;
+    auto same_source=[](const PackageSource& left,const PackageSource& right){return left.kind==right.kind&&left.url==right.url&&left.revision==right.revision;};
+    auto register_source=[&](const std::string& name,const PackageSource& source,const std::string& requester){
+        auto inserted=sources.emplace(name,source);
+        if(inserted.second){
+            source_origins.emplace(name,requester);
+            auto existing=resolved.find(name);
+            if(existing!=resolved.end()&&lock.packages[existing->second].source_kind!="git"){
+                error="source identity conflict for package '"+name+"': "+requester+" requires Git "+source.url+" at "+source.revision+", but it was already resolved from the local cache";
+                return false;
+            }
+            return true;
+        }
+        if(same_source(inserted.first->second,source))return true;
+        error="source identity conflict for package '"+name+"': "+source_origins[name]+" requires Git "+inserted.first->second.url+" at "+inserted.first->second.revision+", but "+requester+" requires Git "+source.url+" at "+source.revision;
+        return false;
+    };
+    for(const auto& source:manifest.dependency_sources)if(!register_source(source.first,source.second,"project '"+manifest.name+"'"))return false;
+    std::function<bool(const std::string&,const std::string&,bool,const std::string&)> resolve;
+    resolve=[&](const std::string& name,const std::string& requirement,bool direct,const std::string& requester) {
+        if(active.count(name)){
+            auto begin=std::find(stack.begin(),stack.end(),name);std::ostringstream chain;
+            for(auto i=begin;i!=stack.end();++i){if(i!=begin)chain<<" -> ";chain<<*i;}chain<<" -> "<<name;
+            error="cyclic package dependency: "+chain.str();return false;
+        }
+        auto existing=resolved.find(name);
+        if(existing!=resolved.end()){
+            auto& package=lock.packages[existing->second];
+            if(!satisfies(package.version,requirement)){
+                const auto& first=first_requirements[name];
+                error="incompatible requirements for package '"+name+"': "+first.second+" requires '"+first.first+"' (resolved "+package.version+"), but "+requester+" requires '"+requirement+"'";
+                return false;
+            }
+            package.direct=package.direct||direct;return true;
+        }
+        first_requirements.emplace(name,std::make_pair(requirement,requester));
         std::string cache_error;std::optional<std::filesystem::path> root;auto remote=sources.find(name);
-        if(remote!=sources.end()){std::filesystem::path acquired;PackageManifest acquired_manifest;if(!acquire_git_package(remote->second,acquired,acquired_manifest,cache_error)){error=cache_error;return false;}if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement;return false;}root=acquired;}else root=resolve_cached_package(name,requirement,&cache_error);
-        if(!root){error=cache_error.empty()?"dependency '"+name+"' is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
+        if(remote!=sources.end()){
+            std::filesystem::path acquired;PackageManifest acquired_manifest;
+            if(!acquire_git_package(remote->second,acquired,acquired_manifest,cache_error)){error=cache_error;return false;}
+            if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement+" required by "+requester;return false;}
+            root=acquired;
+        }else root=resolve_cached_package(name,requirement,&cache_error);
+        if(!root){error=cache_error.empty()?"dependency '"+name+"' required by "+requester+" is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
         PackageManifest package;
         if(!load_package_manifest_file(*root/"strut.json",package,cache_error)||package.name!=name||!satisfies(package.version,requirement)){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(cache_error.empty()?std::string{}:": "+cache_error);return false;}
+        for(const auto& source:package.dependency_sources)if(!register_source(source.first,source.second,"package '"+name+"'"))return false;
+        active.insert(name);stack.push_back(name);
         LockedPackage locked;locked.name=name;locked.requested=requirement;locked.version=package.version;locked.source_kind="local-cache";locked.source="local:"+name;locked.revision=package.version;locked.direct=direct;
-        for(const auto& source:package.dependency_sources){auto inserted=sources.emplace(source.first,source.second);if(!inserted.second&&(inserted.first->second.url!=source.second.url||inserted.first->second.revision!=source.second.revision)){error="conflicting immutable sources for package '"+source.first+"'";return false;}}
-        for(const auto& dependency:package.dependencies){std::string child_error;auto child=resolve_cached_package(dependency.first,dependency.second,&child_error);if(!child){auto child_source=sources.find(dependency.first);if(child_source!=sources.end()){std::filesystem::path acquired;PackageManifest acquired_manifest;if(acquire_git_package(child_source->second,acquired,acquired_manifest,child_error))child=acquired;}}PackageManifest child_manifest;if(!child||!load_package_manifest_file(*child/"strut.json",child_manifest,child_error)){error="transitive dependency '"+dependency.first+"' required by '"+name+"' is unavailable"+(child_error.empty()?std::string{}:": "+child_error);return false;}locked.dependencies[dependency.first]=child_manifest.version;}
+        auto own_source=sources.find(name);if(own_source!=sources.end()){locked.source_kind="git";locked.source=own_source->second.url;locked.revision=own_source->second.revision;}
         if(!package_content_checksum(*root,locked.checksum,error))return false;
-        lock.packages.push_back(std::move(locked));active.insert(name);
-        for(const auto& dependency:package.dependencies)if(!resolve(dependency.first,dependency.second,false))return false;
-        active.erase(name);complete.insert(name);return true;
+        for(const auto& dependency:package.dependencies){
+            if(!resolve(dependency.first,dependency.second,false,"package '"+name+"'"))return false;
+            locked.dependencies[dependency.first]=lock.packages[resolved[dependency.first]].version;
+        }
+        stack.pop_back();active.erase(name);
+        resolved.emplace(name,lock.packages.size());lock.packages.push_back(std::move(locked));return true;
     };
-    for(const auto& dependency:manifest.dependencies)if(!resolve(dependency.first,dependency.second,true))return false;
-    for(auto& package:lock.packages){auto source=sources.find(package.name);if(source!=sources.end()){package.source_kind="git";package.source=source->second.url;package.revision=source->second.revision;}}
+    for(const auto& dependency:manifest.dependencies)if(!resolve(dependency.first,dependency.second,true,"project '"+manifest.name+"'"))return false;
     if(!validate_package_lock(lock,&manifest,error))return false;
     return write_package_lock_file(project_root/"strut.lock.json",lock,error);
 }
