@@ -225,7 +225,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
         default:break;
     }}
 }
-bool expr_uses_curl(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text.rfind("tls_",0)==0||e->text.rfind("http_",0)==0))return true;if(expr_uses_curl(e->left.get())||expr_uses_curl(e->right.get())||expr_uses_curl(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_curl(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_curl(st->value.get()))return true;}return false;}
+bool expr_uses_curl(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&(e->text.rfind("tls_",0)==0||e->text=="http_get"||e->text=="http_request"||e->text=="http_get_json"||e->text=="http_get_async"||e->text=="http_request_async"))return true;if(expr_uses_curl(e->left.get())||expr_uses_curl(e->right.get())||expr_uses_curl(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_curl(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_curl(st->value.get()))return true;}return false;}
 bool stmt_uses_curl(const IRStmt* s){if(!s)return false;if(expr_uses_curl(s->value.get())||expr_uses_curl(s->target.get())||expr_uses_curl(s->condition.get())||expr_uses_curl(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_curl(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_curl(c.get()))return true;return false;}
 bool program_uses_curl(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_curl(s.get()))return true;return false;}
 
@@ -613,6 +613,120 @@ inline void strut_await(strut_future<void>& f){f.get();}
 )STRUT_ASYNC";
 }
 
+
+bool light_http_expr_ok(const IRExpr* e,bool& found){
+    if(!e)return true;
+    const auto& t=e->type_name;
+    if(t.find("http_")!=std::string::npos)found=true;
+    if(e->lambda_async||t.find("json")!=std::string::npos||t.find("sqlite_db")!=std::string::npos||t.find("process")!=std::string::npos||t.find("tls_")!=std::string::npos)return false;
+    if(e->kind==IRExpr::Kind::identifier){
+        if(e->text=="http_server"||e->text=="http_text"||e->text=="http_html")found=true;
+        static const char* heavy[]={"http_json_response","http_get","http_request","http_get_json","http_get_async","http_request_async","sqlite_open","exec","exec_shell","process","pipe_exec","embed_file","embed_dir"};
+        for(const char* h:heavy)if(e->text==h)return false;
+    }
+    if(e->kind==IRExpr::Kind::member&&(e->text=="get_async"||e->text=="post_async"||e->text=="json"))return false;
+    if(!light_http_expr_ok(e->left.get(),found)||!light_http_expr_ok(e->right.get(),found)||!light_http_expr_ok(e->lambda_expression.get(),found))return false;
+    for(const auto& a:e->arguments)if(!light_http_expr_ok(a.get(),found))return false;
+    for(const auto& st:e->lambda_body){
+        if(st->is_async)return false;
+        if(!light_http_expr_ok(st->value.get(),found)||!light_http_expr_ok(st->condition.get(),found))return false;
+    }
+    return true;
+}
+bool light_http_stmt_ok(const IRStmt* st,bool& found){
+    if(!st)return true;
+    if(st->is_async||st->type_name.find("json")!=std::string::npos||st->return_type.find("json")!=std::string::npos)return false;
+    if(st->type_name.find("http_")!=std::string::npos||st->return_type.find("http_")!=std::string::npos)found=true;
+    for(const auto& p:st->parameters){if(p.type.name.find("json")!=std::string::npos)return false;if(p.type.name.find("http_")!=std::string::npos)found=true;}
+    if(!light_http_expr_ok(st->value.get(),found)||!light_http_expr_ok(st->target.get(),found)||!light_http_expr_ok(st->condition.get(),found)||!light_http_expr_ok(st->increment.get(),found))return false;
+    if(st->initializer&&!light_http_stmt_ok(st->initializer.get(),found))return false;
+    for(const auto& c:st->body)if(!light_http_stmt_ok(c.get(),found))return false;
+    for(const auto& c:st->else_body)if(!light_http_stmt_ok(c.get(),found))return false;
+    for(const auto& c:st->catches)for(const auto& x:c.body)if(!light_http_stmt_ok(x.get(),found))return false;
+    return true;
+}
+bool program_uses_light_http_runtime(const IRProgram& p){
+    if(program_uses_sqlite(p)||program_uses_curl(p))return false;
+    for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
+    bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
+}
+void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
+    emit_minimal_runtime(o,f);
+    o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n";
+    o << "#ifdef _WIN32\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n#endif\n";
+    o << R"STRUT_HTTP(
+struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_string {
+    std::string v;
+    strut_string()=default;strut_string(const char* s):v(s){}strut_string(std::string s):v(std::move(s)){}
+    std::size_t size() const{return v.size();}bool empty() const{return v.empty();}
+};
+inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<<s.v;}
+inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.v;}
+inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
+inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
+namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
+#ifdef _WIN32
+using strut_socket_handle=SOCKET; constexpr strut_socket_handle strut_invalid_socket=INVALID_SOCKET;
+inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket)closesocket(h);}
+struct strut_winsock_runtime{strut_winsock_runtime(){WSADATA d{};if(WSAStartup(MAKEWORD(2,2),&d)!=0)throw strut_checked_error("NetworkError","WSAStartup failed");}~strut_winsock_runtime(){WSACleanup();}};
+inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runtime;}
+#else
+using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socket=-1;
+inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket)::close(h);}
+inline void strut_socket_init(){}
+#endif
+struct strut_socket_state{strut_socket_handle handle=strut_invalid_socket;~strut_socket_state(){strut_socket_close(handle);}};
+class strut_tcp_socket {
+public:
+    strut_tcp_socket():s_(std::make_shared<strut_socket_state>()){} explicit strut_tcp_socket(strut_socket_handle h):s_(std::make_shared<strut_socket_state>()){s_->handle=h;}
+    bool is_open() const{return s_&&s_->handle!=strut_invalid_socket;}void close(){if(is_open()){strut_socket_close(s_->handle);s_->handle=strut_invalid_socket;}}
+    void write(const strut_string& data){if(!is_open())throw strut_checked_error("NetworkError","write on closed socket");std::size_t off=0;while(off<data.v.size()){
+#ifdef _WIN32
+        int n=::send(s_->handle,data.v.data()+off,static_cast<int>(data.v.size()-off),0);
+#else
+        ssize_t n=::send(s_->handle,data.v.data()+off,data.v.size()-off,0);
+#endif
+        if(n<=0)throw strut_checked_error("NetworkError","socket write failed");off+=static_cast<std::size_t>(n);}}
+    strut_string read(std::int64_t max_bytes=4096){if(!is_open())throw strut_checked_error("NetworkError","read on closed socket");if(max_bytes<=0)return {};std::string out(static_cast<std::size_t>(max_bytes),'\0');
+#ifdef _WIN32
+        int n=::recv(s_->handle,out.data(),static_cast<int>(out.size()),0);
+#else
+        ssize_t n=::recv(s_->handle,out.data(),out.size(),0);
+#endif
+        if(n<0)throw strut_checked_error("NetworkError","socket read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}
+private:std::shared_ptr<strut_socket_state> s_;
+};
+class strut_tcp_listener {
+public:
+    strut_tcp_listener():s_(std::make_shared<strut_socket_state>()){} explicit strut_tcp_listener(strut_socket_handle h):s_(std::make_shared<strut_socket_state>()){s_->handle=h;}
+    bool is_open() const{return s_&&s_->handle!=strut_invalid_socket;}void close(){if(is_open()){strut_socket_close(s_->handle);s_->handle=strut_invalid_socket;}}
+    strut_tcp_socket accept(){if(!is_open())throw strut_checked_error("NetworkError","accept on closed listener");auto h=::accept(s_->handle,nullptr,nullptr);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP accept failed");return strut_tcp_socket(h);}
+private:std::shared_ptr<strut_socket_state> s_;
+};
+inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed");return strut_tcp_listener(h);}
+struct strut_server_request {strut_string method,path,body;std::unordered_map<strut_string,strut_string> headers,query,params;};
+struct strut_server_response {std::int32_t status=200;strut_string body;strut_string content_type="text/plain; charset=utf-8";std::unordered_map<strut_string,strut_string> headers;};
+inline strut_server_response strut_http_text(const strut_string& s){return {200,s,"text/plain; charset=utf-8",{}};}
+inline strut_server_response strut_http_html(const strut_string& s){return {200,s,"text/html; charset=utf-8",{}};}
+inline std::string strut_trim_ascii(std::string s){while(!s.empty()&&(s.back()=='\r'||s.back()==' '||s.back()=='\t'))s.pop_back();std::size_t i=0;while(i<s.size()&&(s[i]==' '||s[i]=='\t'))++i;return s.substr(i);}
+inline void strut_parse_query(const std::string& raw,std::unordered_map<strut_string,strut_string>& out){std::size_t p=0;while(p<=raw.size()){auto amp=raw.find('&',p);auto part=raw.substr(p,amp==std::string::npos?std::string::npos:amp-p);auto eq=part.find('=');out[strut_string(part.substr(0,eq))]=strut_string(eq==std::string::npos?"":part.substr(eq+1));if(amp==std::string::npos)break;p=amp+1;}}
+inline bool strut_route_match(const std::string& pattern,const std::string& path,std::unordered_map<strut_string,strut_string>& params){std::stringstream a(pattern),b(path);std::string x,y;while(true){bool ax=static_cast<bool>(std::getline(a,x,'/')),by=static_cast<bool>(std::getline(b,y,'/'));if(!ax||!by)return ax==by;if(x.empty()&&y.empty())continue;if(!x.empty()&&x[0]==':')params[strut_string(x.substr(1))]=strut_string(y);else if(x!=y)return false;}}
+class strut_http_server {
+public:
+    using handler=std::function<strut_server_response(strut_server_request)>;
+    void get(const strut_string& path,handler h){routes_.push_back({"GET",path.v,std::move(h)});}void post(const strut_string& path,handler h){routes_.push_back({"POST",path.v,std::move(h)});}
+    void serve_static(const strut_string& prefix,const std::unordered_map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()){static_prefix_=prefix.v;static_files_=files;static_fallback_=fallback.v;}
+    void listen(const strut_string& host,std::int32_t port,std::int32_t max_requests=0){auto l=tcp_listen(host,port);std::int32_t served=0;while(max_requests<=0||served<max_requests){auto c=l.accept();serve_one(c);++served;}l.close();}
+private:
+    struct route{std::string method,path;handler fn;};std::vector<route> routes_;std::string static_prefix_,static_fallback_;std::unordered_map<strut_string,strut_string> static_files_;
+    static strut_string mime(const std::string& p){auto dot=p.rfind('.');auto e=dot==std::string::npos?std::string():p.substr(dot);if(e==".html")return "text/html; charset=utf-8";if(e==".css")return "text/css; charset=utf-8";if(e==".js")return "application/javascript";if(e==".json")return "application/json";if(e==".svg")return "image/svg+xml";if(e==".png")return "image/png";return "application/octet-stream";}
+    static std::string etag(const std::string& data){std::uint64_t h=1469598103934665603ull;for(unsigned char c:data){h^=c;h*=1099511628211ull;}std::ostringstream o;o<<'"'<<std::hex<<h<<'"';return o.str();}
+    void serve_one(strut_tcp_socket& sock){std::string raw;for(;;){auto chunk=sock.read(4096).v;if(chunk.empty())break;raw+=chunk;if(raw.find("\r\n\r\n")!=std::string::npos)break;}strut_server_request req;auto line_end=raw.find("\r\n");if(line_end==std::string::npos)return;std::istringstream first(raw.substr(0,line_end));std::string target,version;first>>req.method.v>>target>>version;auto q=target.find('?');req.path=strut_string(target.substr(0,q));if(q!=std::string::npos)strut_parse_query(target.substr(q+1),req.query);auto header_end=raw.find("\r\n\r\n");std::size_t p=line_end+2,content_len=0;while(p<header_end){auto e=raw.find("\r\n",p);auto ln=raw.substr(p,e-p);auto colon=ln.find(':');if(colon!=std::string::npos){auto k=strut_trim_ascii(ln.substr(0,colon));auto v=strut_trim_ascii(ln.substr(colon+1));req.headers[strut_string(k)]=strut_string(v);if(k=="Content-Length")content_len=static_cast<std::size_t>(std::strtoull(v.c_str(),nullptr,10));}p=e+2;}if(header_end!=std::string::npos){req.body=strut_string(raw.substr(header_end+4));while(req.body.v.size()<content_len){auto more=sock.read(static_cast<std::int64_t>(content_len-req.body.v.size())).v;if(more.empty())break;req.body.v+=more;}}strut_server_response res;bool found=false;for(auto& r:routes_){if(r.method!=req.method.v)continue;req.params.clear();if(strut_route_match(r.path,req.path.v,req.params)){res=r.fn(req);found=true;break;}}if(!found&&!static_files_.empty()&&req.method.v=="GET"){std::string key=req.path.v;if(!static_prefix_.empty()&&key.rfind(static_prefix_,0)==0)key=key.substr(static_prefix_.size());while(!key.empty()&&key.front()=='/')key.erase(key.begin());if(key.empty())key="index.html";if(key.find("..")!=std::string::npos){res.status=400;res.body="Bad Request";found=true;}else{auto it=static_files_.find(strut_string(key));if(it==static_files_.end()&&!static_fallback_.empty())it=static_files_.find(strut_string(static_fallback_));if(it!=static_files_.end()){res.status=200;res.body=it->second;res.content_type=mime(key);res.headers[strut_string("ETag")]=strut_string(etag(res.body.v));res.headers[strut_string("Cache-Control")]=strut_string("public, max-age=0, must-revalidate");found=true;}}}if(!found){res.status=404;res.body="Not Found";}std::ostringstream out;out<<"HTTP/1.1 "<<res.status<<" "<<(res.status==200?"OK":res.status==404?"Not Found":"Response")<<"\r\nContent-Type: "<<res.content_type.v<<"\r\nContent-Length: "<<res.body.v.size()<<"\r\nConnection: close\r\n";for(auto& h:res.headers)out<<h.first.v<<": "<<h.second.v<<"\r\n";out<<"\r\n"<<res.body.v;sock.write(strut_string(out.str()));sock.close();}
+};
+)STRUT_HTTP";
+}
+
 bool light_filesystem_type_ok(const std::string& t){
     static const char* heavy[]={"json","istream","ostream","sstream","ifstream","ofstream","process","thread","mutex","future<","channel<","tcp_socket","tcp_listener","tls_stream","http_","sqlite_db"};
     for(const char* h:heavy)if(t.find(h)!=std::string::npos)return false;
@@ -654,59 +768,66 @@ bool program_uses_light_filesystem_runtime(const IRProgram& p){
     for(const auto& st:p.statements)if(!light_filesystem_stmt_ok(st.get()))return false;
     return true;
 }
-void emit_light_filesystem_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
+struct FilesystemRuntimeFeatures {
+    bool metadata=false, mutate=false, list=false, path=false, io=false;
+};
+void collect_filesystem_expr_features(const IRExpr* e,FilesystemRuntimeFeatures& f){
+    if(!e)return;
+    if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::identifier){
+        const auto& n=e->left->text;
+        if(n=="exists"||n=="is_file"||n=="is_dir"||n=="file_size"||n=="modified")f.metadata=true;
+        else if(n=="make_dir"||n=="remove"||n=="remove_all"||n=="copy"||n=="move"||n=="touch")f.mutate=true;
+        else if(n=="ls"||n=="walk")f.list=true;
+        else if(n=="cwd"||n=="cd"||n=="absolute"||n=="canonical"||n=="parent"||n=="filename"||n=="extension"||n=="stem"||n=="join_path")f.path=true;
+        else if(n=="read_file"||n=="read_bytes"||n=="write_file"||n=="append_file")f.io=true;
+    }
+    collect_filesystem_expr_features(e->left.get(),f);collect_filesystem_expr_features(e->right.get(),f);collect_filesystem_expr_features(e->lambda_expression.get(),f);
+    for(const auto& a:e->arguments)collect_filesystem_expr_features(a.get(),f);
+    for(const auto& st:e->lambda_body){collect_filesystem_expr_features(st->value.get(),f);collect_filesystem_expr_features(st->condition.get(),f);}
+}
+void collect_filesystem_stmt_features(const IRStmt* st,FilesystemRuntimeFeatures& f){
+    if(!st)return;
+    collect_filesystem_expr_features(st->value.get(),f);collect_filesystem_expr_features(st->target.get(),f);collect_filesystem_expr_features(st->condition.get(),f);collect_filesystem_expr_features(st->increment.get(),f);
+    if(st->initializer)collect_filesystem_stmt_features(st->initializer.get(),f);
+    for(const auto& c:st->body)collect_filesystem_stmt_features(c.get(),f);
+    for(const auto& c:st->else_body)collect_filesystem_stmt_features(c.get(),f);
+    for(const auto& c:st->catches)for(const auto& x:c.body)collect_filesystem_stmt_features(x.get(),f);
+}
+FilesystemRuntimeFeatures filesystem_features(const IRProgram& p){FilesystemRuntimeFeatures f;for(const auto& st:p.statements)collect_filesystem_stmt_features(st.get(),f);return f;}
+void emit_light_filesystem_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f,const FilesystemRuntimeFeatures& fs){
     emit_minimal_runtime(o,f);
-    o << "#include <string>\n#include <filesystem>\n#include <fstream>\n#include <chrono>\n#include <algorithm>\n#include <stdexcept>\n";
+    o << "#include <string>\n#include <filesystem>\n#include <stdexcept>\n#include <utility>\n";
+    if(fs.metadata)o << "#include <chrono>\n";
+    if(fs.mutate||fs.list)o << "#include <algorithm>\n#include <vector>\n";
+    if(fs.io||fs.mutate)o << "#include <fstream>\n";
+    if(fs.io)o << "#include <vector>\n";
     o << R"STRUT_FS_BASE(
 struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
 struct strut_string {
     std::string v;
-    strut_string() = default; strut_string(const char* s):v(s){} strut_string(std::string s):v(std::move(s)){}
-    bool starts_with(const strut_string& s) const { return v.size()>=s.v.size() && v.compare(0,s.v.size(),s.v)==0; }
-    bool ends_with(const strut_string& s) const { return v.size()>=s.v.size() && v.compare(v.size()-s.v.size(),s.v.size(),s.v)==0; }
-    bool contains(const strut_string& s) const { return v.find(s.v)!=std::string::npos; }
-    strut_string trim() const { auto b=v.begin(),e=v.end();while(b!=e&&std::isspace((unsigned char)*b))++b;while(e!=b&&std::isspace((unsigned char)*(e-1)))--e;return std::string(b,e); }
-    strut_string replace(const strut_string& from,const strut_string& to) const { std::string r=v;if(from.v.empty())return r;std::size_t p=0;while((p=r.find(from.v,p))!=std::string::npos){r.replace(p,from.v.size(),to.v);p+=to.v.size();}return r; }
-    std::vector<strut_string> split(const strut_string& sep) const { std::vector<strut_string> out;if(sep.v.empty()){for(char c:v)out.emplace_back(std::string(1,c));return out;}std::size_t p=0,n;while((n=v.find(sep.v,p))!=std::string::npos){out.emplace_back(v.substr(p,n-p));p=n+sep.v.size();}out.emplace_back(v.substr(p));return out; }
-    strut_string substr(std::size_t p) const { return v.substr(p); } strut_string substr(std::size_t p,std::size_t n) const { return v.substr(p,n); }
-    std::size_t size() const { return v.size(); } bool empty() const { return v.empty(); } char at(std::size_t i) const { return v.at(i); }
+    strut_string()=default;strut_string(const char* s):v(s){}strut_string(std::string s):v(std::move(s)){}
+    bool starts_with(const strut_string& s) const{return v.size()>=s.v.size()&&v.compare(0,s.v.size(),s.v)==0;}
+    bool ends_with(const strut_string& s) const{return v.size()>=s.v.size()&&v.compare(v.size()-s.v.size(),s.v.size(),s.v)==0;}
+    bool contains(const strut_string& s) const{return v.find(s.v)!=std::string::npos;}
+    std::size_t size() const{return v.size();}bool empty() const{return v.empty();}char at(std::size_t i) const{return v.at(i);}
 };
 inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<<s.v;}
 inline strut_string operator+(const strut_string&a,const strut_string&b){return a.v+b.v;}
 inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.v;}
 inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
-namespace std { template<> struct hash<strut_string> { size_t operator()(const strut_string& s) const noexcept { return std::hash<std::string>{}(s.v); } }; }
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
-)STRUT_FS_BASE";
-    o << R"STRUT_FS(
+namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 inline std::filesystem::path strut_fs_path(const strut_string& s){return std::filesystem::path(s.v);}
 inline void strut_fs_fail(const char* op,const std::error_code& ec){if(ec)throw strut_checked_error("FilesystemError",std::string(op)+": "+ec.message());}
+)STRUT_FS_BASE";
+    if(fs.metadata)o << R"STRUT_FS_META(
 inline bool strut_fs_exists(const strut_string& p){std::error_code ec;bool v=std::filesystem::exists(strut_fs_path(p),ec);strut_fs_fail("exists",ec);return v;}
 inline bool strut_fs_is_file(const strut_string& p){std::error_code ec;bool v=std::filesystem::is_regular_file(strut_fs_path(p),ec);strut_fs_fail("is_file",ec);return v;}
 inline bool strut_fs_is_dir(const strut_string& p){std::error_code ec;bool v=std::filesystem::is_directory(strut_fs_path(p),ec);strut_fs_fail("is_dir",ec);return v;}
 inline std::int64_t strut_fs_file_size(const strut_string& p){std::error_code ec;auto n=std::filesystem::file_size(strut_fs_path(p),ec);strut_fs_fail("file_size",ec);return static_cast<std::int64_t>(n);}
 inline std::int64_t strut_fs_modified(const strut_string& p){std::error_code ec;auto t=std::filesystem::last_write_time(strut_fs_path(p),ec);strut_fs_fail("modified",ec);return std::chrono::duration_cast<std::chrono::milliseconds>(decltype(t)::clock::to_sys(t).time_since_epoch()).count();}
-inline void strut_fs_make_dir(const strut_string& p){std::error_code ec;std::filesystem::create_directories(strut_fs_path(p),ec);strut_fs_fail("make_dir",ec);}
-inline bool strut_fs_has_wildcards(const strut_string& p){return p.v.find('*')!=std::string::npos||p.v.find('?')!=std::string::npos;}
-inline bool strut_fs_wildcard_match(const std::string& pat,const std::string& text){std::size_t p=0,t=0,star=std::string::npos,mark=0;while(t<text.size()){if(p<pat.size()&&(pat[p]=='?'||pat[p]==text[t])){++p;++t;}else if(p<pat.size()&&pat[p]=='*'){star=p++;mark=t;}else if(star!=std::string::npos){p=star+1;t=++mark;}else return false;}while(p<pat.size()&&pat[p]=='*')++p;return p==pat.size();}
-inline void strut_fs_glob_walk(const std::filesystem::path& cur,const std::vector<std::string>& parts,std::size_t i,std::vector<strut_string>& out){if(i==parts.size()){std::error_code ec;if(std::filesystem::exists(cur,ec)&&!ec)out.emplace_back(cur.string());return;}const auto& part=parts[i];if(part=="**"){strut_fs_glob_walk(cur,parts,i+1,out);std::error_code ec;for(std::filesystem::directory_iterator it(cur,ec),end;!ec&&it!=end;it.increment(ec))if(it->is_directory(ec)&&!ec)strut_fs_glob_walk(it->path(),parts,i,out);return;}if(part.find('*')==std::string::npos&&part.find('?')==std::string::npos){strut_fs_glob_walk(cur/part,parts,i+1,out);return;}std::error_code ec;for(std::filesystem::directory_iterator it(cur,ec),end;!ec&&it!=end;it.increment(ec))if(strut_fs_wildcard_match(part,it->path().filename().string()))strut_fs_glob_walk(it->path(),parts,i+1,out);}
-inline std::vector<strut_string> strut_fs_expand(const strut_string& pattern){if(!strut_fs_has_wildcards(pattern))return {pattern};std::filesystem::path p=pattern.v;std::filesystem::path root=p.is_absolute()?p.root_path():std::filesystem::current_path();std::vector<std::string> parts;auto rel=p.is_absolute()?p.relative_path():p;for(const auto& x:rel)parts.push_back(x.string());std::vector<strut_string> out;strut_fs_glob_walk(root,parts,0,out);std::sort(out.begin(),out.end(),[](const auto&a,const auto&b){return a.v<b.v;});return out;}
-inline std::vector<strut_string> strut_fs_expand_all(const std::vector<strut_string>& paths){std::vector<strut_string> out;for(const auto& p:paths){auto xs=strut_fs_expand(p);out.insert(out.end(),xs.begin(),xs.end());}return out;}
-inline void strut_fs_remove_exact(const strut_string& p){std::error_code ec;std::filesystem::remove(strut_fs_path(p),ec);strut_fs_fail("remove",ec);}
-inline void strut_fs_remove(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_exact(x);}
-inline void strut_fs_remove(const std::vector<strut_string>& paths){for(const auto& p:strut_fs_expand_all(paths))strut_fs_remove_exact(p);}
-inline void strut_fs_remove_all_exact(const strut_string& p){std::error_code ec;std::filesystem::remove_all(strut_fs_path(p),ec);strut_fs_fail("remove_all",ec);}
-inline void strut_fs_remove_all(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_all_exact(x);}
-inline void strut_fs_remove_all(const std::vector<strut_string>& paths){for(const auto& p:strut_fs_expand_all(paths))strut_fs_remove_all_exact(p);}
-inline void strut_fs_copy_exact(const strut_string& a,const strut_string& b){std::error_code ec;std::filesystem::copy(strut_fs_path(a),strut_fs_path(b),std::filesystem::copy_options::recursive|std::filesystem::copy_options::overwrite_existing,ec);strut_fs_fail("copy",ec);}
-inline void strut_fs_copy(const strut_string& a,const strut_string& b){if(!strut_fs_has_wildcards(a)){strut_fs_copy_exact(a,b);return;}auto paths=strut_fs_expand(a);if(paths.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");const auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: wildcard destination must be an existing directory");for(const auto& p:paths)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
-inline void strut_fs_copy(const std::vector<strut_string>& paths,const strut_string& dest){const auto d=strut_fs_path(dest);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: bulk destination must be an existing directory");auto expanded=strut_fs_expand_all(paths);if(expanded.empty()&&!paths.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");for(const auto& p:expanded)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
-inline void strut_fs_move_exact(const strut_string& a,const strut_string& b){std::error_code ec;std::filesystem::rename(strut_fs_path(a),strut_fs_path(b),ec);strut_fs_fail("move",ec);}
-inline void strut_fs_move(const strut_string& a,const strut_string& b){if(!strut_fs_has_wildcards(a)){strut_fs_move_exact(a,b);return;}auto paths=strut_fs_expand(a);if(paths.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");const auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: wildcard destination must be an existing directory");for(const auto& p:paths)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
-inline void strut_fs_move(const std::vector<strut_string>& paths,const strut_string& dest){const auto d=strut_fs_path(dest);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: bulk destination must be an existing directory");auto expanded=strut_fs_expand_all(paths);if(expanded.empty()&&!paths.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");for(const auto& p:expanded)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
-inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(p),std::ios::app|std::ios::binary);if(!f)throw strut_checked_error("FilesystemError","touch: unable to open path");}
-inline std::vector<strut_string> strut_fs_ls(const strut_string& p){std::error_code ec;std::vector<strut_string> out;for(std::filesystem::directory_iterator it(strut_fs_path(p),ec),end;!ec&&it!=end;it.increment(ec))out.emplace_back(it->path().filename().string());strut_fs_fail("ls",ec);std::sort(out.begin(),out.end());return out;}
-inline std::vector<strut_string> strut_fs_walk(const strut_string& p){std::error_code ec;std::vector<strut_string> out;auto root=strut_fs_path(p);for(std::filesystem::recursive_directory_iterator it(root,ec),end;!ec&&it!=end;it.increment(ec))out.emplace_back(it->path().lexically_relative(root).generic_string());strut_fs_fail("walk",ec);std::sort(out.begin(),out.end());return out;}
+)STRUT_FS_META";
+    if(fs.path)o << R"STRUT_FS_PATH(
 inline strut_string strut_fs_cwd(){std::error_code ec;auto p=std::filesystem::current_path(ec);strut_fs_fail("cwd",ec);return p.string();}
 inline void strut_fs_cd(const strut_string& p){std::error_code ec;std::filesystem::current_path(strut_fs_path(p),ec);strut_fs_fail("cd",ec);}
 inline strut_string strut_fs_absolute(const strut_string& p){std::error_code ec;auto v=std::filesystem::absolute(strut_fs_path(p),ec);strut_fs_fail("absolute",ec);return v.lexically_normal().string();}
@@ -716,16 +837,35 @@ inline strut_string strut_fs_filename(const strut_string& p){return strut_fs_pat
 inline strut_string strut_fs_extension(const strut_string& p){return strut_fs_path(p).extension().string();}
 inline strut_string strut_fs_stem(const strut_string& p){return strut_fs_path(p).stem().string();}
 template<class... Rest> inline strut_string strut_fs_join_path(const strut_string& a,const Rest&... rest){std::filesystem::path p=strut_fs_path(a);((p/=strut_fs_path(rest)),...);return p.lexically_normal().string();}
+)STRUT_FS_PATH";
+    if(fs.list)o << R"STRUT_FS_LIST(
+inline std::vector<strut_string> strut_fs_ls(const strut_string& p){std::error_code ec;std::vector<strut_string> out;for(std::filesystem::directory_iterator it(strut_fs_path(p),ec),end;!ec&&it!=end;it.increment(ec))out.emplace_back(it->path().filename().string());strut_fs_fail("ls",ec);std::sort(out.begin(),out.end());return out;}
+inline std::vector<strut_string> strut_fs_walk(const strut_string& p){std::error_code ec;std::vector<strut_string> out;auto root=strut_fs_path(p);for(std::filesystem::recursive_directory_iterator it(root,ec),end;!ec&&it!=end;it.increment(ec))out.emplace_back(it->path().lexically_relative(root).generic_string());strut_fs_fail("walk",ec);std::sort(out.begin(),out.end());return out;}
+)STRUT_FS_LIST";
+    if(fs.io)o << R"STRUT_FS_IO(
 inline strut_string strut_fs_read_file(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_file: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_file: unable to determine file size");std::string out(static_cast<std::size_t>(end),'\0');f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(out.data(),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_file: short read");return strut_string(std::move(out));}
 inline std::vector<std::uint8_t> strut_fs_read_bytes(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_bytes: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_bytes: unable to determine file size");std::vector<std::uint8_t> out(static_cast<std::size_t>(end));f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_bytes: short read");return out;}
 inline void strut_fs_write_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
 inline void strut_fs_write_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
 inline void strut_fs_append_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
 inline void strut_fs_append_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
-)STRUT_FS";
+)STRUT_FS_IO";
+    if(fs.mutate)o << R"STRUT_FS_MUT(
+inline void strut_fs_make_dir(const strut_string& p){std::error_code ec;std::filesystem::create_directories(strut_fs_path(p),ec);strut_fs_fail("make_dir",ec);}
+inline bool strut_fs_has_wildcards(const strut_string& p){return p.v.find('*')!=std::string::npos||p.v.find('?')!=std::string::npos;}
+inline bool strut_fs_wildcard_match(const std::string& pat,const std::string& text){std::size_t p=0,t=0,star=std::string::npos,mark=0;while(t<text.size()){if(p<pat.size()&&(pat[p]=='?'||pat[p]==text[t])){++p;++t;}else if(p<pat.size()&&pat[p]=='*'){star=p++;mark=t;}else if(star!=std::string::npos){p=star+1;t=++mark;}else return false;}while(p<pat.size()&&pat[p]=='*')++p;return p==pat.size();}
+inline void strut_fs_glob_walk(const std::filesystem::path& cur,const std::vector<std::string>& parts,std::size_t i,std::vector<strut_string>& out){if(i==parts.size()){std::error_code ec;if(std::filesystem::exists(cur,ec)&&!ec)out.emplace_back(cur.string());return;}const auto& part=parts[i];if(part=="**"){strut_fs_glob_walk(cur,parts,i+1,out);std::error_code ec;for(std::filesystem::directory_iterator it(cur,ec),end;!ec&&it!=end;it.increment(ec))if(it->is_directory(ec)&&!ec)strut_fs_glob_walk(it->path(),parts,i,out);return;}if(part.find('*')==std::string::npos&&part.find('?')==std::string::npos){strut_fs_glob_walk(cur/part,parts,i+1,out);return;}std::error_code ec;for(std::filesystem::directory_iterator it(cur,ec),end;!ec&&it!=end;it.increment(ec))if(strut_fs_wildcard_match(part,it->path().filename().string()))strut_fs_glob_walk(it->path(),parts,i+1,out);}
+inline std::vector<strut_string> strut_fs_expand(const strut_string& pattern){if(!strut_fs_has_wildcards(pattern))return {pattern};std::filesystem::path p=pattern.v;std::filesystem::path root=p.is_absolute()?p.root_path():std::filesystem::current_path();std::vector<std::string> parts;auto rel=p.is_absolute()?p.relative_path():p;for(const auto& x:rel)parts.push_back(x.string());std::vector<strut_string> out;strut_fs_glob_walk(root,parts,0,out);std::sort(out.begin(),out.end(),[](const auto&a,const auto&b){return a.v<b.v;});return out;}
+inline std::vector<strut_string> strut_fs_expand_all(const std::vector<strut_string>& paths){std::vector<strut_string> out;for(const auto& p:paths){auto xs=strut_fs_expand(p);out.insert(out.end(),xs.begin(),xs.end());}return out;}
+inline void strut_fs_remove_exact(const strut_string& p){std::error_code ec;std::filesystem::remove(strut_fs_path(p),ec);strut_fs_fail("remove",ec);}inline void strut_fs_remove(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_exact(x);}inline void strut_fs_remove(const std::vector<strut_string>& ps){for(const auto& p:strut_fs_expand_all(ps))strut_fs_remove_exact(p);}
+inline void strut_fs_remove_all_exact(const strut_string& p){std::error_code ec;std::filesystem::remove_all(strut_fs_path(p),ec);strut_fs_fail("remove_all",ec);}inline void strut_fs_remove_all(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_all_exact(x);}inline void strut_fs_remove_all(const std::vector<strut_string>& ps){for(const auto& p:strut_fs_expand_all(ps))strut_fs_remove_all_exact(p);}
+inline void strut_fs_copy_exact(const strut_string&a,const strut_string&b){std::error_code ec;std::filesystem::copy(strut_fs_path(a),strut_fs_path(b),std::filesystem::copy_options::recursive|std::filesystem::copy_options::overwrite_existing,ec);strut_fs_fail("copy",ec);}inline void strut_fs_copy(const strut_string&a,const strut_string&b){if(!strut_fs_has_wildcards(a)){strut_fs_copy_exact(a,b);return;}auto ps=strut_fs_expand(a);if(ps.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: wildcard destination must be an existing directory");for(const auto&p:ps)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}inline void strut_fs_copy(const std::vector<strut_string>& ps,const strut_string&d0){auto d=strut_fs_path(d0);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: bulk destination must be an existing directory");auto xs=strut_fs_expand_all(ps);if(xs.empty()&&!ps.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");for(const auto&p:xs)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
+inline void strut_fs_move_exact(const strut_string&a,const strut_string&b){std::error_code ec;std::filesystem::rename(strut_fs_path(a),strut_fs_path(b),ec);strut_fs_fail("move",ec);}inline void strut_fs_move(const strut_string&a,const strut_string&b){if(!strut_fs_has_wildcards(a)){strut_fs_move_exact(a,b);return;}auto ps=strut_fs_expand(a);if(ps.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: wildcard destination must be an existing directory");for(const auto&p:ps)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}inline void strut_fs_move(const std::vector<strut_string>& ps,const strut_string&d0){auto d=strut_fs_path(d0);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: bulk destination must be an existing directory");auto xs=strut_fs_expand_all(ps);if(xs.empty()&&!ps.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");for(const auto&p:xs)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
+inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(p),std::ios::app|std::ios::binary);if(!f)throw strut_checked_error("FilesystemError","touch: unable to open path");}
+)STRUT_FS_MUT";
 }
 
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;if(program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;if(program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
