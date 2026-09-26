@@ -72,6 +72,33 @@ bool SemanticAnalyzer::compatible(const TypeInfo& from, const TypeInfo& to) cons
     return can_implicitly_convert(from, to);
 }
 
+void SemanticAnalyzer::require_module(SemanticResult& result, std::string_view module, SourceSpan span, std::string_view facility) const {
+    if (!enforce_standard_modules_ || standard_modules_.find(std::string(module)) != standard_modules_.end()) return;
+    result.diagnostics.push_back(Diagnostic{span, "'" + std::string(facility) + "' requires include <" + std::string(module) + ">;"});
+}
+
+void SemanticAnalyzer::require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const {
+    const std::string t(type_name);
+    auto first_arg=[](const std::string& value,std::string_view head){if(value.rfind(std::string(head),0)!=0||value.back()!='>')return std::string();auto inner=value.substr(head.size(),value.size()-head.size()-1);int depth=0;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0)return inner.substr(0,i);}return inner;};
+    auto key_supported=[&](std::string key){if(key.rfind("const ",0)==0)key=key.substr(6);auto b=builtin_type(key);if(b.valid()&&b.kind!=TypeKind::void_type&&b.kind!=TypeKind::json_type)return true;if(enum_members_.find(key)!=enum_members_.end())return true;if(key.rfind("ptr<",0)==0||key.rfind("raw_ptr<",0)==0)return true;return false;};
+    if (t.find("[]") != std::string::npos || t.find("vector<") != std::string::npos) require_module(result, "vector", span, type_name);
+    if (t.find("ordered_map<") != std::string::npos) require_module(result, "ordered_map", span, type_name);
+    else if (t.find("map<") != std::string::npos) require_module(result, "map", span, type_name);
+    if (t.find("ordered_set<") != std::string::npos) require_module(result, "ordered_set", span, type_name);
+    else if (t.find("set<") != std::string::npos) require_module(result, "set", span, type_name);
+    if (t.rfind("queue<",0) == 0 || t.find("<queue<") != std::string::npos || t.find(",queue<") != std::string::npos) require_module(result, "queue", span, type_name);
+    if (t.find("stack<") != std::string::npos) require_module(result, "stack", span, type_name);
+    if (t.find("deque<") != std::string::npos) require_module(result, "deque", span, type_name);
+    if (t.find("list<") != std::string::npos) require_module(result, "list", span, type_name);
+    if (t.find("prique<") != std::string::npos) result.diagnostics.push_back(Diagnostic{span, "'prique' was renamed to 'priority_queue'; use priority_queue<T> or priority_queue<T,min>"});
+    if (t.find("priority_queue<") != std::string::npos) require_module(result, "priority_queue", span, type_name);
+    if (t.find("tuple<") != std::string::npos) require_module(result, "tuple", span, type_name);
+    if(t.rfind("map<",0)==0){auto key=first_arg(t,"map<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"map key type '"+key+"' is not hashable; use a built-in/hashable key or ordered_map"});}
+    if(t.rfind("set<",0)==0){auto key=first_arg(t,"set<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"set element type '"+key+"' is not hashable; use a built-in/hashable element or ordered_set"});}
+    if(t.rfind("ordered_map<",0)==0){auto key=first_arg(t,"ordered_map<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"ordered_map key type '"+key+"' is not orderable by the standard library"});}
+    if(t.rfind("ordered_set<",0)==0){auto key=first_arg(t,"ordered_set<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"ordered_set element type '"+key+"' is not orderable by the standard library"});}
+}
+
 TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& expr) {
     switch (expr.kind) {
         case Expr::Kind::integer_literal: return infer_integer_literal(expr.text);
@@ -84,6 +111,12 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             auto first=infer_expression(result,*expr.arguments.front());
             for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i]);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch"});}
             return {TypeKind::named,0,(first.name.empty()?std::string("opaque"):first.name)+"[]"};
+        }
+        case Expr::Kind::tuple_literal: {
+            require_module(result, "tuple", expr.span, "tuple literal");
+            std::string name="tuple<";
+            for(std::size_t i=0;i<expr.arguments.size();++i){if(i)name+=",";auto t=infer_expression(result,*expr.arguments[i]);name+=t.name.empty()?"opaque":t.name;}
+            name+=">"; return {TypeKind::named,0,name};
         }
         case Expr::Kind::map_literal: {
             if(expr.arguments.size()<2)return {TypeKind::named,0,"map<opaque,opaque>"};
@@ -117,7 +150,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
             if(expr.text=="await"){auto inner=generic_inner(operand.name,"future<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.span,"await requires a future<T>"});return resolve_type(inner.empty()?"opaque":inner);}
-            if(expr.text=="*"){if(operand.name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw_ptr<T> dereference requires unsafe block"});for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
+            if(expr.text=="*"){if(operand.name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> dereference requires unsafe block"});for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
             auto oit=operator_returns_.find("prefix:"+expr.text+"|"+operand.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
             return operand;
         }
@@ -144,7 +177,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {};
         }
         case Expr::Kind::call: {
-            for (const auto& arg : expr.arguments) infer_expression(result, *arg);
+            for (const auto& arg : expr.arguments) { if(arg && arg->kind==Expr::Kind::array_literal) require_module(result,"vector",arg->span,"array/vector argument"); infer_expression(result, *arg); }
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
@@ -168,18 +201,29 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(base.name=="sqlite_db"){if(m=="query")return builtin_type("json");if(m=="exec"||m=="close"||m=="transaction")return {TypeKind::void_type,0,"void"};}
                 if(base.name=="mutex"&&(m=="lock"||m=="unlock"))return {TypeKind::void_type,0,"void"};
                 if(base.name.rfind("channel<",0)==0){auto elem=generic_inner(base.name,"channel<");if(m=="send"||m=="close")return {TypeKind::void_type,0,"void"};if(m=="receive")return {TypeKind::named,0,elem+"?"};if(m=="closed")return builtin_type("bool");}
-                std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort")return {TypeKind::void_type,0,"void"};}
+                auto container_elem=[&](std::string_view head){return generic_inner(base.name,head);};
+                if(base.name.rfind("set<",0)==0||base.name.rfind("ordered_set<",0)==0){auto elem=base.name.rfind("ordered_set<",0)==0?container_elem("ordered_set<"):container_elem("set<");if(m=="add"||m=="remove")return {TypeKind::void_type,0,"void"};if(m=="contains")return builtin_type("bool");if(m=="length")return builtin_type("int");}
+                if(base.name.rfind("queue<",0)==0){auto elem=container_elem("queue<");if(m=="push"||m=="pop")return {TypeKind::void_type,0,"void"};if(m=="front"||m=="back")return resolve_type(elem);if(m=="length")return builtin_type("int");if(m=="empty")return builtin_type("bool");}
+                if(base.name.rfind("stack<",0)==0){auto elem=container_elem("stack<");if(m=="push"||m=="pop")return {TypeKind::void_type,0,"void"};if(m=="top")return resolve_type(elem);if(m=="length")return builtin_type("int");if(m=="empty")return builtin_type("bool");}
+                if(base.name.rfind("priority_queue<",0)==0){auto elem=container_elem("priority_queue<");auto comma=elem.find(',');if(comma!=std::string::npos)elem=elem.substr(0,comma);if(m=="push"||m=="pop")return {TypeKind::void_type,0,"void"};if(m=="top")return resolve_type(elem);if(m=="length")return builtin_type("int");if(m=="empty")return builtin_type("bool");}
+                if(base.name.rfind("deque<",0)==0||base.name.rfind("list<",0)==0){auto elem=base.name.rfind("deque<",0)==0?container_elem("deque<"):container_elem("list<");if(m=="push"||m=="pop"||m=="push_front"||m=="pop_front")return {TypeKind::void_type,0,"void"};if(m=="front"||m=="back")return resolve_type(elem);if(m=="length")return builtin_type("int");if(m=="empty")return builtin_type("bool");}
+                if(base.name.rfind("map<",0)==0||base.name.rfind("ordered_map<",0)==0){if(m=="contains")return builtin_type("bool");if(m=="length")return builtin_type("int");if(m=="remove"||m=="insert")return {TypeKind::void_type,0,"void"};}
+                if(m=="count_by"||m=="index_by") require_module(result,"map",expr.span,m);
+                std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort"||m=="reserve")return {TypeKind::void_type,0,"void"};}
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
                 if(name=="ptr"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ptr(...) requires exactly one argument"});return {};}auto t=infer_expression(result,*expr.arguments[0]);return {TypeKind::named,0,"ptr<"+t.name+">"};}
-                if(name=="raw"){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires unsafe block"});if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires exactly one ptr<T>"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"raw(...) currently requires ptr<T>"});return {TypeKind::named,0,"raw_ptr<"+inner+">"};}
-                if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one ptr<T>"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires ptr<T>"});return {TypeKind::named,0,"weak_ptr<"+inner+">"};}
-                if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});if(a.kind==Expr::Kind::index&&a.left){auto owner=infer_expression(result,*a.left);if(owner.name.size()>2&&owner.name.compare(owner.name.size()-2,2,"[]")==0)result.diagnostics.push_back(Diagnostic{a.span,"ref<T> cannot borrow a dynamic-array element because later mutation could invalidate the reference"});}auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
+                if(name=="raw"){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires unsafe block"});if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"raw(...) currently requires a T* safe pointer"});return {TypeKind::named,0,"raw_ptr<"+inner+">"};}
+                if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires a T* safe pointer"});return {TypeKind::named,0,"weak_ptr<"+inner+">"};}
+                if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});if(a.kind==Expr::Kind::index&&a.left){auto owner=infer_expression(result,*a.left);if(owner.name.size()>2&&owner.name.compare(owner.name.size()-2,2,"[]")==0)result.diagnostics.push_back(Diagnostic{a.span,"T& cannot borrow a dynamic-array element because later mutation could invalidate the reference"});}auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
                 if (name == "print") return {TypeKind::void_type, 0, "void"};
                 if (name == "input") return expr.arguments.empty()?builtin_type("string"):TypeInfo{TypeKind::void_type,0,"void"};
                 if (name == "istream" || name == "ostream" || name == "sstream" || name == "ifstream" || name == "ofstream") return {TypeKind::named,0,name};
-                if (name == "exists") return builtin_type("bool");
-                if (name == "ls") return {TypeKind::named,0,"string[]"};
+                if (name == "exists" || name == "is_file" || name == "is_dir") { require_module(result, "filesystem", expr.span, name); return builtin_type("bool"); }
+                if (name == "ls" || name == "walk") { require_module(result, "filesystem", expr.span, name); require_module(result, "vector", expr.span, name + std::string(" result")); return {TypeKind::named,0,"string[]"}; }
+                if (name == "file_size" || name == "modified") { require_module(result, "filesystem", expr.span, name); return builtin_type("int_64"); }
+                if (name == "cwd" || name == "absolute" || name == "canonical" || name == "parent" || name == "filename" || name == "extension" || name == "stem" || name == "join_path" || name == "read_file") { require_module(result, "filesystem", expr.span, name); return builtin_type("string"); }
+                if (name == "read_bytes") { require_module(result, "filesystem", expr.span, name); return {TypeKind::named,0,"bytes"}; }
                 if (name == "env") return {TypeKind::named,0,"string?"};
                 if (name == "exec" || name == "exec_shell" || name == "pipe_exec") return {TypeKind::named,0,"exec_result"};
                 if (name == "process") return {TypeKind::named,0,"process"};
@@ -196,9 +240,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "embed_dir") return {TypeKind::named,0,"map<string,string>"};
                 if (name == "http_get_json") return builtin_type("json");
                 if (name == "http_get_async" || name == "http_request_async") return {TypeKind::named,0,"future<http_response>"};
-                if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(t.name.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"ref<T> cannot be passed directly across a thread boundary; use ptr<T> or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
+                if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(t.name.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"T& cannot be passed directly across a thread boundary; use T* or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
-                if (name == "make_dir" || name == "remove" || name == "copy" || name == "move" || name == "touch" || name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
+                if (name == "make_dir" || name == "remove" || name == "remove_all" || name == "copy" || name == "move" || name == "touch" || name == "cd" || name == "write_file" || name == "append_file") { require_module(result, "filesystem", expr.span, name); return {TypeKind::void_type,0,"void"}; }
+                if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value)) { if(value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name)); if(value->type_name=="async_function") return {TypeKind::named,0,"future<opaque>"}; }
             }
@@ -216,7 +261,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if (is_nullable_type(base.name)) { result.diagnostics.push_back(Diagnostic{expr.span,"cannot access member of nullable value without ?. or null check"}); return {}; }
             const bool arrow=expr.text.rfind("->",0)==0;
             const std::string member=arrow?expr.text.substr(2):expr.text;
-            if(arrow){if(base.name.rfind("raw_ptr<",0)!=0)result.diagnostics.push_back(Diagnostic{expr.span,"-> member access requires raw_ptr<T>"});if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw_ptr<T> member access requires unsafe block"});}
+            if(arrow){const bool raw=base.name.rfind("raw_ptr<",0)==0;const bool safe=base.name.rfind("ptr<",0)==0;if(!raw&&!safe)result.diagnostics.push_back(Diagnostic{expr.span,"-> member access requires T* or unsafe ptr<T>"});if(raw&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> member access requires unsafe block"});}
             std::string owner=base.name;for(auto head:{std::string_view("ref<"),std::string_view("ptr<"),std::string_view("raw_ptr<")}){auto inner=generic_inner(owner,head);if(!inner.empty()){owner=inner;break;}}if(owner.rfind("const ",0)==0)owner=owner.substr(6);auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end())return resolve_type(f->second);}
             return {TypeKind::named,0,"opaque"};
         }
@@ -226,7 +271,18 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             auto sit=struct_fields_.find(strip_nullable(base.name));if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end()){auto t=resolved_type_name(f->second);return {TypeKind::named,0,is_nullable_type(t)?t:t+"?"};}}
             return {TypeKind::named,0,"opaque?"};
         }
-        case Expr::Kind::index: return {TypeKind::named, 0, "opaque"};
+        case Expr::Kind::index: {
+            auto base=infer_expression(result,*expr.left);
+            if(base.name.rfind("tuple<",0)==0 && base.name.back()=='>'){
+                if(expr.right->kind!=Expr::Kind::integer_literal){result.diagnostics.push_back(Diagnostic{expr.right->span,"tuple index must be an integer literal"});return {};}
+                std::size_t idx=0;try{idx=static_cast<std::size_t>(std::stoull(expr.right->text));}catch(...){return {};}
+                auto inner=base.name.substr(6,base.name.size()-7);std::vector<std::string> parts;int depth=0;std::size_t start=0;
+                for(std::size_t i=0;i<=inner.size();++i){char c=i<inner.size()?inner[i]:',';if(c=='<')++depth;else if(c=='>')--depth;else if(c==','&&depth==0){parts.push_back(inner.substr(start,i-start));start=i+1;}}
+                if(idx>=parts.size()){result.diagnostics.push_back(Diagnostic{expr.right->span,"tuple index out of range"});return {};}
+                return resolve_type(parts[idx]);
+            }
+            return {TypeKind::named, 0, "opaque"};
+        }
     }
     return {};
 }
@@ -238,6 +294,11 @@ void SemanticAnalyzer::analyze_statements(SemanticResult& result, const std::vec
 }
 
 void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st) {
+    if (st.declared_type) require_type_module(result, st.declared_type->name, st.declared_type->span);
+    if (st.alias_target) require_type_module(result, st.alias_target->name, st.alias_target->span);
+    if (st.return_type) require_type_module(result, st.return_type->name, st.return_type->span);
+    for (const auto& p : st.parameters) require_type_module(result, p.type.name, p.type.span);
+    for (const auto& f : st.fields) require_type_module(result, f.type.name, f.type.span);
     switch (st.kind) {
         case Stmt::Kind::declaration: {
             TypeInfo value_type = st.value ? infer_expression(result, *st.value) : TypeInfo{};
@@ -260,15 +321,25 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                         result.diagnostics.push_back(Diagnostic{st.value->span, "integer literal does not fit " + st.declared_type->name});
                     }
                 }
-                if (!literal_integer_ok && destination.valid() && value_type.valid() && !compatible(value_type, destination)) {
+                bool reference_bind_ok = false;
+                if (st.value && destination.name.rfind("ref<",0)==0) {
+                    const auto inner = generic_inner(destination.name,"ref<");
+                    const auto target = resolve_type(inner.rfind("const ",0)==0 ? inner.substr(6) : inner);
+                    const bool lvalue = st.value->kind==Expr::Kind::identifier || st.value->kind==Expr::Kind::member || st.value->kind==Expr::Kind::index || (st.value->kind==Expr::Kind::unary && st.value->text=="*");
+                    const bool existing_ref = value_type.name.rfind("ref<",0)==0;
+                    reference_bind_ok = (lvalue && compatible(value_type,target)) || (existing_ref && compatible(value_type,destination));
+                    if(!lvalue && !existing_ref) result.diagnostics.push_back(Diagnostic{st.value->span,"T& requires an lvalue with a lifetime that outlives the reference"});
+                }
+                if (!literal_integer_ok && !reference_bind_ok && destination.valid() && value_type.valid() && !compatible(value_type, destination)) {
                     const auto init_key="infix::=|"+normalize_operator_type(resolved_type_name(st.declared_type->name))+","+normalize_operator_type(value_type.name);
                     if(operator_returns_.find(init_key)==operator_returns_.end()) result.diagnostics.push_back(Diagnostic{st.value->span, "cannot initialize '" + st.name + "' of type " + st.declared_type->name + " from incompatible value"});
                 }
             } else {
                 if (!value_type.valid()) result.diagnostics.push_back(Diagnostic{st.span, "cannot infer type of '" + st.name + "'"});
                 type_name = value_type.name.empty() ? "opaque" : std::string(value_type.name);
+                require_type_module(result, type_name, st.span);
             }
-            if(type_name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"raw_ptr<T> values may only be created inside unsafe blocks"});
+            if(type_name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"ptr<T> values may only be created inside unsafe blocks"});
             declare(result, Symbol{st.name, SymbolNamespace::value, st.span, st.is_const, type_name});
             break;
         }
@@ -285,7 +356,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 auto* target = lookup(st.name, SymbolNamespace::value);
                 if (!target) { result.diagnostics.push_back(Diagnostic{st.span, "assignment to unknown value '" + st.name + "'"}); break; }
                 if (target->is_const) result.diagnostics.push_back(Diagnostic{st.span, "cannot assign to const value '" + st.name + "'"});
-                if (target->type_name.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"ref<T> bindings cannot be reassigned"});
+                if (target->type_name.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"T& bindings cannot be reassigned"});
                 lhs=resolve_type(target->type_name);
             }
             if (st.value) { auto rhs=infer_expression(result,*st.value); if(rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key="infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
@@ -304,16 +375,16 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             int data_bases=0;
             for(const auto& base:st.bases){auto b=struct_fields_.find(base);if(b==struct_fields_.end()&&abstract_methods_.find(base)==abstract_methods_.end()){result.diagnostics.push_back(Diagnostic{st.span,"unknown base struct '"+base+"'"});continue;}if(b!=struct_fields_.end()&&!b->second.empty()){++data_bases;for(const auto& f:b->second)fields.emplace(f.first,f.second);}}
             if(data_bases>1)result.diagnostics.push_back(Diagnostic{st.span,"multiple data-bearing base structs are not supported; use one concrete base plus contracts"});
-            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else {auto ft=resolved_type_name(field.type.name);if(ft.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{field.span,"ref<T> struct fields require lifetime proof and are not yet allowed"});fields[field.name]=ft;}}
+            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else {auto ft=resolved_type_name(field.type.name);if(ft.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{field.span,"T& struct fields require lifetime proof and are not yet allowed"});fields[field.name]=ft;}}
             std::unordered_set<std::string> own_methods; for(const auto& method:st.body)if(!own_methods.insert(method->name).second)result.diagnostics.push_back(Diagnostic{method->span,"duplicate/conflicting method declaration '"+method->name+"' in struct "+st.name});
-            for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:fields)declare(result,Symbol{field.first,SymbolNamespace::value,method->span,false,resolved_type_name(field.second)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,false,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
+            for(const auto& method:st.body){push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:fields)declare(result,Symbol{field.first,SymbolNamespace::value,method->span,false,resolved_type_name(field.second)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,param.type.is_const,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
             break;
         }
         case Stmt::Kind::operator_decl: {
             std::string signature;for(std::size_t i=0;i<st.parameters.size();++i){if(i)signature+=",";signature+=normalize_operator_type(resolved_type_name(st.parameters[i].type.name));}
             const std::string fixity=st.parameters.size()==1?"prefix":"infix";const std::string key=fixity+":"+st.op;
             auto& seen=operator_signatures_[key];if(!seen.insert(signature).second)result.diagnostics.push_back(Diagnostic{st.span,"ambiguous duplicate operator overload for '"+st.op+"' with signature ("+signature+")"});
-            if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,false,resolved_type_name(p.type.name)});if(st.value)infer_expression(result,*st.value);else analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
+            if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,p.type.is_const,resolved_type_name(p.type.name)});if(st.value)infer_expression(result,*st.value);else analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
             break;
         }
         case Stmt::Kind::function_decl: {
@@ -322,7 +393,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 const auto previous_return=current_function_return_type_; const auto previous_errors=current_function_errors_; current_function_return_type_=st.return_type?st.return_type->name:"void"; current_function_errors_.clear();for(const auto& e:st.error_types)current_function_errors_.insert(resolved_type_name(e.name));
                 push_scope();
                 if(!st.owner.empty()){declare(result,Symbol{"this",SymbolNamespace::value,st.span,true,st.owner});auto fit=struct_fields_.find(st.owner);if(fit!=struct_fields_.end())for(const auto& f:fit->second)declare(result,Symbol{f.first,SymbolNamespace::value,st.span,false,f.second});}
-                for (const auto& p : st.parameters) declare(result, Symbol{p.name, SymbolNamespace::value, p.span, false, resolved_type_name(p.type.name)});
+                for (const auto& p : st.parameters) declare(result, Symbol{p.name, SymbolNamespace::value, p.span, p.type.is_const, resolved_type_name(p.type.name)});
                 analyze_statements(result, st.body, false);
                 pop_scope(); current_function_return_type_=previous_return; current_function_errors_=previous_errors;
             }
@@ -375,7 +446,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                         safe_escape = symbol->type_name.rfind("ref<",0)==0 && compatible(resolve_type(symbol->type_name), resolve_type(current_function_return_type_));
                     }
                 }
-                if(!safe_escape) result.diagnostics.push_back(Diagnostic{st.span,"returning ref<T> is only permitted when returning an existing compatible ref<T> binding"});
+                if(!safe_escape) result.diagnostics.push_back(Diagnostic{st.span,"returning T& is only permitted when returning an existing compatible T& binding"});
             }
             (void)returned;
         } break;
@@ -410,15 +481,15 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0;
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
     named_types_.insert("http_request"); named_types_.insert("http_server_response"); named_types_.insert("http_server"); named_types_.insert("SqliteError"); named_types_.insert("sqlite_db"); named_types_.insert("EmbedError"); named_types_.insert("FilesystemError"); named_types_.insert("StreamError"); named_types_.insert("EnvironmentError"); named_types_.insert("TimeError"); named_types_.insert("ExecError"); named_types_.insert("exec_result"); named_types_.insert("process"); named_types_.insert("thread"); named_types_.insert("ThreadError"); named_types_.insert("process_in"); named_types_.insert("process_out"); named_types_.insert("mutex"); named_types_.insert("MutexError"); named_types_.insert("NetworkError"); named_types_.insert("tcp_socket"); named_types_.insert("tcp_listener"); named_types_.insert("TlsError"); named_types_.insert("tls_stream"); named_types_.insert("HttpError"); named_types_.insert("http_response");
     struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     struct_fields_["http_response"]={{"status","int"},{"body","string"},{"headers","map<string,string>"}};
     struct_fields_["http_request"]={{"method","string"},{"path","string"},{"body","string"},{"headers","map<string,string>"},{"query","map<string,string>"},{"params","map<string,string>"}};
     struct_fields_["http_server_response"]={{"status","int"},{"body","string"},{"content_type","string"},{"headers","map<string,string>"}};
     struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
-    for(const auto& t:{std::string("istream"),std::string("ostream"),std::string("sstream"),std::string("ifstream"),std::string("ofstream")})named_types_.insert(t);
-    for(const auto& name:{std::string("exists"),std::string("make_dir"),std::string("remove"),std::string("copy"),std::string("move"),std::string("touch"),std::string("ls")})function_errors_[name].insert("FilesystemError");
+    for(const auto& t:{std::string("istream"),std::string("ostream"),std::string("sstream"),std::string("ifstream"),std::string("ofstream"),std::string("bytes")})named_types_.insert(t);
+    for(const auto& name:{std::string("exists"),std::string("is_file"),std::string("is_dir"),std::string("file_size"),std::string("modified"),std::string("make_dir"),std::string("remove"),std::string("remove_all"),std::string("copy"),std::string("move"),std::string("touch"),std::string("ls"),std::string("walk"),std::string("cwd"),std::string("cd"),std::string("absolute"),std::string("canonical"),std::string("read_file"),std::string("read_bytes"),std::string("write_file"),std::string("append_file")})function_errors_[name].insert("FilesystemError");
     for(const auto& name:{std::string("set_env"),std::string("unset_env")})function_errors_[name].insert("EnvironmentError");
     function_errors_["sleep_ms"].insert("TimeError");
     function_errors_["http_get"].insert("HttpError"); function_errors_["http_request"].insert("HttpError"); function_errors_["http_get_json"].insert("HttpError"); function_errors_["http_get_async"].insert("HttpError"); function_errors_["http_request_async"].insert("HttpError");

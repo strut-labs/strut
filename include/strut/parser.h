@@ -27,6 +27,7 @@ private:
     const Token& advance();
     bool check(std::string_view lexeme) const;
     bool match(std::string_view lexeme);
+    bool match_type_close();
     void error(ParseResult& result, const Token& token, std::string message);
     void synchronize();
 
@@ -59,6 +60,7 @@ private:
 
     const std::vector<Token>& tokens_;
     std::size_t current_ = 0;
+    std::size_t pending_type_closers_ = 0;
 };
 
 } // namespace strut

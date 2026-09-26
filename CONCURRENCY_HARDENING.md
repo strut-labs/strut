@@ -8,7 +8,7 @@ Strut's safe concurrency surface currently consists of native `thread`, shared `
 - `channel<T>` serializes queue state, wakes blocked receivers on send/close, rejects sends after close, and returns an empty optional after a closed channel drains.
 - executor queue state is mutex-protected; shutdown drains already queued work before worker threads join.
 - exceptions in native worker threads are captured and rethrown at `join()`; async exceptions are rethrown by `await`.
-- direct `ref<T>` values cannot cross a native thread boundary. Owning values must be used when lifetime extends across the boundary.
+- direct `T&` values cannot cross a native thread boundary. Owning values must be used when lifetime extends across the boundary.
 
 ## Cancellation
 

@@ -93,3 +93,23 @@ The compiler/runtime bootstrap targets portable C++20 because of the pre-approve
 ## Approved third-party foundations
 
 Only JSONIC, libcurl, and OpenSSL are pre-approved for vendoring/embedding in Strut itself. Prefer the standard library, operating-system APIs, and Strut-owned code otherwise; any additional embedded third-party dependency must be approved first. SQLite may be consumed as an external/system library by the official package without being vendored into the compiler/runtime.
+
+## Performance/profiling workflow
+
+The compiler supports `--timings` for coarse frontend/native-backend phase timing and `--emit-cpp <path>` to emit the bootstrap C++ without invoking the native compiler. The sibling `strut-benchmarks` repository contains reproducible compile, incremental-build, perf, assembly and runtime comparison tooling. Preserve raw before/after results when optimising.
+
+## Standard-library collections/filesystem pass (CP1-CP10)
+
+- Standard modules added: `vector`, `deque`, `list`, `map`, `set`, `ordered_map`, `ordered_set`, `queue`, `stack`, `priority_queue`, `filesystem` via `include <name>;`.
+- CLI compilation enforces explicit standard-module includes. Direct internal parser/sema unit construction remains compatibility-friendly for existing tests.
+- `map<K,V>` now lowers to `std::unordered_map`; `set<T>` to `std::unordered_set`; ordered variants lower to `std::map`/`std::set`.
+- `vector<T>` is a named spelling; `T[]` remains shorthand.
+- Queue/stack/priority queue (`priority_queue`) native mappings and basic methods are supported.
+- Minimal codegen is feature-granular for numeric collection programs and emits only the corresponding STL headers.
+- Filesystem calls require `<filesystem>` in CLI compilation.
+- Bulk `copy(vector,dest)`, `move(vector,dest)`, and `remove(vector)` are implemented. Bulk copy/move require an existing destination directory.
+- Rich CLI diagnostics now include an ANSI syntax-highlighted source line plus caret/range.
+- See `STANDARD_LIBRARY.md` for current public semantics.
+
+- CP11-20: added deque/list, renamed prique to priority_queue with `priority_queue<T,min>`, safe remove/remove_all split, filesystem predicates/metadata/traversal/path/cwd APIs, optimized whole-file text/bytes reads and writes, and optimized compiler source loading.
+- CP21-32 pass: added first-class `tuple<T...>` / `(x,...)` literals including `(x,)`, compile-time tuple indexing, `include <tuple>`, wildcard filesystem source operands (`*`, `?`, `**`), expanded stdlib regression/profiling tools, module/codegen size profiling, and LSP stdlib completion entries.

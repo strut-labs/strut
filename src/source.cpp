@@ -1,7 +1,6 @@
 #include "strut/source.h"
 
 #include <fstream>
-#include <sstream>
 
 namespace strut {
 
@@ -19,20 +18,23 @@ std::optional<SourceFile> SourceFile::load(const std::filesystem::path& path, st
         return std::nullopt;
     }
 
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) {
         error = "unable to open source file";
         return std::nullopt;
     }
-
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-    if (input.bad()) {
+    const auto end = input.tellg();
+    if (end < 0) {
+        error = "unable to determine source file size";
+        return std::nullopt;
+    }
+    std::string text(static_cast<std::size_t>(end), '\0');
+    input.seekg(0, std::ios::beg);
+    if (!text.empty() && !input.read(text.data(), static_cast<std::streamsize>(text.size()))) {
         error = "failed while reading source file";
         return std::nullopt;
     }
-
-    return SourceFile(path, buffer.str());
+    return SourceFile(path, std::move(text));
 }
 
 }

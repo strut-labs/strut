@@ -124,7 +124,7 @@ function add(int a, int b) -> int {
     return a + b;
 }
 
-function print_user(ref<const User> user) -> void {
+function print_user(User& const user) -> void {
     print(user.name);
     return;
 }
@@ -375,41 +375,41 @@ Strut has no tracing garbage collector.
 Normal safe owning pointers are reference-counted:
 
 ```strut
-ptr<User> a := ...;
-ptr<User> b := a; // increments ownership count
+User* a := ...;
+User* b := a; // increments ownership count
 ```
 
-When the last owning `ptr<T>` is released, the object is destroyed deterministically.
+When the last owning `T*` is released, the object is destroyed deterministically.
 
 Pointer/reference family:
 
 ```text
-ptr<T>             safe owning reference-counted pointer
-ptr<const T>       owning pointer to immutable T
-const ptr<T>       immutable pointer binding to mutable T
-const ptr<const T> immutable pointer binding to immutable T
+T*             safe owning reference-counted pointer
+T* const       owning pointer to immutable T
+const T*       immutable pointer binding to mutable T
+const T* const immutable pointer binding to immutable T
 
-ref<T>             safe non-owning non-null reference
-ref<const T>       safe non-owning non-null reference to immutable T
+T&             safe non-owning non-null reference
+T& const       safe non-owning non-null reference to immutable T
 
 weak_ptr<T>        safe non-owning weak pointer for breaking ownership cycles
 
-raw_ptr<T>         unmanaged raw pointer, only usable in unsafe contexts
+ptr<T>         unmanaged raw pointer, only usable in unsafe contexts
 ```
 
-Use `ref<T>` rather than C++ `T&` so constness and pointer/reference intent read clearly left-to-right.
+`T&` itself is non-rebindable by definition. `T& const` additionally prevents mutation of the referent through that reference.
 
-`ref<T>` itself is non-rebindable by definition. `ref<const T>` additionally prevents mutation of the referent through that reference.
-
-No alternate C/C++ declarator spellings such as `T *x`, `T* x`, `T &x`, etc. should exist. Strut should have one canonical type spelling.
+Use one canonical spelling in formatted Strut: keep `*`/`&` attached to the type (`T*`, `T&`) rather than accepting C/C++ declarator-style placement as distinct forms.
 
 Reference counting creates a cycle hazard. `weak_ptr<T>` is the explicit safe mechanism for back-references/non-owning links. Add diagnostics for obvious likely cycles where practical.
 
-`raw_ptr<T>` is for FFI, allocators, systems work, and users who explicitly choose unmanaged memory/performance trade-offs:
+Pointers compose recursively. Safe owning pointers may be nested (`T**`, `T***`, ...), and references to pointer bindings are valid (`T*&`). Const qualification may appear at each pointer/reference layer using the canonical Strut spelling. Pointers to references and references to references are rejected because references are aliases rather than independently addressable storage. Unsafe raw pointers compose with the generic raw-pointer spelling (`ptr<ptr<T>>`, `ptr<T*>`, etc.).
+
+`ptr<T>` is the explicit raw-pointer type for FFI, allocators, systems work, and users who choose unmanaged memory/performance trade-offs. The `ptr(value)` helper remains the current safe-pointer allocation helper; the angle-bracket type form is what denotes an unsafe raw pointer:
 
 ```strut
 unsafe {
-    raw_ptr<int> data := ...;
+    ptr<int> data := ...;
 }
 ```
 
@@ -589,7 +589,7 @@ operator +(Vector a, Vector b) -> Vector {
     ...
 }
 
-operator[T] <<(ref<ostream> os, ref<const T> value) -> ref<ostream> {
+operator[T] <<(ostream& os, T& const value) -> ostream& {
     ...
 }
 ```
@@ -610,9 +610,9 @@ operator[T]<(vector<T>, vector<T>) -> vector<T>> + :=
 
 The operator token occupies the name position. Visually repetitive cases such as overloading `:=` are acceptable if they follow the same grammar consistently.
 
-At minimum, overload useful language-defined arithmetic, comparison, stream/shift, indexing/call, dereference, assignment and initialization operators where doing so does not undermine static semantics. Prefix `*` remains the dereference operator for `ptr<T>` and is overloadable.
+At minimum, overload useful language-defined arithmetic, comparison, stream/shift, indexing/call, dereference, assignment and initialization operators where doing so does not undermine static semantics. Prefix `*` remains the dereference operator for `T*` and is overloadable.
 
-`=` may be overloaded for assignment to an existing value. `:=` may be overloaded for typed construction/initialization into new destination storage. The destination of `:=` is not an existing `ref<T>`; the compiler provides construction storage for the declared destination. Inferred `x := value` must not allow an overload to unpredictably choose an unrelated destination type.
+`=` may be overloaded for assignment to an existing value. `:=` may be overloaded for typed construction/initialization into new destination storage. The destination of `:=` is not an existing `T&`; the compiler provides construction storage for the declared destination. Inferred `x := value` must not allow an overload to unpredictably choose an unrelated destination type.
 
 Structural language syntax such as member access should remain reserved unless a compelling, well-specified use case justifies overloading it.
 
@@ -769,7 +769,7 @@ A major Strut goal is simple native deployment. Strut should be able to produce 
 Do not silently freeze these without explicit review:
 
 - final type-alias keyword/spelling;
-- exact allocation/construction syntax for `ptr<T>` objects;
+- exact allocation/construction syntax for `T*` objects;
 - exact safe-reference lifetime validation rules;
 - exact reference-cycle diagnostics and whether any compile-time cycle prevention is practical;
 - concrete-base versus abstract-contract multiple-inheritance rules;
@@ -796,19 +796,19 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 
 ## Reference-counted ownership baseline
 
-`ptr<T>` is the ordinary safe owning pointer and is reference counted. Copying a `ptr<T>` shares ownership, release decrements the count, and the object is destroyed deterministically when the last owner disappears. `ptr<T>` may be `null`; `ref<T>` is the non-null borrowing facility. The bootstrap C++20 backend currently maps this contract to `std::shared_ptr` while runtime optimisation remains open. There is no tracing garbage collector.
+`T*` is the ordinary safe owning pointer and is reference counted. Copying a `T*` shares ownership, release decrements the count, and the object is destroyed deterministically when the last owner disappears. `T*` may be `null`; `T&` is the non-null borrowing facility. The bootstrap C++20 backend currently maps this contract to `std::shared_ptr` while runtime optimisation remains open. There is no tracing garbage collector.
 
 ## Borrow baseline
 
-`ref<T>` is a safe non-owning non-null borrow. `ref<const T>` prevents mutation through the borrow, reference bindings cannot be reseated, and `ref(...)` requires an lvalue. The first lifetime validator is deliberately conservative: ref fields and ref returns are rejected until the compiler can prove those escapes safe. Passing `ref<T>` does not change a `ptr<T>` reference count.
+`T&` is a safe non-owning non-null borrow. `T& const` prevents mutation through the borrow, reference bindings cannot be reseated, and `ref(...)` requires an lvalue. The first lifetime validator is deliberately conservative: ref fields and ref returns are rejected until the compiler can prove those escapes safe. Passing `T&` does not change a `T*` reference count.
 
 ## Weak ownership baseline
 
-`weak_ptr<T>` is the non-owning counterpart to reference-counted `ptr<T>`. Construct it with `weak(ptr_value)`, use `.lock()` to obtain a safe `ptr<T>` when the object is still alive, and `.expired()` to query liveness. The compiler emits a non-fatal warning for obvious two-struct strong reference cycles and recommends a weak back-reference.
+`weak_ptr<T>` is the non-owning counterpart to reference-counted `T*`. Construct it with `weak(ptr_value)`, use `.lock()` to obtain a safe `T*` when the object is still alive, and `.expired()` to query liveness. The compiler emits a non-fatal warning for obvious two-struct strong reference cycles and recommends a weak back-reference.
 
 ## Unsafe/raw pointer baseline
 
-`raw_ptr<T>` is an unmanaged raw pointer and raw operations are restricted to `unsafe { ... }`. `raw(ptr_value)` exposes a non-owning raw address from a safe `ptr<T>` without changing ownership. Raw dereference and pointer arithmetic are only legal inside unsafe blocks. There is no automatic promotion from `raw_ptr<T>` back to owning `ptr<T>`; callers must not manufacture ownership from an unmanaged address. `weak_ptr<T>` must be upgraded with `.lock()` before converting to raw.
+`ptr<T>` is an unmanaged raw pointer and raw operations are restricted to `unsafe { ... }`. `raw(ptr_value)` exposes a non-owning raw address from a safe `T*` without changing ownership. Raw dereference and pointer arithmetic are only legal inside unsafe blocks. There is no automatic promotion from `ptr<T>` back to owning `T*`; callers must not manufacture ownership from an unmanaged address. `weak_ptr<T>` must be upgraded with `.lock()` before converting to raw.
 
 ### Native library selection
 

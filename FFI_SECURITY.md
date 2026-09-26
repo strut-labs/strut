@@ -3,10 +3,10 @@
 Strut's C ABI surface is intentionally explicit:
 
 ```strut
-extern "C" function c_read(raw_ptr<int> value) -> int;
+extern "C" function c_read(ptr<int> value) -> int;
 ```
 
-Calling an external C function requires `unsafe { ... }`. ABI-compatible primitives, `raw_ptr<T>` and plain-layout structs can cross the boundary. Safe owning `ptr<T>` and `ref<T>` are Strut runtime concepts and are not silently reinterpreted as C pointers; convert to `raw_ptr<T>` explicitly inside `unsafe` when necessary.
+Calling an external C function requires `unsafe { ... }`. ABI-compatible primitives, `ptr<T>` and plain-layout structs can cross the boundary. Safe owning `T*` and `T&` are Strut runtime concepts and are not silently reinterpreted as C pointers; convert to `ptr<T>` explicitly inside `unsafe` when necessary.
 
 The FFI torture fixture covers signed integers, `double_64`, structs by value, structs returned by value, const-style reads through raw pointers, mutation through raw pointers, and both static and dynamic native libraries.
 

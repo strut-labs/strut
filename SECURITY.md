@@ -2,13 +2,13 @@
 
 ## Safe-language boundary
 
-Safe Strut is intended to prevent dangling safe pointers/references, use-after-free, double free, unchecked null safe-pointer dereference, and lifetime errors covered by the safe ownership/reference model. `ptr<T>` is reference-counted ownership, `ref<T>` is non-owning/non-null borrowing with compiler lifetime restrictions, and `weak_ptr<T>` breaks shared-ownership cycles.
+Safe Strut is intended to prevent dangling safe pointers/references, use-after-free, double free, unchecked null safe-pointer dereference, and lifetime errors covered by the safe ownership/reference model. `T*` is reference-counted ownership, `T&` is non-owning/non-null borrowing with compiler lifetime restrictions, and `weak_ptr<T>` breaks shared-ownership cycles.
 
 These guarantees do not turn unsynchronised shared mutation into safe concurrent logic. Cross-thread mutation must use the documented synchronization primitives.
 
 ## `unsafe`, raw pointers and FFI
 
-`raw_ptr<T>` operations and C ABI calls cross an explicit `unsafe` boundary. Once code opts into unmanaged pointers or external native code, Strut cannot prove that the external code respects object lifetimes, bounds, thread safety, or ABI contracts. Keep unsafe regions small and wrap them behind safe APIs where possible.
+`ptr<T>` operations and C ABI calls cross an explicit `unsafe` boundary. Once code opts into unmanaged pointers or external native code, Strut cannot prove that the external code respects object lifetimes, bounds, thread safety, or ABI contracts. Keep unsafe regions small and wrap them behind safe APIs where possible.
 
 The approved embedded third-party dependencies are JSONIC, libcurl, and OpenSSL. No additional library should be vendored/embedded without explicit project approval. SQLite support may use the external/system SQLite library.
 
@@ -34,7 +34,7 @@ The built-in server is currently plain HTTP. OpenSSL is approved for future serv
 
 ## Concurrency
 
-Native threads, mutexes, channels and the async executor have stress fixtures. `ptr<T>` protects object lifetime, not arbitrary mutation. Non-owning `ref<T>` is rejected at direct thread boundaries where lifetime cannot be established safely. ThreadSanitizer should be part of CI where the runner/toolchain supports a working runtime; the current local Swift-Clang TSAN runtime is not usable because of its libdispatch linkage issue.
+Native threads, mutexes, channels and the async executor have stress fixtures. `T*` protects object lifetime, not arbitrary mutation. Non-owning `T&` is rejected at direct thread boundaries where lifetime cannot be established safely. ThreadSanitizer should be part of CI where the runner/toolchain supports a working runtime; the current local Swift-Clang TSAN runtime is not usable because of its libdispatch linkage issue.
 
 ## Native linking and processes
 

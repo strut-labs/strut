@@ -25,7 +25,7 @@ struct Expr;
 using ExprPtr = std::unique_ptr<Expr>;
 struct Expr {
     enum class Kind {
-        identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, json_object,
+        identifier, integer_literal, floating_literal, string_literal, boolean_literal, null_literal, array_literal, map_literal, tuple_literal, json_object,
         unary, binary, grouping, member, safe_member, index, postfix, call, struct_literal, lambda
     };
     Kind kind;
@@ -83,6 +83,10 @@ struct LambdaData {
     std::vector<StmtPtr> body;
 };
 
-struct Program { std::vector<StmtPtr> statements; };
+struct Program {
+    std::vector<StmtPtr> statements;
+    std::vector<std::string> standard_modules;
+    bool enforce_standard_modules = false;
+};
 
 } // namespace strut

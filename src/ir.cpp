@@ -21,6 +21,9 @@ std::string literal_type(const Expr& expr) {
             if (expr.arguments.empty()) return "opaque[]";
             return literal_type(*expr.arguments.front()) + "[]";
         }
+        case Expr::Kind::tuple_literal: {
+            std::string out="tuple<";for(std::size_t i=0;i<expr.arguments.size();++i){if(i)out+=",";out+=literal_type(*expr.arguments[i]);}return out+">";
+        }
         case Expr::Kind::map_literal: {
             if (expr.arguments.size() < 2) return "map<opaque,opaque>";
             return "map<" + literal_type(*expr.arguments[0]) + "," + literal_type(*expr.arguments[1]) + ">";
@@ -74,6 +77,7 @@ public:
         out->names = expr->names;
         if(expr->kind==Expr::Kind::lambda && expr->lambda){out->lambda_async=expr->lambda->is_async;out->lambda_parameters=expr->lambda->parameters;out->lambda_expression=expression(expr->lambda->expression_body.get());for(const auto& child:expr->lambda->body)out->lambda_body.push_back(statement(*child));}
         if (expr->kind == Expr::Kind::index && out->left && out->left->type_name == "json") out->type_name = "json";
+        if (expr->kind == Expr::Kind::index && out->left && out->left->type_name.rfind("tuple<",0)==0 && out->right && out->right->kind==IRExpr::Kind::integer_literal){auto inner=out->left->type_name.substr(6,out->left->type_name.size()-7);std::vector<std::string> parts;int depth=0;std::size_t start=0;for(std::size_t i=0;i<=inner.size();++i){char c=i<inner.size()?inner[i]:',';if(c=='<')++depth;else if(c=='>')--depth;else if(c==','&&depth==0){parts.push_back(inner.substr(start,i-start));start=i+1;}}try{auto idx=static_cast<std::size_t>(std::stoull(out->right->text));if(idx<parts.size())out->type_name=parts[idx];}catch(...){}}
         if (expr->kind == Expr::Kind::call && out->left && out->left->kind == IRExpr::Kind::member && out->left->left && out->left->left->kind == IRExpr::Kind::identifier && out->left->left->text == "json") {
             if (out->left->text == "parse" || out->left->text == "encode") out->type_name = "json";
             if (out->left->text == "stringify" || out->left->text == "pretty") out->type_name = "string";

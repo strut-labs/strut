@@ -43,12 +43,23 @@ bool begins_with_close(const std::string& line) {
 }
 
 std::string canonical_type_spacing(std::string line) {
-    static const std::regex pointer_open(R"(\b(ptr|ref|weak_ptr|raw_ptr)\s*<\s*)");
+    static const std::regex pointer_open(R"(\b(ptr|weak_ptr)\s*<\s*)");
     line = std::regex_replace(line, pointer_open, "$1<");
-    // Remove whitespace immediately inside generic closers for the canonical pointer/ref spellings.
-    static const std::regex pointer_body(R"(\b(ptr|ref|weak_ptr|raw_ptr)<([^>]*?)\s+>)");
+    // Remove whitespace immediately inside generic closers for the canonical pointer spellings.
+    static const std::regex pointer_body(R"(\b(ptr|weak_ptr)<([^>]*?)\s+>)");
     line = std::regex_replace(line, pointer_body, "$1<$2>");
-    return line;
+    static const std::regex stdlib_generic(R"(\b(vector|deque|list|map|set|ordered_map|ordered_set|queue|stack|priority_queue|tuple)\s*<\s*([^>]*)\s*>)");
+    std::smatch m;
+    std::string rest=line,out;
+    while(std::regex_search(rest,m,stdlib_generic)){
+        out+=m.prefix().str();
+        std::string body=m[2].str();
+        body=std::regex_replace(body,std::regex(R"(\s*,\s*)"),",");
+        while(!body.empty()&&std::isspace(static_cast<unsigned char>(body.back())))body.pop_back();
+        out+=m[1].str()+"<"+body+">";
+        rest=m.suffix().str();
+    }
+    return out+rest;
 }
 }
 

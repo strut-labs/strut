@@ -37,3 +37,10 @@ A released behaviour that is intentionally supported should gain a regression fi
 ## C ABI and FFI
 
 `extern "C"` follows the target platform C ABI. Strut guarantees its syntax and safety boundary, not binary compatibility between arbitrary C++ ABIs or incompatible third-party library versions.
+
+## Standard-library naming migration
+
+- `map<K,V>` is hash-based and does not promise iteration order. Use `ordered_map<K,V>` when sorted iteration / tree semantics are required.
+- `set<T>` is hash-based; use `ordered_set<T>` for sorted iteration.
+- The provisional `prique<T>` spelling has been removed. Use `priority_queue<T>` (max-first) or `priority_queue<T,min>` (min-first).
+- Standard-library and package modules use angle-bracket includes, e.g. `include <vector>;` and `include <sqlite>;`. Local source dependencies remain quoted, e.g. `include "mylib.h";`.

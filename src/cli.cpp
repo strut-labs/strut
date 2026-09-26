@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cstdlib>
+#include <chrono>
 
 #include "json.h"
 #include "strut/lexer.h"
@@ -57,7 +58,9 @@ void print_help(std::ostream& out) {
         << "  --static-lib <n>  Link one native library statically\n"
         << "  --dynamic-lib <n> Link one native library dynamically\n"
         << "  --lib-path <dir>  Add a native library search path\n"
-        << "  --verbose         Explain object rebuild/reuse decisions\n\n"
+        << "  --verbose         Explain object rebuild/reuse decisions\n"
+        << "  --timings         Print compiler phase timings\n"
+        << "  --emit-cpp <path> Emit generated C++ and stop before native compilation\n\n"
         << "Global options:\n"
         << "  -h, --help        Show help\n"
         << "  -v, --version     Show compiler version\n"
@@ -78,6 +81,8 @@ void print_command_help(std::string_view command, std::ostream& out) {
     else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout.\n";
     else print_help(out);
 }
+
+std::string rich_diagnostic(const std::filesystem::path& path, const Diagnostic& diagnostic, bool warning=false);
 
 std::string escaped_lexeme(std::string_view value) {
     std::string out;
@@ -105,7 +110,7 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     Lexer lexer(*source);
     auto result = lexer.lex();
     for (const auto& diagnostic : result.diagnostics) {
-        err << format_diagnostic(path.string(), diagnostic) << '\n';
+        err << rich_diagnostic(path, diagnostic) << '\n';
     }
     if (!result.ok()) return 1;
 
@@ -119,6 +124,21 @@ int dump_tokens(const std::filesystem::path& path, std::ostream& out, std::ostre
     }
     return 0;
 }
+
+std::string rich_diagnostic(const std::filesystem::path& path, const Diagnostic& diagnostic, bool warning) {
+    std::string load_error; auto source=SourceFile::load(path,load_error);
+    if(!source) return warning?format_warning(path.string(),diagnostic):format_diagnostic(path.string(),diagnostic);
+    return format_diagnostic_with_source(path.string(),source->text(),diagnostic,warning,true);
+}
+
+bool is_standard_module(std::string_view name) {
+    static const std::unordered_set<std::string> modules = {
+        "vector", "map", "set", "ordered_map", "ordered_set",
+        "queue", "stack", "deque", "list", "priority_queue", "tuple", "filesystem"
+    };
+    return modules.find(std::string(name)) != modules.end();
+}
+
 bool load_program_recursive(const std::filesystem::path& path, const std::filesystem::path& project_root, Program& combined, std::unordered_set<std::string>& loaded,
                             std::unordered_set<std::string>& active, std::ostream& err, std::vector<std::filesystem::path>* dependencies = nullptr) {
     std::error_code ec;
@@ -130,14 +150,18 @@ bool load_program_recursive(const std::filesystem::path& path, const std::filesy
     std::string load_error; auto source = SourceFile::load(path, load_error);
     if (!source) { err << path.string() << ": error: " << load_error << '\n'; active.erase(key); return false; }
     Lexer lexer(*source); auto lexed=lexer.lex();
-    for(const auto& d:lexed.diagnostics) err << format_diagnostic(path.string(),d) << '\n';
+    for(const auto& d:lexed.diagnostics) err << rich_diagnostic(path,d) << '\n';
     if(!lexed.ok()){active.erase(key);return false;}
     Parser parser(lexed.tokens); auto parsed=parser.parse();
-    for(const auto& d:parsed.diagnostics) err << format_diagnostic(path.string(),d) << '\n';
+    for(const auto& d:parsed.diagnostics) err << rich_diagnostic(path,d) << '\n';
     if(!parsed.ok()){active.erase(key);return false;}
     std::vector<StmtPtr> own;
     for (auto& st : parsed.program.statements) {
         if (st->kind == Stmt::Kind::include_stmt) {
+            if (st->include_is_package && is_standard_module(st->name)) {
+                if (std::find(combined.standard_modules.begin(), combined.standard_modules.end(), st->name) == combined.standard_modules.end()) combined.standard_modules.push_back(st->name);
+                continue;
+            }
             if (st->include_is_package) {
                 const auto slash = st->name.find('/'); const std::string package_name = st->name.substr(0, slash);
                 PackageManifest project; std::string package_error;
@@ -162,14 +186,15 @@ bool load_program(const std::filesystem::path& path, Program& combined, std::ost
     std::unordered_set<std::string> loaded, active;
     std::filesystem::path root = path.parent_path().empty() ? std::filesystem::current_path() : std::filesystem::absolute(path.parent_path());
     for (auto probe = root; !probe.empty(); probe = probe.parent_path()) { if (std::filesystem::exists(probe / "strut.json")) { root = probe; break; } if (probe == probe.root_path()) break; }
+    combined.enforce_standard_modules = true;
     return load_program_recursive(path, root, combined, loaded, active, err, dependencies);
 }
 
 int check_source(const std::filesystem::path& path, std::ostream& out, std::ostream& err) {
     (void)out; Program program; if(!load_program(path,program,err)) return 1;
     SemanticAnalyzer sema; auto checked=sema.analyze(program);
-    for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
-    for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
+    for(const auto& d:checked.diagnostics) err<<rich_diagnostic(path,d)<<'\n';
+    for(const auto& w:checked.warnings) err<<rich_diagnostic(path,w,true)<<'\n';
     return checked.ok()?0:1;
 }
 
@@ -178,16 +203,23 @@ void collect_embed_dependencies(const std::filesystem::path& source_path,std::ve
     for(std::sregex_iterator it(text.begin(),text.end(),pattern),end;it!=end;++it){std::filesystem::path p=(*it)[2].str();if(p.is_relative())p=std::filesystem::current_path()/p;std::error_code ec;if(std::filesystem::is_directory(p,ec)){for(const auto&e:std::filesystem::recursive_directory_iterator(p,ec)){if(ec)break;if(e.is_regular_file())dependencies.push_back(std::filesystem::absolute(e.path()));}}else dependencies.push_back(std::filesystem::absolute(p));}
 }
 
-int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& out, std::ostream& err, bool verbose) {
+int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& out, std::ostream& err, bool verbose, bool timings=false, const std::filesystem::path& emit_cpp={}) {
+    using clock = std::chrono::steady_clock;
+    const auto total_begin=clock::now();
+    const auto load_begin=clock::now();
     Program program; std::vector<std::filesystem::path> dependencies; if(!load_program(path,program,err,&dependencies)) return 1;
+    const auto load_end=clock::now();
     for (const auto& dep : std::vector<std::filesystem::path>(dependencies)) collect_embed_dependencies(dep, dependencies);
     std::sort(dependencies.begin(), dependencies.end()); dependencies.erase(std::unique(dependencies.begin(), dependencies.end()), dependencies.end());
-    SemanticAnalyzer sema; auto checked=sema.analyze(program);
-    for(const auto& d:checked.diagnostics) err<<format_diagnostic(path.string(),d)<<'\n';
-    for(const auto& w:checked.warnings) err<<format_warning(path.string(),w)<<'\n';
+    const auto sema_begin=clock::now(); SemanticAnalyzer sema; auto checked=sema.analyze(program); const auto sema_end=clock::now();
+    for(const auto& d:checked.diagnostics) err<<rich_diagnostic(path,d)<<'\n';
+    for(const auto& w:checked.warnings) err<<rich_diagnostic(path,w,true)<<'\n';
     if(!checked.ok())return 1;
-    IRLowerer lowerer; auto lowered=lowerer.lower(program); if(!lowered.ok())return 1; lowered.program.source_path=std::filesystem::absolute(path).generic_string();
+    const auto ir_begin=clock::now(); IRLowerer lowerer; auto lowered=lowerer.lower(program); const auto ir_end=clock::now(); if(!lowered.ok())return 1; lowered.program.source_path=std::filesystem::absolute(path).generic_string();
     CppBackend backend; std::string backend_error;
+    auto ms=[](auto a,auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
+    if(!emit_cpp.empty()){const auto cg_begin=clock::now();auto generated=backend.generate(lowered.program);if(!generated.ok()){err<<path.string()<<": error: "<<generated.error<<'\n';return 1;}std::ofstream f(emit_cpp,std::ios::binary|std::ios::trunc);if(!f){err<<path.string()<<": error: cannot write generated C++ to "<<emit_cpp.string()<<'\n';return 1;}f<<generated.cpp;f.close();const auto done=clock::now();if(timings){out<<std::fixed<<std::setprecision(3)<<"timing load_parse_ms="<<ms(load_begin,load_end)<<'\n'<<"timing semantic_ms="<<ms(sema_begin,sema_end)<<'\n'<<"timing ir_ms="<<ms(ir_begin,ir_end)<<'\n'<<"timing codegen_write_ms="<<ms(cg_begin,done)<<'\n'<<"timing total_ms="<<ms(total_begin,done)<<'\n';}return 0;}
+    const auto backend_begin=clock::now();
     const auto root = find_project_root(path);
     const auto config_path = root / ".strut" / "config.json";
     if (std::filesystem::exists(config_path)) {
@@ -211,10 +243,11 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
             if(!current){if(verbose){out<<"rebuild "<<rel.generic_string();for(const auto&r:reasons)out<<"\n  - "<<r;out<<'\n';}if(!backend.compile_object(lowered.program,object_with_ext,generated,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}std::string info_error;if(!write_object_build_info(info_path,info,info_error)){err<<path.string()<<": error: "<<info_error<<'\n';return 1;}}
             else if(verbose) out<<"reuse "<<info.object<<'\n';
             if(current && std::filesystem::exists(output)){std::error_code time_ec;const auto out_time=std::filesystem::last_write_time(output,time_ec);const auto obj_time=std::filesystem::last_write_time(object_with_ext,time_ec);if(!time_ec&&out_time>=obj_time){if(verbose)out<<"output up to date "<<output.generic_string()<<'\n';return 0;}}
-            if(!backend.link_objects(lowered.program,{object_with_ext},output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}return 0;
+            if(!backend.link_objects(lowered.program,{object_with_ext},output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}const auto done=clock::now();if(timings){out<<std::fixed<<std::setprecision(3)<<"timing load_parse_ms="<<ms(load_begin,load_end)<<'\n'<<"timing semantic_ms="<<ms(sema_begin,sema_end)<<'\n'<<"timing ir_ms="<<ms(ir_begin,ir_end)<<'\n'<<"timing native_backend_ms="<<ms(backend_begin,done)<<'\n'<<"timing total_ms="<<ms(total_begin,done)<<'\n';}return 0;
         }
     }
     if(!backend.compile(lowered.program,output,backend_error,link)){err<<path.string()<<": error: "<<backend_error<<'\n';return 1;}
+    const auto done=clock::now();if(timings){out<<std::fixed<<std::setprecision(3)<<"timing load_parse_ms="<<ms(load_begin,load_end)<<'\n'<<"timing semantic_ms="<<ms(sema_begin,sema_end)<<'\n'<<"timing ir_ms="<<ms(ir_begin,ir_end)<<'\n'<<"timing native_backend_ms="<<ms(backend_begin,done)<<'\n'<<"timing total_ms="<<ms(total_begin,done)<<'\n';}
     return 0;
 }
 
@@ -341,6 +374,8 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     std::filesystem::path output_path;
     bool explicit_compile = false;
     bool verbose = false;
+    bool timings = false;
+    std::filesystem::path emit_cpp_path;
     NativeLinkOptions link_options;
 
     if (argc == 1) {
@@ -419,6 +454,8 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         if (arg == "--release") { link_options.release = true; continue; }
         if (arg == "--target") { if(i+1>=argc){err<<"strut: --target requires a target name\n";return 2;} link_options.target=argv[++i]; const std::unordered_set<std::string> valid={"native","linux-x64","linux-arm64","macos-arm64","macos-x64","windows-x64"}; if(!valid.count(link_options.target)){err<<"strut: unsupported target '"<<link_options.target<<"'\n";return 2;} continue; }
         if (arg == "--verbose") { verbose = true; continue; }
+        if (arg == "--timings") { timings = true; continue; }
+        if (arg == "--emit-cpp") { if(i+1>=argc){err<<"strut: --emit-cpp requires an output path\n";return 2;} emit_cpp_path=argv[++i]; continue; }
         if (arg == "--lib" || arg == "--static-lib" || arg == "--dynamic-lib") {
             if (i + 1 >= argc) { err << "strut: " << arg << " requires a library name or path\n"; return 2; }
             NativeLinkMode mode = NativeLinkMode::platform_default; if(arg=="--static-lib")mode=NativeLinkMode::static_link;else if(arg=="--dynamic-lib")mode=NativeLinkMode::dynamic_link;
@@ -483,7 +520,7 @@ if (link_options.target == "windows-x64") output_path += ".exe";
             else if (link_options.target == "native") output_path += ".exe";
 #endif
         }
-        return compile_source(source_path, output_path, link_options, out, err, verbose);
+        return compile_source(source_path, output_path, link_options, out, err, verbose, timings, emit_cpp_path);
     }
 
     (void)explicit_compile;

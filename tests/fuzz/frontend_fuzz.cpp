@@ -26,7 +26,7 @@ int main() {
         "x := 1; y := x + 2;",
         "struct User { int id; string name; }",
         "function max[T](T a, T b) -> T { if (a > b) { return a; } return b; }",
-        "unsafe { raw_ptr<int> p := null; }",
+        "unsafe { ptr<int> p := null; }",
         "for (x : [1,2,3]) { print(x); }",
         "try { throw IOError(\"x\"); } catch (IOError e) { print(e); }"
     };

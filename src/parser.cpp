@@ -20,6 +20,12 @@ bool Parser::at_end() const { return peek().kind == TokenKind::end_of_file; }
 const Token& Parser::advance() { if (!at_end()) ++current_; return previous(); }
 bool Parser::check(std::string_view x) const { return !at_end() && peek().lexeme==x; }
 bool Parser::match(std::string_view x) { if(!check(x)) return false; advance(); return true; }
+bool Parser::match_type_close() {
+    if (pending_type_closers_ > 0) { --pending_type_closers_; return true; }
+    if (check(">")) { advance(); return true; }
+    if (check(">>")) { advance(); pending_type_closers_ = 1; return true; }
+    return false;
+}
 void Parser::error(ParseResult& r,const Token&t,std::string m){r.diagnostics.push_back(Diagnostic{t.span,std::move(m)});}
 void Parser::synchronize(){while(!at_end()){if(current_>0&&previous().lexeme==";")return;if(peek().lexeme=="const"||peek().kind==TokenKind::identifier)return;advance();}}
 
@@ -82,7 +88,18 @@ ExprPtr Parser::parse_primary(ParseResult& result) {
                 }
                 if(!match("]")){error(result,peek(),"expected ']' after collection literal");return nullptr;}e->span=join(open.span,previous().span);return e;
             }
-            if(match("(")){auto inner=parse_expression(result);if(!match(")")){error(result,peek(),"expected ')' after expression");return nullptr;}auto e=std::make_unique<Expr>();e->kind=Expr::Kind::grouping;e->span=join(token.span,previous().span);e->left=std::move(inner);return e;}
+            if(match("(")){
+                const Token open=previous();
+                auto first=parse_expression(result); if(!first)return nullptr;
+                if(match(",")){
+                    auto e=std::make_unique<Expr>(); e->kind=Expr::Kind::tuple_literal; e->arguments.push_back(std::move(first));
+                    if(!check(")")){do{auto item=parse_expression(result);if(!item)return nullptr;e->arguments.push_back(std::move(item));}while(match(","));}
+                    if(!match(")")){error(result,peek(),"expected ')' after tuple literal");return nullptr;}
+                    e->span=join(open.span,previous().span);return e;
+                }
+                if(!match(")")){error(result,peek(),"expected ')' after expression");return nullptr;}
+                auto e=std::make_unique<Expr>();e->kind=Expr::Kind::grouping;e->span=join(open.span,previous().span);e->left=std::move(first);return e;
+            }
             error(result,token,"expected expression");return nullptr;
     }
     advance(); auto e=std::make_unique<Expr>(); e->kind=kind;e->text=token.lexeme;e->span=token.span;return e;
@@ -126,7 +143,7 @@ ExprPtr Parser::parse_expression(ParseResult& result,int minp){
 StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     const Token begin=peek();bool is_const=match("const");if(at_end()){error(result,peek(),"expected declaration after 'const'");return nullptr;}
     std::optional<TypeSyntax> type;Token name;
-    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}if(peek(i).lexeme=="?")++i;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&(peek(i+1).lexeme==":="||peek(i+1).lexeme=="("||peek(i+1).lexeme==";")){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
+    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}while(peek(i).lexeme=="*"||peek(i).lexeme=="&"){++i;if(peek(i).lexeme=="const")++i;}if(peek(i).lexeme=="?")++i;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&(peek(i+1).lexeme==":="||peek(i+1).lexeme=="("||peek(i+1).lexeme==";")){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
     if(name.lexeme.empty() && peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
     if(type && name.lexeme.size() && check("(")){const Token open=advance();auto call=std::make_unique<Expr>();call->kind=Expr::Kind::call;auto callee=std::make_unique<Expr>();callee->kind=Expr::Kind::identifier;callee->text=type->name;callee->span=type->span;call->left=std::move(callee);if(!check(")")){do{auto arg=parse_expression(result);if(!arg)return nullptr;call->arguments.push_back(std::move(arg));}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after constructor arguments");return nullptr;}call->span=join(open.span,previous().span);if(!match(";")){error(result,peek(),"expected ';' after declaration");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::declaration;st->span=join(begin.span,previous().span);st->name=name.lexeme;st->op=":=";st->declared_type=std::move(type);st->is_const=is_const;st->value=std::move(call);return st;}
     if(type && name.lexeme.size() && match(";")){auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::declaration;st->span=join(begin.span,previous().span);st->name=name.lexeme;st->op=":=";st->declared_type=std::move(type);st->is_const=is_const;return st;}
@@ -144,6 +161,8 @@ StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
 
 TypeSyntax Parser::parse_type(ParseResult& result) {
     const Token begin = peek();
+    const bool binding_const = match("const");
+    const Token type_begin = peek();
     if (check("function")) {
         std::string text;
         text += advance().lexeme;
@@ -169,13 +188,21 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
             text += advance().lexeme;
         }
         if (depth != 0) { error(result, peek(), "unterminated function type"); return TypeSyntax{"", begin.span, false}; }
-        return TypeSyntax{text, SourceSpan{begin.span.begin, previous().span.end}, false};
+        return TypeSyntax{text, SourceSpan{begin.span.begin, previous().span.end}, binding_const};
     }
-    if (!is_type_token(begin)) { error(result, begin, "expected type"); return TypeSyntax{"", begin.span, false}; }
+    if (!is_type_token(type_begin)) { error(result, type_begin, "expected type"); return TypeSyntax{"", begin.span, false}; }
     advance();
-    std::string text = begin.lexeme;
-    SourceSpan span = begin.span;
-    if (match("<")) {
+    std::string text = type_begin.lexeme;
+    SourceSpan span = SourceSpan{begin.span.begin, type_begin.span.end};
+    bool raw_pointer_surface = false;
+    if (type_begin.lexeme == "ptr" && match("<")) {
+        auto inner = parse_type(result);
+        if (inner.name.empty()) return TypeSyntax{"", begin.span, false};
+        if (!match_type_close()) { error(result, peek(), "expected '>' after raw pointer type"); return TypeSyntax{"", begin.span, false}; }
+        text = "raw_ptr<" + inner.name + ">";
+        span.end = previous().span.end;
+        raw_pointer_surface = true;
+    } else if (match("<")) {
         text += "<"; int depth = 1;
         while (!at_end() && depth > 0) {
             if (check("<")) { ++depth; text += advance().lexeme; continue; }
@@ -185,6 +212,22 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         }
         if (depth != 0) { error(result, peek(), "unterminated generic type"); return TypeSyntax{"", begin.span, false}; }
     }
+    if (!raw_pointer_surface) {
+        bool saw_reference = false;
+        while (check("*") || check("&")) {
+            const bool pointer = check("*");
+            if (pointer && saw_reference) { error(result, peek(), "pointers to references are not allowed"); return TypeSyntax{"", begin.span, false}; }
+            advance(); span.end = previous().span.end;
+            const bool const_referent = match("const");
+            if (const_referent) span.end = previous().span.end;
+            if (pointer) text = std::string("ptr<") + (const_referent ? "const " : "") + text + ">";
+            else {
+                if (saw_reference) { error(result, previous(), "references to references are not allowed"); return TypeSyntax{"", begin.span, false}; }
+                text = std::string("ref<") + (const_referent ? "const " : "") + text + ">";
+                saw_reference = true;
+            }
+        }
+    }
     if (match("?")) { text += "?"; span.end = previous().span.end; }
     while (match("[")) {
         text += "[";
@@ -192,7 +235,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         if (!match("]")) { error(result, peek(), "expected ']' in array type"); return TypeSyntax{"", begin.span, false}; }
         text += "]"; span.end = previous().span.end;
     }
-    return TypeSyntax{text, span, false};
+    return TypeSyntax{text, span, binding_const};
 }
 
 StmtPtr Parser::parse_type_alias(ParseResult& result) {

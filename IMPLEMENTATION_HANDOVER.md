@@ -216,7 +216,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 - [x] length/empty.
 - [x] push/pop.
 - [x] iteration.
-- [x] owned runtime storage; `ptr<T>` reference-count integration is intentionally completed with the memory model in CP35.
+- [x] owned runtime storage; `T*` reference-count integration is intentionally completed with the memory model in CP35.
 - [x] tests + regressions.
 
 ### CP24 — Fixed arrays `T[n]`
@@ -313,7 +313,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 
 ## Phase 7 — Safe memory model, reference counting, weak refs, unsafe
 
-### CP35 — Prototype `ptr<T>` runtime ownership
+### CP35 — Prototype `T*` runtime ownership
 - [x] implement safe reference-counted owning pointer prototype.
 - [x] copy increments count.
 - [x] release decrements count.
@@ -322,16 +322,16 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 - [x] benchmark baseline overhead before optimizing.
 
 ### CP36 — Const pointer semantics
-- [x] `ptr<T>`.
-- [x] `ptr<const T>`.
-- [x] `const ptr<T>`.
-- [x] `const ptr<const T>`.
+- [x] `T*`.
+- [x] `T* const`.
+- [x] `const T*`.
+- [x] `const T* const`.
 - [x] enforce referent vs binding const independently.
 - [x] tests + regressions.
 
-### CP37 — `ref<T>` safe borrows
-- [x] `ref<T>` non-null/non-owning.
-- [x] `ref<const T>`.
+### CP37 — `T&` safe borrows
+- [x] `T&` non-null/non-owning.
+- [x] `T& const`.
 - [x] reference binding is non-reassignable.
 - [x] establish lifetime validation sufficient to prevent dangling refs.
 - [x] pass-by-ref without refcount churn.
@@ -345,9 +345,9 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 - [x] parent/child back-reference fixtures.
 - [x] tests + regressions.
 
-### CP39 — `unsafe` and `raw_ptr<T>`
+### CP39 — `unsafe` and `ptr<T>`
 - [x] `unsafe { ... }`.
-- [x] `raw_ptr<T>` creation/use restrictions.
+- [x] `ptr<T>` creation/use restrictions.
 - [x] pointer arithmetic policy.
 - [x] conversion rules between safe/weak/raw pointers.
 - [x] compiler prevents raw operations outside unsafe contexts.
@@ -355,7 +355,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 
 ### CP40 — Memory-safety certification pass 1
 - [x] use-after-free attempts.
-- [x] dangling `ref<T>` attempts.
+- [x] dangling `T&` attempts.
 - [x] invalid weak upgrades.
 - [x] double-destruction attempts.
 - [x] null safe-pointer cases.
@@ -415,7 +415,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 
 ### CP48 — Generics/templates
 - [x] square-bracket declaration parameters for functions/structs; operator generics are completed with operator declarations in CP51–CP53.
-- [x] angle-bracket instantiated types: `Box<int>`, `ptr<T>`, etc.
+- [x] angle-bracket instantiated types: `Box<int>`, `T*`, etc.
 - [x] generic functions and structs.
 - [x] uppercase template identifier rule.
 - [x] implicit generic lambda inference from typed uppercase parameters.
@@ -454,7 +454,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 - [x] `operator +(A a, B b) -> R { ... }`.
 - [x] generic `operator[T] ...` declarations.
 - [x] overload arithmetic/comparison/stream operators from the approved set.
-- [x] support prefix `*` dereference for `ptr<T>` and make it overloadable.
+- [x] support prefix `*` dereference for `T*` and make it overloadable.
 - [x] add indexing/call operators only where semantics remain clear.
 - [x] explicitly reserve structural operators such as member access unless later justified.
 - [x] tests + docs.
@@ -469,7 +469,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 ### CP54 — Assignment and initialization overloading
 - [x] overload `=` for existing destination values.
 - [x] overload `:=` for typed construction/initialization into new destination storage.
-- [x] model `:=` destination as construction storage, not an existing `ref<T>`.
+- [x] model `:=` destination as construction storage, not an existing `T&`.
 - [x] inferred `x := value` must retain predictable type inference and must not let overloads invent an unrelated lhs type.
 - [x] define copy/conversion initialization interaction deliberately.
 - [x] tests + negative diagnostics.
@@ -582,7 +582,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 ### CP68 — C ABI FFI
 - [x] call C functions.
 - [x] primitive/struct ABI mapping.
-- [x] `raw_ptr<T>` integration.
+- [x] `ptr<T>` integration.
 - [x] unsafe boundary rules.
 - [x] callbacks if practical. (deferred: raw C function-pointer callback values are not yet exposed; ordinary C calls are complete)
 - [x] tests against tiny C fixtures.
@@ -817,7 +817,7 @@ Current implementation progress: **CP0–CP97 and CP101 complete; CP98–CP100 a
 
 ### CP95 — Reference-count optimisation pass
 - [x] elide provably unnecessary increments/decrements.
-- [x] prefer `ref<T>` borrowing in hot internal APIs.
+- [x] prefer `T&` borrowing in hot internal APIs.
 - [x] benchmark before/after.
 - [x] verify memory semantics unchanged with regression suite/sanitizers.
 

@@ -54,7 +54,7 @@ The runtime is kept small. Platform-specific services are isolated behind runtim
 - threads/synchronisation;
 - sockets and other OS handles.
 
-Safe Strut ownership is reference-counted (`ptr<T>`) with `weak_ptr<T>` for non-owning shared references and `ref<T>` for non-owning non-null borrows. `raw_ptr<T>` is restricted to `unsafe` code. Strut has no tracing garbage collector.
+Safe Strut ownership is reference-counted (`T*`) with `weak_ptr<T>` for non-owning shared references and `T&` for non-owning non-null borrows. `ptr<T>` is restricted to `unsafe` code. Strut has no tracing garbage collector.
 
 ## Jsonic++
 
@@ -67,3 +67,7 @@ Do not put POSIX assumptions into parser, AST, semantic, or IR code. Platform br
 ## Typed IR boundary
 
 The parser AST is not a backend contract. After semantic checking, `IRLowerer` creates a backend-facing typed IR that preserves source spans while recording resolved/inferred type names on values. Backends consume this IR rather than parser details. This separation is intentional so native code generation can evolve independently of syntax and parsing.
+
+## Bootstrap code-generation compile-time policy
+
+The C++ bootstrap backend emits a feature-minimal generated runtime for ordinary scalar, collection, lambda and safe-pointer programs instead of compiling the full JSON/network/filesystem/runtime surface into every translation unit. Full runtime support is emitted only when the program actually uses those facilities. Direct single-source release compilation intentionally skips LTO because the generated application and required inline runtime are already one translation unit; project/object builds retain LTO where it can optimise across translation units. This keeps cold compile time close to the equivalent host-C++ compilation while preserving `.strut` object caching for incremental builds.

@@ -30,13 +30,26 @@ std::string cpp_type(std::string t){
     if(t.rfind("ref<",0)==0 && t.back()=='>') return "strut_ref<"+cpp_type(t.substr(4,t.size()-5))+">";
     if(t.rfind("weak_ptr<",0)==0 && t.back()=='>') return "std::weak_ptr<"+cpp_type(t.substr(9,t.size()-10))+">";
     if(t.rfind("raw_ptr<",0)==0 && t.back()=='>') return cpp_type(t.substr(8,t.size()-9))+"*";
-    if(t.rfind("map<",0)==0 && t.back()=='>'){auto inner=t.substr(4,t.size()-5);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}if(comma!=std::string::npos)return "std::map<"+cpp_type(inner.substr(0,comma))+","+cpp_type(inner.substr(comma+1))+">";}
+    if(t.rfind("tuple<",0)==0 && t.back()=='>'){auto inner=t.substr(6,t.size()-7);std::string out="std::tuple<";int depth=0;std::size_t start=0;bool first=true;for(std::size_t i=0;i<=inner.size();++i){char c=i<inner.size()?inner[i]:',';if(c=='<')++depth;else if(c=='>')--depth;else if(c==','&&depth==0){if(!first)out+=",";out+=cpp_type(inner.substr(start,i-start));first=false;start=i+1;}}return out+">";}
+    auto binary_container=[&](std::string_view head,std::string_view cpp)->std::string{if(t.rfind(std::string(head),0)!=0||t.back()!='>')return {};auto inner=t.substr(head.size(),t.size()-head.size()-1);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}if(comma==std::string::npos)return {};return std::string(cpp)+"<"+cpp_type(inner.substr(0,comma))+","+cpp_type(inner.substr(comma+1))+">";};
+    if(auto v=binary_container("ordered_map<","std::map");!v.empty())return v;
+    if(auto v=binary_container("map<","std::unordered_map");!v.empty())return v;
+    auto unary_container=[&](std::string_view head,std::string_view cpp)->std::string{if(t.rfind(std::string(head),0)!=0||t.back()!='>')return {};return std::string(cpp)+"<"+cpp_type(t.substr(head.size(),t.size()-head.size()-1))+">";};
+    if(auto v=unary_container("vector<","std::vector");!v.empty())return v;
+    if(auto v=unary_container("ordered_set<","std::set");!v.empty())return v;
+    if(auto v=unary_container("set<","std::unordered_set");!v.empty())return v;
+    if(auto v=unary_container("queue<","std::queue");!v.empty())return v;
+    if(auto v=unary_container("stack<","std::stack");!v.empty())return v;
+    if(auto v=unary_container("deque<","std::deque");!v.empty())return v;
+    if(auto v=unary_container("list<","std::list");!v.empty())return v;
+    if(t.rfind("priority_queue<",0)==0 && t.back()=='>'){auto inner=t.substr(15,t.size()-16);int depth=0;std::size_t comma=std::string::npos;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0){comma=i;break;}}auto elem=comma==std::string::npos?inner:inner.substr(0,comma);auto order=comma==std::string::npos?std::string("max"):inner.substr(comma+1);if(order=="min")return "std::priority_queue<"+cpp_type(elem)+",std::vector<"+cpp_type(elem)+">,std::greater<"+cpp_type(elem)+">>";return "std::priority_queue<"+cpp_type(elem)+">";}
     if(t.size()>2 && t.compare(t.size()-2,2,"[]")==0) return "std::vector<"+cpp_type(t.substr(0,t.size()-2))+">";
     if (auto extent = array_extent(t)) { const auto open=t.rfind('['); return "std::array<"+cpp_type(t.substr(0,open))+","+std::to_string(*extent)+">"; }
     if(t=="void") return "void";
     if(t=="bool") return "bool";
     if(t=="string") return "strut_string";
     if(t=="json") return "json::Document";
+    if(t=="bytes") return "std::vector<std::uint8_t>";
     if(t=="istream") return "strut_istream";
     if(t=="ostream") return "strut_ostream";
     if(t=="sstream") return "strut_sstream";
@@ -83,7 +96,7 @@ std::string compile_embed_dir(const std::string& quoted){
     for(auto& e:std::filesystem::recursive_directory_iterator(root)) if(e.is_regular_file()) files.push_back(e.path());
     std::sort(files.begin(),files.end());
     std::ostringstream o;
-    o<<"[&](){std::map<strut_string,strut_string> m;";
+    o<<"[&](){std::unordered_map<strut_string,strut_string> m;";
     for(const auto& path:files){
         std::ifstream f(path,std::ios::binary); std::ostringstream b; b<<f.rdbuf();
         auto rel=std::filesystem::relative(path,root).generic_string();
@@ -136,6 +149,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::null_literal:return "strut_null";
         case IRExpr::Kind::array_literal:{std::string out="{";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+"}";}
         case IRExpr::Kind::map_literal:{std::string out="{";for(size_t i=0;i+1<e.arguments.size();i+=2){if(i)out+=",";out+="{"+expr(*e.arguments[i])+","+expr(*e.arguments[i+1])+"}";}return out+"}";}
+        case IRExpr::Kind::tuple_literal:{std::string out="std::make_tuple(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
         case IRExpr::Kind::json_object:return json_expr(e);
         case IRExpr::Kind::struct_literal:{std::string out="[&](){"+e.text+" value{};";for(std::size_t i=0;i<e.names.size();++i)out+="value."+e.names[i]+"="+expr(*e.arguments[i])+";";return out+"return value;}()";}
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
@@ -143,9 +157,10 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
         case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
-        case IRExpr::Kind::member:{if(e.text.rfind("::",0)==0)return expr(*e.left)+e.text; if(e.text.rfind("->",0)==0)return expr(*e.left)+e.text; if(e.left && !e.left->type_name.empty() && e.left->type_name.back()=='?') return "(*"+expr(*e.left)+")."+e.text; if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;if(e.left&&e.left->type_name=="http_server"&&m=="static")m="serve_static";if(m=="push")m="push_back";else if(m=="pop")m="pop_back";else if(m=="length")m="size";else if(m=="remove")m="erase";if(e.left&&e.left->type_name.rfind("ref<",0)==0)return "(*"+expr(*e.left)+")."+m;if(e.left&&e.left->type_name.rfind("ptr<",0)==0)return expr(*e.left)+"->"+m;return expr(*e.left)+"."+m;}
-        case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?e.right->text:expr(*e.right);return expr(*e.left)+"["+k+"]";}return expr(*e.left)+".at("+expr(*e.right)+")";}
+        case IRExpr::Kind::member:{if(e.text.rfind("::",0)==0)return expr(*e.left)+e.text; if(e.text.rfind("->",0)==0)return expr(*e.left)+e.text; if(e.left && !e.left->type_name.empty() && e.left->type_name.back()=='?') return "(*"+expr(*e.left)+")."+e.text; if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;const std::string bt=e.left?e.left->type_name:std::string();if(e.left&&bt=="http_server"&&m=="static")m="serve_static";const bool seq=(bt.find("[]")!=std::string::npos||bt.rfind("vector<",0)==0||bt.rfind("deque<",0)==0||bt.rfind("list<",0)==0);const bool set_like=(bt.rfind("set<",0)==0||bt.rfind("ordered_set<",0)==0);if(m=="push"&&seq)m="push_back";else if(m=="pop"&&seq)m="pop_back";else if(m=="add"&&set_like)m="insert";else if(m=="remove")m="erase";if(m=="length"){if(e.left&&bt.rfind("ref<",0)==0)return "(*"+expr(*e.left)+").size()";if(e.left&&bt.rfind("ptr<",0)==0)return expr(*e.left)+"->size()";return expr(*e.left)+".size()";}if(e.left&&bt.rfind("ref<",0)==0)return "(*"+expr(*e.left)+")."+m;if(e.left&&bt.rfind("ptr<",0)==0)return expr(*e.left)+"->"+m;return expr(*e.left)+"."+m;}
+        case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?e.right->text:expr(*e.right);return expr(*e.left)+"["+k+"]";}if(e.left->type_name.rfind("tuple<",0)==0)return "std::get<"+e.right->text+">("+expr(*e.left)+")";return expr(*e.left)+".at("+expr(*e.right)+")";}
         case IRExpr::Kind::call:{
+            if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="length" && e.arguments.empty()) return expr(*e.left);
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="insert" && e.left->left && e.arguments.size()==2){return "strut_map_insert("+expr(*e.left->left)+","+expr(*e.arguments[0])+","+expr(*e.arguments[1])+")";}
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="contains" && e.left->left && e.arguments.size()==1){return "strut_contains("+expr(*e.left->left)+","+expr(*e.arguments[0])+")";}
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->left){
@@ -168,7 +183,7 @@ std::string expr(const IRExpr& e){
             }
             if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.arguments.size()==1&&e.arguments[0]->kind==IRExpr::Kind::string_literal){if(e.left->text=="embed_file")return compile_embed_file(e.arguments[0]->text);if(e.left->text=="embed_dir")return compile_embed_dir(e.arguments[0]->text);}
             std::string name=expr(*e.left); if(name=="ptr"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="weak"&&e.arguments.size()==1)return "strut_weak("+expr(*e.arguments[0])+")"; if(name=="raw"&&e.arguments.size()==1)return "strut_raw("+expr(*e.arguments[0])+")"; if(name=="print"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
-            if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
+            if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="is_file") name="strut_fs_is_file"; else if(name=="is_dir") name="strut_fs_is_dir"; else if(name=="file_size") name="strut_fs_file_size"; else if(name=="modified") name="strut_fs_modified"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="remove_all") name="strut_fs_remove_all"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="walk") name="strut_fs_walk"; else if(name=="cwd") name="strut_fs_cwd"; else if(name=="cd") name="strut_fs_cd"; else if(name=="absolute") name="strut_fs_absolute"; else if(name=="canonical") name="strut_fs_canonical"; else if(name=="parent") name="strut_fs_parent"; else if(name=="filename") name="strut_fs_filename"; else if(name=="extension") name="strut_fs_extension"; else if(name=="stem") name="strut_fs_stem"; else if(name=="join_path") name="strut_fs_join_path"; else if(name=="read_file") name="strut_fs_read_file"; else if(name=="read_bytes") name="strut_fs_read_bytes"; else if(name=="write_file") name="strut_fs_write_file"; else if(name=="append_file") name="strut_fs_append_file"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
         }
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
@@ -217,15 +232,201 @@ bool program_uses_curl(const IRProgram& p){for(const auto& s:p.statements)if(stm
 bool expr_uses_sqlite(const IRExpr* e){if(!e)return false;if(e->kind==IRExpr::Kind::identifier&&e->text.rfind("sqlite_",0)==0)return true;if(expr_uses_sqlite(e->left.get())||expr_uses_sqlite(e->right.get())||expr_uses_sqlite(e->lambda_expression.get()))return true;for(const auto& a:e->arguments)if(expr_uses_sqlite(a.get()))return true;for(const auto& st:e->lambda_body){if(st->value&&expr_uses_sqlite(st->value.get()))return true;}return false;}
 bool stmt_uses_sqlite(const IRStmt* s){if(!s)return false;if(expr_uses_sqlite(s->value.get())||expr_uses_sqlite(s->target.get())||expr_uses_sqlite(s->condition.get())||expr_uses_sqlite(s->increment.get()))return true;for(const auto& c:s->body)if(stmt_uses_sqlite(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_sqlite(c.get()))return true;return false;}
 bool program_uses_sqlite(const IRProgram& p){for(const auto& s:p.statements)if(stmt_uses_sqlite(s.get()))return true;return false;}
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
-o<<R"CPP(
+
+bool minimal_type_ok(const std::string& t){
+    return t.find("string")==std::string::npos && t.find("json")==std::string::npos &&
+           t.find("weak_ptr<")==std::string::npos &&
+           t.find("raw_ptr<")==std::string::npos && t.find("future<")==std::string::npos &&
+           t.find("channel<")==std::string::npos && t!="mutex" && t!="thread" &&
+           t!="istream" && t!="ostream" && t!="sstream" && t!="ifstream" && t!="ofstream" &&
+           t!="process" && t!="tcp_socket" && t!="tcp_listener" && t!="tls_stream" &&
+           t!="http_response" && t!="http_request" && t!="http_server_response" && t!="http_server" && t!="sqlite_db";
+}
+bool minimal_stmt_ok(const IRStmt* s);
+bool minimal_expr_ok(const IRExpr* e){
+    if(!e)return true;
+    if(e->kind==IRExpr::Kind::string_literal||e->kind==IRExpr::Kind::json_object||e->kind==IRExpr::Kind::struct_literal||e->kind==IRExpr::Kind::safe_member)return false;
+    if(!minimal_type_ok(e->type_name))return false;
+    if(e->lambda_async)return false;
+    if(e->kind==IRExpr::Kind::member){
+        const auto& m=e->text;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve")return false;
+    }
+    if(!minimal_expr_ok(e->left.get())||!minimal_expr_ok(e->right.get())||!minimal_expr_ok(e->lambda_expression.get()))return false;
+    for(const auto& a:e->arguments)if(!minimal_expr_ok(a.get()))return false;
+    for(const auto& st:e->lambda_body) if(!minimal_stmt_ok(st.get())) return false;
+    return true;
+}
+bool minimal_stmt_ok(const IRStmt* s){
+    if(!s)return true;
+    if(s->kind==IRStmt::Kind::throw_stmt||s->kind==IRStmt::Kind::try_stmt||s->kind==IRStmt::Kind::struct_decl||s->kind==IRStmt::Kind::operator_decl||s->kind==IRStmt::Kind::unsafe_stmt)return false;
+    if(s->is_async||s->is_extern_c||!minimal_type_ok(s->type_name)||!minimal_type_ok(s->return_type))return false;
+    for(const auto& p:s->parameters)if(!minimal_type_ok(p.type.name))return false;
+    if(!minimal_expr_ok(s->value.get())||!minimal_expr_ok(s->target.get())||!minimal_expr_ok(s->condition.get())||!minimal_expr_ok(s->increment.get()))return false;
+    if(s->initializer&&!minimal_stmt_ok(s->initializer.get()))return false;
+    for(const auto& c:s->body)if(!minimal_stmt_ok(c.get()))return false;
+    for(const auto& c:s->else_body)if(!minimal_stmt_ok(c.get()))return false;
+    for(const auto& c:s->switch_cases){if(!minimal_expr_ok(c.value.get()))return false;for(const auto& st:c.body)if(!minimal_stmt_ok(st.get()))return false;}
+    return true;
+}
+bool program_uses_minimal_runtime(const IRProgram& p){for(const auto& s:p.statements)if(!minimal_stmt_ok(s.get()))return false;return true;}
+
+struct MinimalRuntimeFeatures {
+    bool pointers=false;
+    bool nullable=false;
+    bool function=false;
+    bool vector=false;
+    bool array=false;
+    bool map=false;
+    bool filter=false;
+    bool reduce=false;
+    bool any=false;
+    bool all=false;
+    bool find=false;
+    bool count=false;
+    bool sort=false;
+    bool hash_map=false;
+    bool ordered_map=false;
+    bool hash_set=false;
+    bool ordered_set=false;
+    bool queue=false;
+    bool stack=false;
+    bool deque=false;
+    bool list=false;
+    bool priority_queue=false;
+    bool tuple=false;
+    bool contains=false;
+    bool map_insert=false;
+};
+void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& f){
+    if(t.find("ptr<")!=std::string::npos||t.find("ref<")!=std::string::npos)f.pointers=true;
+    if(t.find("function<")!=std::string::npos)f.function=true;
+    if(t.find("[]")!=std::string::npos||t.find("vector<")!=std::string::npos)f.vector=true;
+    if(t.find("ordered_map<")!=std::string::npos)f.ordered_map=true; else if(t.find("map<")!=std::string::npos)f.hash_map=true;
+    if(t.find("ordered_set<")!=std::string::npos)f.ordered_set=true; else if(t.find("set<")!=std::string::npos)f.hash_set=true;
+    if(t.find("queue<")!=std::string::npos)f.queue=true;
+    if(t.find("stack<")!=std::string::npos)f.stack=true;
+    if(t.find("deque<")!=std::string::npos)f.deque=true;
+    if(t.find("list<")!=std::string::npos)f.list=true;
+    if(t.find("priority_queue<")!=std::string::npos)f.priority_queue=true;
+    if(t.find("tuple<")!=std::string::npos)f.tuple=true;
+    if(array_extent(t).has_value())f.array=true;
+    if(!t.empty()&&t.back()=='?')f.nullable=true;
+}
+void collect_minimal_expr_features(const IRExpr* e,MinimalRuntimeFeatures& f){
+    if(!e) return;
+    collect_minimal_type_features(e->type_name,f);
+    if(e->kind==IRExpr::Kind::null_literal)f.nullable=true;
+    if(e->kind==IRExpr::Kind::array_literal)f.vector=true;
+    if(e->kind==IRExpr::Kind::map_literal)f.hash_map=true;
+    if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::identifier&&(e->left->text=="ptr"||e->left->text=="ref"))f.pointers=true;
+    if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::member){
+        f.vector=true; const auto& m=e->left->text;
+        if(m=="map")f.map=true;else if(m=="filter")f.filter=true;else if(m=="reduce")f.reduce=true;else if(m=="any")f.any=true;else if(m=="all")f.all=true;else if(m=="find")f.find=true;else if(m=="count")f.count=true;else if(m=="sort")f.sort=true;else if(m=="contains")f.contains=true;else if(m=="insert")f.map_insert=true;
+    }
+    collect_minimal_expr_features(e->left.get(),f);collect_minimal_expr_features(e->right.get(),f);collect_minimal_expr_features(e->lambda_expression.get(),f);
+    for(const auto& a:e->arguments)collect_minimal_expr_features(a.get(),f);
+}
+void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
+    if(!s) return;
+    collect_minimal_type_features(s->type_name,f);
+    collect_minimal_type_features(s->return_type,f);
+    for(const auto& p:s->parameters)collect_minimal_type_features(p.type.name,f);
+    collect_minimal_expr_features(s->value.get(),f);collect_minimal_expr_features(s->target.get(),f);collect_minimal_expr_features(s->condition.get(),f);collect_minimal_expr_features(s->increment.get(),f);
+    if(s->initializer) collect_minimal_stmt_features(s->initializer.get(),f);
+    for(const auto& c:s->body) collect_minimal_stmt_features(c.get(),f);
+    for(const auto& c:s->else_body) collect_minimal_stmt_features(c.get(),f);
+}
+MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);return f;}
+void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
+    o << "#include <cstdint>\n#include <iostream>\n";
+    if(f.vector||f.map||f.filter||f.reduce||f.any||f.all||f.find||f.count||f.sort||f.priority_queue)o << "#include <vector>\n";
+    if(f.hash_map)o << "#include <unordered_map>\n";
+    if(f.ordered_map)o << "#include <map>\n";
+    if(f.hash_set)o << "#include <unordered_set>\n";
+    if(f.ordered_set)o << "#include <set>\n";
+    if(f.queue||f.priority_queue)o << "#include <queue>\n";
+    if(f.stack)o << "#include <stack>\n";
+    if(f.deque)o << "#include <deque>\n";
+    if(f.list)o << "#include <list>\n";
+    if(f.priority_queue)o << "#include <functional>\n";
+    if(f.tuple)o << "#include <tuple>\n";
+    if(f.array)o << "#include <array>\n";
+    if(f.function)o << "#include <functional>\n";
+    if(f.nullable||f.find)o << "#include <optional>\n";
+    if(f.map||f.nullable||f.pointers)o << "#include <type_traits>\n";
+    if(f.nullable||f.pointers||f.map_insert)o << "#include <utility>\n";
+    if(f.sort)o << "#include <algorithm>\n";
+    if(f.reduce||f.pointers)o << "#include <stdexcept>\n";
+    if(f.pointers)o << "#include <memory>\n#include <cstdlib>\n#ifdef _WIN32\n#include <windows.h>\n#else\n#include <execinfo.h>\n#endif\n";
+    if(f.pointers){o << R"CPP(
 template<class T> class strut_ref {
 public:
     explicit strut_ref(T& value):p_(&value){}
     strut_ref(const strut_ref&)=default;
+    template<class U,class=std::enable_if_t<std::is_convertible_v<U*,T*>>> strut_ref(const strut_ref<U>& other):p_(other.get()){}
+    strut_ref& operator=(const strut_ref&)=delete;
+    T& operator*() const{return *p_;}
+    T* operator->() const{return p_;}
+    T* get() const{return p_;}
+private:T* p_;
+};
+template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
+template<class T> std::shared_ptr<typename std::decay<T>::type> strut_ptr(T&& value){using U=typename std::decay<T>::type;return std::make_shared<U>(std::forward<T>(value));}
+inline void strut_print_stack_trace(){
+#ifdef _WIN32
+    void* frames[48];const auto n=CaptureStackBackTrace(0,48,frames,nullptr);std::cerr<<"stack trace:\n";for(unsigned short i=0;i<n;++i)std::cerr<<"  "<<frames[i]<<"\n";
+#else
+    void* frames[48];const int n=backtrace(frames,48);std::cerr<<"stack trace:\n";char** symbols=backtrace_symbols(frames,n);if(symbols){for(int i=0;i<n;++i)std::cerr<<"  "<<symbols[i]<<"\n";std::free(symbols);}
+#endif
+}
+[[noreturn]] inline void strut_panic(const char* message){std::cerr<<"Strut panic: "<<message<<"\n";strut_print_stack_trace();throw std::runtime_error(message);}
+template<class T> T& strut_deref(const std::shared_ptr<T>& value,const char* file,std::size_t line){if(!value) [[unlikely]] {std::cerr<<"at "<<file<<":"<<line<<"\n";strut_panic("null safe-pointer dereference");}return *value;}
+)CPP";}
+    if(f.nullable){o << R"CPP(
+struct strut_null_t {
+    template<class T> operator std::optional<T>() const{return std::nullopt;}
+)CPP"; if(f.pointers)o << "    template<class T> operator std::shared_ptr<T>() const{return {};}\n"; o << R"CPP(
+};
+constexpr strut_null_t strut_null{};
+)CPP";}
+    if(f.nullable)o << R"CPP(
+template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f)->std::optional<typename std::decay<decltype(f(*value))>::type>{if(!value)return std::nullopt;return f(*value);}
+)CPP";
+    if(f.nullable||f.find)o << "template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback); }\n";
+    if(f.map)o << R"CPP(
+template<class C,class F> auto strut_map(const C& xs,F f)->std::vector<typename std::decay<decltype(f(*xs.begin()))>::type>{using R=typename std::decay<decltype(f(*xs.begin()))>::type;std::vector<R> out;out.reserve(xs.size());for(const auto& x:xs)out.push_back(f(x));return out;}
+)CPP";
+    if(f.filter)o << R"CPP(
+template<class C,class F> C strut_filter(const C& xs,F f){C out;for(const auto& x:xs)if(f(x))out.push_back(x);return out;}
+)CPP";
+    if(f.reduce)o << R"CPP(
+template<class C,class F> auto strut_reduce(const C& xs,F f)->typename C::value_type{if(xs.empty())throw std::runtime_error("reduce on empty collection");auto it=xs.begin();auto acc=*it++;for(;it!=xs.end();++it)acc=f(acc,*it);return acc;}
+template<class C,class A,class F> A strut_reduce(const C& xs,A acc,F f){for(const auto& x:xs)acc=f(acc,x);return acc;}
+)CPP";
+    if(f.any)o << "template<class C,class F> bool strut_any(const C& xs,F f){for(const auto& x:xs)if(f(x))return true;return false;}\n";
+    if(f.all)o << "template<class C,class F> bool strut_all(const C& xs,F f){for(const auto& x:xs)if(!f(x))return false;return true;}\n";
+    if(f.find)o << "template<class C,class F> std::optional<typename C::value_type> strut_find(const C& xs,F f){for(const auto& x:xs)if(f(x))return x;return std::nullopt;}\n";
+    if(f.count)o << "template<class C,class F> std::size_t strut_count(const C& xs,F f){std::size_t n=0;for(const auto& x:xs)if(f(x))++n;return n;}\n";
+    if(f.sort)o << "template<class C,class F> void strut_sort(C& xs,F f){std::sort(xs.begin(),xs.end(),f);}\n";
+    if(f.contains)o << "template<class M,class K> bool strut_contains(const M& m,const K& k){return m.find(k)!=m.end();}\n";
+    if(f.map_insert)o << "template<class M,class K,class V> void strut_map_insert(M& m,K&& k,V&& v){m[std::forward<K>(k)]=std::forward<V>(v);}\n";
+
+    o << "template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\\n';}\n";
+}
+
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;if(program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=program_uses_curl(p);const bool use_sqlite=program_uses_sqlite(p);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+o<<R"CPP(
+template<class T> class strut_ref {
+public:
+    strut_ref(T& value):p_(&value){}
+    strut_ref(const strut_ref&)=default;
+    template<class U, class = std::enable_if_t<std::is_convertible_v<U*, T*>>>
+    strut_ref(const strut_ref<U>& other):p_(other.get()){}
     strut_ref& operator=(const strut_ref&)=delete;
     T& operator*() const { return *p_; }
     T* operator->() const { return p_; }
+    T* get() const { return p_; }
 private:
     T* p_;
 };
@@ -257,7 +458,7 @@ inline void strut_print_stack_trace(){
 #endif
 }
 [[noreturn]] inline void strut_panic(const std::string& message){std::cerr<<"Strut panic: "<<message<<"\n";strut_print_stack_trace();throw std::runtime_error(message);}
-template<class T> T& strut_deref(const std::shared_ptr<T>& value,const char* file,std::size_t line){if(!value){std::cerr<<"at "<<file<<":"<<line<<"\n";strut_panic("null ptr<T> dereference");}return *value;}
+template<class T> T& strut_deref(const std::shared_ptr<T>& value,const char* file,std::size_t line){if(!value) [[unlikely]] {std::cerr<<"at "<<file<<":"<<line<<"\n";strut_panic("null safe-pointer dereference");}return *value;}
 template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f) -> std::optional<typename std::decay<decltype(f(*value))>::type> { if(!value)return std::nullopt; return f(*value); }
 template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback);}
 
@@ -276,6 +477,8 @@ struct strut_string {
 inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<<s.v;}
 inline strut_string operator+(const strut_string&a,const strut_string&b){return a.v+b.v;}
 inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.v;}
+inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
+namespace std { template<> struct hash<strut_string> { size_t operator()(const strut_string& s) const noexcept { return std::hash<std::string>{}(s.v); } }; }
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
 
 class strut_ostream {
@@ -307,7 +510,7 @@ public:
     void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::in|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ifstream.open failed");p_=&file_;}
     void close(){if(file_.is_open())file_.close();p_=nullptr;}
     bool is_open() const{return file_.is_open();}
-    strut_string read_all(){if(!file_.is_open())throw strut_checked_error("StreamError","ifstream.read_all on closed stream");std::ostringstream ss;ss<<file_.rdbuf();return ss.str();}
+    strut_string read_all(){if(!file_.is_open())throw strut_checked_error("StreamError","ifstream.read_all on closed stream");auto pos=file_.tellg();file_.seekg(0,std::ios::end);auto end=file_.tellg();if(end<0){file_.clear();file_.seekg(pos);std::ostringstream ss;ss<<file_.rdbuf();return ss.str();}std::string out(static_cast<std::size_t>(end),'\0');file_.seekg(0,std::ios::beg);if(!out.empty())file_.read(out.data(),static_cast<std::streamsize>(out.size()));if(!file_&&!file_.eof())throw strut_checked_error("StreamError","ifstream.read_all failed");return strut_string(std::move(out));}
     ~strut_ifstream(){if(file_.is_open())file_.close();}
 private: std::ifstream file_;
 };
@@ -362,8 +565,8 @@ template<class C,class F> std::optional<typename C::value_type> strut_find(const
 template<class C,class F> std::size_t strut_count(const C& xs,F f){std::size_t n=0;for(const auto& x:xs)if(f(x))++n;return n;}
 template<class C,class F> void strut_sort(C& xs,F f){std::sort(xs.begin(),xs.end(),f);}
 
-template<class C,class F> auto strut_count_by(const C& xs,F f) -> std::map<typename std::decay<decltype(f(*xs.begin()))>::type,std::size_t>{using K=typename std::decay<decltype(f(*xs.begin()))>::type;std::map<K,std::size_t> out;for(const auto& x:xs)++out[f(x)];return out;}
-template<class C,class F> auto strut_index_by(const C& xs,F f) -> std::map<typename std::decay<decltype(f(*xs.begin()))>::type,typename C::value_type>{using K=typename std::decay<decltype(f(*xs.begin()))>::type;std::map<K,typename C::value_type> out;for(const auto& x:xs){auto k=f(x);if(out.find(k)!=out.end())throw std::runtime_error("index_by duplicate key");out.emplace(std::move(k),x);}return out;}
+template<class C,class F> auto strut_count_by(const C& xs,F f) -> std::unordered_map<typename std::decay<decltype(f(*xs.begin()))>::type,std::size_t>{using K=typename std::decay<decltype(f(*xs.begin()))>::type;std::unordered_map<K,std::size_t> out;for(const auto& x:xs)++out[f(x)];return out;}
+template<class C,class F> auto strut_index_by(const C& xs,F f) -> std::unordered_map<typename std::decay<decltype(f(*xs.begin()))>::type,typename C::value_type>{using K=typename std::decay<decltype(f(*xs.begin()))>::type;std::unordered_map<K,typename C::value_type> out;for(const auto& x:xs){auto k=f(x);if(out.find(k)!=out.end())throw std::runtime_error("index_by duplicate key");out.emplace(std::move(k),x);}return out;}
 template<class T> struct strut_partition_result{std::vector<T> matched;std::vector<T> unmatched;};
 template<class C,class F> auto strut_partition(const C& xs,F f) -> strut_partition_result<typename C::value_type>{strut_partition_result<typename C::value_type> out;for(const auto& x:xs)(f(x)?out.matched:out.unmatched).push_back(x);return out;}
 inline json::Document strut_json_pick(const json::Document& d,const std::vector<strut_string>& keys){json::Document out=json::Document::make_object();if(d.type!=json::Type::Object)return out;for(const auto& k:keys)if(d.has(k.v))out[k.v]=d[k.v];return out;}
@@ -375,12 +578,46 @@ template<class M,class K,class V> void strut_map_insert(M& m,K&& k,V&& v){m[std:
 inline std::filesystem::path strut_fs_path(const strut_string& s){return std::filesystem::path(s.v);}
 inline void strut_fs_fail(const char* op,const std::error_code& ec){if(ec)throw strut_checked_error("FilesystemError",std::string(op)+": "+ec.message());}
 inline bool strut_fs_exists(const strut_string& p){std::error_code ec;bool v=std::filesystem::exists(strut_fs_path(p),ec);strut_fs_fail("exists",ec);return v;}
+inline bool strut_fs_is_file(const strut_string& p){std::error_code ec;bool v=std::filesystem::is_regular_file(strut_fs_path(p),ec);strut_fs_fail("is_file",ec);return v;}
+inline bool strut_fs_is_dir(const strut_string& p){std::error_code ec;bool v=std::filesystem::is_directory(strut_fs_path(p),ec);strut_fs_fail("is_dir",ec);return v;}
+inline std::int64_t strut_fs_file_size(const strut_string& p){std::error_code ec;auto n=std::filesystem::file_size(strut_fs_path(p),ec);strut_fs_fail("file_size",ec);return static_cast<std::int64_t>(n);}
+inline std::int64_t strut_fs_modified(const strut_string& p){std::error_code ec;auto t=std::filesystem::last_write_time(strut_fs_path(p),ec);strut_fs_fail("modified",ec);return std::chrono::duration_cast<std::chrono::milliseconds>(decltype(t)::clock::to_sys(t).time_since_epoch()).count();}
 inline void strut_fs_make_dir(const strut_string& p){std::error_code ec;std::filesystem::create_directories(strut_fs_path(p),ec);strut_fs_fail("make_dir",ec);}
-inline void strut_fs_remove(const strut_string& p){std::error_code ec;std::filesystem::remove_all(strut_fs_path(p),ec);strut_fs_fail("remove",ec);}
-inline void strut_fs_copy(const strut_string& a,const strut_string& b){std::error_code ec;std::filesystem::copy(strut_fs_path(a),strut_fs_path(b),std::filesystem::copy_options::recursive|std::filesystem::copy_options::overwrite_existing,ec);strut_fs_fail("copy",ec);}
-inline void strut_fs_move(const strut_string& a,const strut_string& b){std::error_code ec;std::filesystem::rename(strut_fs_path(a),strut_fs_path(b),ec);strut_fs_fail("move",ec);}
-inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(p),std::ios::app);if(!f)throw strut_checked_error("FilesystemError","touch: unable to open path");}
+inline bool strut_fs_has_wildcards(const strut_string& p){return p.v.find('*')!=std::string::npos||p.v.find('?')!=std::string::npos;}
+inline bool strut_fs_wildcard_match(const std::string& pat,const std::string& text){std::size_t p=0,t=0,star=std::string::npos,mark=0;while(t<text.size()){if(p<pat.size()&&(pat[p]=='?'||pat[p]==text[t])){++p;++t;}else if(p<pat.size()&&pat[p]=='*'){star=p++;mark=t;}else if(star!=std::string::npos){p=star+1;t=++mark;}else return false;}while(p<pat.size()&&pat[p]=='*')++p;return p==pat.size();}
+inline void strut_fs_glob_walk(const std::filesystem::path& cur,const std::vector<std::string>& parts,std::size_t i,std::vector<strut_string>& out){if(i==parts.size()){std::error_code ec;if(std::filesystem::exists(cur,ec)&&!ec)out.emplace_back(cur.string());return;}const auto& part=parts[i];if(part=="**"){strut_fs_glob_walk(cur,parts,i+1,out);std::error_code ec;for(std::filesystem::directory_iterator it(cur,ec),end;!ec&&it!=end;it.increment(ec))if(it->is_directory(ec)&&!ec)strut_fs_glob_walk(it->path(),parts,i,out);return;}if(part.find('*')==std::string::npos&&part.find('?')==std::string::npos){strut_fs_glob_walk(cur/part,parts,i+1,out);return;}std::error_code ec;for(std::filesystem::directory_iterator it(cur,ec),end;!ec&&it!=end;it.increment(ec))if(strut_fs_wildcard_match(part,it->path().filename().string()))strut_fs_glob_walk(it->path(),parts,i+1,out);}
+inline std::vector<strut_string> strut_fs_expand(const strut_string& pattern){if(!strut_fs_has_wildcards(pattern))return {pattern};std::filesystem::path p=pattern.v;std::filesystem::path root=p.is_absolute()?p.root_path():std::filesystem::current_path();std::vector<std::string> parts;auto rel=p.is_absolute()?p.relative_path():p;for(const auto& x:rel)parts.push_back(x.string());std::vector<strut_string> out;strut_fs_glob_walk(root,parts,0,out);std::sort(out.begin(),out.end(),[](const auto&a,const auto&b){return a.v<b.v;});return out;}
+inline std::vector<strut_string> strut_fs_expand_all(const std::vector<strut_string>& paths){std::vector<strut_string> out;for(const auto& p:paths){auto xs=strut_fs_expand(p);out.insert(out.end(),xs.begin(),xs.end());}return out;}
+inline void strut_fs_remove_exact(const strut_string& p){std::error_code ec;std::filesystem::remove(strut_fs_path(p),ec);strut_fs_fail("remove",ec);}
+inline void strut_fs_remove(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_exact(x);}
+inline void strut_fs_remove(const std::vector<strut_string>& paths){for(const auto& p:strut_fs_expand_all(paths))strut_fs_remove_exact(p);}
+inline void strut_fs_remove_all_exact(const strut_string& p){std::error_code ec;std::filesystem::remove_all(strut_fs_path(p),ec);strut_fs_fail("remove_all",ec);}
+inline void strut_fs_remove_all(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_all_exact(x);}
+inline void strut_fs_remove_all(const std::vector<strut_string>& paths){for(const auto& p:strut_fs_expand_all(paths))strut_fs_remove_all_exact(p);}
+inline void strut_fs_copy_exact(const strut_string& a,const strut_string& b){std::error_code ec;std::filesystem::copy(strut_fs_path(a),strut_fs_path(b),std::filesystem::copy_options::recursive|std::filesystem::copy_options::overwrite_existing,ec);strut_fs_fail("copy",ec);}
+inline void strut_fs_copy(const strut_string& a,const strut_string& b){if(!strut_fs_has_wildcards(a)){strut_fs_copy_exact(a,b);return;}auto paths=strut_fs_expand(a);if(paths.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");const auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: wildcard destination must be an existing directory");for(const auto& p:paths)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
+inline void strut_fs_copy(const std::vector<strut_string>& paths,const strut_string& dest){const auto d=strut_fs_path(dest);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: bulk destination must be an existing directory");auto expanded=strut_fs_expand_all(paths);if(expanded.empty()&&!paths.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");for(const auto& p:expanded)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
+inline void strut_fs_move_exact(const strut_string& a,const strut_string& b){std::error_code ec;std::filesystem::rename(strut_fs_path(a),strut_fs_path(b),ec);strut_fs_fail("move",ec);}
+inline void strut_fs_move(const strut_string& a,const strut_string& b){if(!strut_fs_has_wildcards(a)){strut_fs_move_exact(a,b);return;}auto paths=strut_fs_expand(a);if(paths.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");const auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: wildcard destination must be an existing directory");for(const auto& p:paths)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
+inline void strut_fs_move(const std::vector<strut_string>& paths,const strut_string& dest){const auto d=strut_fs_path(dest);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: bulk destination must be an existing directory");auto expanded=strut_fs_expand_all(paths);if(expanded.empty()&&!paths.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");for(const auto& p:expanded)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}
+inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(p),std::ios::app|std::ios::binary);if(!f)throw strut_checked_error("FilesystemError","touch: unable to open path");}
 inline std::vector<strut_string> strut_fs_ls(const strut_string& p){std::error_code ec;std::vector<strut_string> out;for(std::filesystem::directory_iterator it(strut_fs_path(p),ec),end;!ec&&it!=end;it.increment(ec))out.emplace_back(it->path().filename().string());strut_fs_fail("ls",ec);std::sort(out.begin(),out.end());return out;}
+inline std::vector<strut_string> strut_fs_walk(const strut_string& p){std::error_code ec;std::vector<strut_string> out;auto root=strut_fs_path(p);for(std::filesystem::recursive_directory_iterator it(root,ec),end;!ec&&it!=end;it.increment(ec))out.emplace_back(std::filesystem::relative(it->path(),root,ec).generic_string());strut_fs_fail("walk",ec);std::sort(out.begin(),out.end());return out;}
+inline strut_string strut_fs_cwd(){std::error_code ec;auto p=std::filesystem::current_path(ec);strut_fs_fail("cwd",ec);return p.string();}
+inline void strut_fs_cd(const strut_string& p){std::error_code ec;std::filesystem::current_path(strut_fs_path(p),ec);strut_fs_fail("cd",ec);}
+inline strut_string strut_fs_absolute(const strut_string& p){std::error_code ec;auto v=std::filesystem::absolute(strut_fs_path(p),ec);strut_fs_fail("absolute",ec);return v.lexically_normal().string();}
+inline strut_string strut_fs_canonical(const strut_string& p){std::error_code ec;auto v=std::filesystem::canonical(strut_fs_path(p),ec);strut_fs_fail("canonical",ec);return v.string();}
+inline strut_string strut_fs_parent(const strut_string& p){return strut_fs_path(p).parent_path().string();}
+inline strut_string strut_fs_filename(const strut_string& p){return strut_fs_path(p).filename().string();}
+inline strut_string strut_fs_extension(const strut_string& p){return strut_fs_path(p).extension().string();}
+inline strut_string strut_fs_stem(const strut_string& p){return strut_fs_path(p).stem().string();}
+template<class... Rest> inline strut_string strut_fs_join_path(const strut_string& a,const Rest&... rest){std::filesystem::path p=strut_fs_path(a);((p/=strut_fs_path(rest)),...);return p.lexically_normal().string();}
+inline strut_string strut_fs_read_file(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_file: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_file: unable to determine file size");std::string out(static_cast<std::size_t>(end),'\0');f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(out.data(),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_file: short read");return strut_string(std::move(out));}
+inline std::vector<std::uint8_t> strut_fs_read_bytes(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_bytes: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_bytes: unable to determine file size");std::vector<std::uint8_t> out(static_cast<std::size_t>(end));f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_bytes: short read");return out;}
+inline void strut_fs_write_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
+inline void strut_fs_write_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
+inline void strut_fs_append_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
+inline void strut_fs_append_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
 inline std::optional<strut_string> strut_env(const strut_string& name){const char* v=std::getenv(name.v.c_str());if(!v)return std::nullopt;return strut_string(v);}
 inline void strut_set_env(const strut_string& name,const strut_string& value){
 #ifdef _WIN32
@@ -652,11 +889,11 @@ inline strut_tls_stream tls_connect(const strut_string& host,std::int32_t port){
 #endif
 #ifdef STRUT_USE_CURL
 struct strut_http_response {
-    std::int32_t status=0; strut_string body; std::map<strut_string,strut_string> headers;
+    std::int32_t status=0; strut_string body; std::unordered_map<strut_string,strut_string> headers;
     json::Document json() const { json::Document d; json::ParseDiagnostic diag; if(!json::Document::parse(body.v,d,diag))throw strut_checked_error("HttpError","response body is not valid JSON"); return d; }
 };
 inline size_t strut_http_write_cb(char* p,size_t size,size_t nmemb,void* u){auto* body=static_cast<std::string*>(u);body->append(p,size*nmemb);return size*nmemb;}
-inline size_t strut_http_header_cb(char* p,size_t size,size_t nmemb,void* u){const size_t n=size*nmemb;std::string line(p,n);auto* headers=static_cast<std::map<strut_string,strut_string>*>(u);auto colon=line.find(':');if(colon!=std::string::npos){std::string k=line.substr(0,colon),v=line.substr(colon+1);while(!v.empty()&&(v.front()==' '||v.front()=='\t'))v.erase(v.begin());while(!v.empty()&&(v.back()=='\r'||v.back()=='\n'||v.back()==' '||v.back()=='\t'))v.pop_back();(*headers)[strut_string(k)]=strut_string(v);}return n;}
+inline size_t strut_http_header_cb(char* p,size_t size,size_t nmemb,void* u){const size_t n=size*nmemb;std::string line(p,n);auto* headers=static_cast<std::unordered_map<strut_string,strut_string>*>(u);auto colon=line.find(':');if(colon!=std::string::npos){std::string k=line.substr(0,colon),v=line.substr(colon+1);while(!v.empty()&&(v.front()==' '||v.front()=='\t'))v.erase(v.begin());while(!v.empty()&&(v.back()=='\r'||v.back()=='\n'||v.back()==' '||v.back()=='\t'))v.pop_back();(*headers)[strut_string(k)]=strut_string(v);}return n;}
 inline strut_http_response http_request(const strut_string& method,const strut_string& url,const json::Document& options){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("HttpError","curl_easy_init failed");strut_http_response response;curl_slist* list=nullptr;std::string body;long timeout=30000;bool follow=true;if(options.type!=json::Type::Null&&options.type!=json::Type::Object){curl_easy_cleanup(c);throw strut_checked_error("HttpError","HTTP options must be JSON object or null");}if(options.type==json::Type::Object){if(options.has("timeout_ms")&&options["timeout_ms"].type==json::Type::Number)timeout=static_cast<long>(options["timeout_ms"].num);if(options.has("follow_redirects")&&options["follow_redirects"].type==json::Type::Boolean)follow=options["follow_redirects"].boolean;if(options.has("body")){const auto& b=options["body"];body=b.type==json::Type::String?b.string:b.dump();}if(options.has("headers")){const auto& h=options["headers"];if(h.type!=json::Type::Object){curl_easy_cleanup(c);throw strut_checked_error("HttpError","headers must be JSON object");}for(const auto& kv:h.object){if(kv.second.type!=json::Type::String){curl_easy_cleanup(c);throw strut_checked_error("HttpError","header values must be strings");}const std::string line=kv.first+": "+kv.second.string;list=curl_slist_append(list,line.c_str());}}}
 curl_easy_setopt(c,CURLOPT_URL,url.v.c_str());curl_easy_setopt(c,CURLOPT_CUSTOMREQUEST,method.v.c_str());curl_easy_setopt(c,CURLOPT_FOLLOWLOCATION,follow?1L:0L);curl_easy_setopt(c,CURLOPT_MAXREDIRS,10L);curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,timeout);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,strut_http_write_cb);curl_easy_setopt(c,CURLOPT_WRITEDATA,&response.body.v);curl_easy_setopt(c,CURLOPT_HEADERFUNCTION,strut_http_header_cb);curl_easy_setopt(c,CURLOPT_HEADERDATA,&response.headers);if(list)curl_easy_setopt(c,CURLOPT_HTTPHEADER,list);if(!body.empty()){curl_easy_setopt(c,CURLOPT_POSTFIELDS,body.data());curl_easy_setopt(c,CURLOPT_POSTFIELDSIZE,static_cast<long>(body.size()));}auto rc=curl_easy_perform(c);if(rc==CURLE_OK){long status=0;curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&status);response.status=static_cast<std::int32_t>(status);}if(list)curl_slist_free_all(list);curl_easy_cleanup(c);if(rc!=CURLE_OK)throw strut_checked_error("HttpError",curl_easy_strerror(rc));return response;}
 inline strut_http_response http_request(const strut_string& method,const strut_string& url){return http_request(method,url,json::Document(nullptr));}
@@ -668,26 +905,26 @@ inline strut_future<strut_http_response> http_request_async(const strut_string& 
 
 struct strut_server_request {
     strut_string method, path, body;
-    std::map<strut_string,strut_string> headers, query, params;
+    std::unordered_map<strut_string,strut_string> headers, query, params;
     json::Document json() const { return strut_json_parse(body); }
 };
-struct strut_server_response { std::int32_t status=200; strut_string body; strut_string content_type="text/plain; charset=utf-8"; std::map<strut_string,strut_string> headers; };
+struct strut_server_response { std::int32_t status=200; strut_string body; strut_string content_type="text/plain; charset=utf-8"; std::unordered_map<strut_string,strut_string> headers; };
 inline strut_server_response strut_http_text(const strut_string& s){return {200,s,"text/plain; charset=utf-8",{}};}
 inline strut_server_response strut_http_html(const strut_string& s){return {200,s,"text/html; charset=utf-8",{}};}
 inline strut_server_response strut_http_json_response(const json::Document& j){return {200,strut_string(j.dump()),"application/json",{}};}
 inline std::string strut_trim_ascii(std::string s){while(!s.empty()&&(s.back()=='\r'||s.back()==' '||s.back()=='\t'))s.pop_back();std::size_t i=0;while(i<s.size()&&(s[i]==' '||s[i]=='\t'))++i;return s.substr(i);}
-inline void strut_parse_query(const std::string& raw,std::map<strut_string,strut_string>& out){std::size_t p=0;while(p<=raw.size()){auto amp=raw.find('&',p);auto part=raw.substr(p,amp==std::string::npos?std::string::npos:amp-p);auto eq=part.find('=');out[strut_string(part.substr(0,eq))]=strut_string(eq==std::string::npos?"":part.substr(eq+1));if(amp==std::string::npos)break;p=amp+1;}}
-inline bool strut_route_match(const std::string& pattern,const std::string& path,std::map<strut_string,strut_string>& params){std::stringstream a(pattern),b(path);std::string x,y;while(true){bool ax=static_cast<bool>(std::getline(a,x,'/')),by=static_cast<bool>(std::getline(b,y,'/'));if(!ax||!by)return ax==by;if(x.empty()&&y.empty())continue;if(!x.empty()&&x[0]==':')params[strut_string(x.substr(1))]=strut_string(y);else if(x!=y)return false;}}
+inline void strut_parse_query(const std::string& raw,std::unordered_map<strut_string,strut_string>& out){std::size_t p=0;while(p<=raw.size()){auto amp=raw.find('&',p);auto part=raw.substr(p,amp==std::string::npos?std::string::npos:amp-p);auto eq=part.find('=');out[strut_string(part.substr(0,eq))]=strut_string(eq==std::string::npos?"":part.substr(eq+1));if(amp==std::string::npos)break;p=amp+1;}}
+inline bool strut_route_match(const std::string& pattern,const std::string& path,std::unordered_map<strut_string,strut_string>& params){std::stringstream a(pattern),b(path);std::string x,y;while(true){bool ax=static_cast<bool>(std::getline(a,x,'/')),by=static_cast<bool>(std::getline(b,y,'/'));if(!ax||!by)return ax==by;if(x.empty()&&y.empty())continue;if(!x.empty()&&x[0]==':')params[strut_string(x.substr(1))]=strut_string(y);else if(x!=y)return false;}}
 class strut_http_server {
 public:
     using handler=std::function<strut_server_response(strut_server_request)>;
     void get(const strut_string& path,handler h){routes_.push_back({"GET",path.v,std::move(h)});} void post(const strut_string& path,handler h){routes_.push_back({"POST",path.v,std::move(h)});}
     void get_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h){get(path,[h=std::move(h)](strut_server_request r){auto f=h(std::move(r));return strut_await(f);});}
     void post_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h){post(path,[h=std::move(h)](strut_server_request r){auto f=h(std::move(r));return strut_await(f);});}
-    void serve_static(const strut_string& prefix,const std::map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()){static_prefix_=prefix.v;static_files_=files;static_fallback_=fallback.v;}
+    void serve_static(const strut_string& prefix,const std::unordered_map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()){static_prefix_=prefix.v;static_files_=files;static_fallback_=fallback.v;}
     void listen(const strut_string& host,std::int32_t port,std::int32_t max_requests=0){auto l=tcp_listen(host,port);std::int32_t served=0;while(max_requests<=0||served<max_requests){auto c=l.accept();serve_one(c);++served;}l.close();}
 private:
-    struct route{std::string method,path;handler fn;}; std::vector<route> routes_; std::string static_prefix_; std::string static_fallback_; std::map<strut_string,strut_string> static_files_;
+    struct route{std::string method,path;handler fn;}; std::vector<route> routes_; std::string static_prefix_; std::string static_fallback_; std::unordered_map<strut_string,strut_string> static_files_;
     static strut_string mime(const std::string& p){auto dot=p.rfind('.');auto e=dot==std::string::npos?std::string():p.substr(dot);if(e==".html")return "text/html; charset=utf-8";if(e==".css")return "text/css; charset=utf-8";if(e==".js")return "application/javascript";if(e==".json")return "application/json";if(e==".svg")return "image/svg+xml";if(e==".png")return "image/png";return "application/octet-stream";}
     static std::string etag(const std::string& data){std::uint64_t h=1469598103934665603ull;for(unsigned char c:data){h^=c;h*=1099511628211ull;}std::ostringstream o;o<<'"'<<std::hex<<h<<'"';return o.str();}
     void serve_one(strut_tcp_socket& sock){std::string raw;for(;;){auto chunk=sock.read(4096).v;if(chunk.empty())break;raw+=chunk;if(raw.find("\r\n\r\n")!=std::string::npos)break;}strut_server_request req;auto line_end=raw.find("\r\n");if(line_end==std::string::npos)return;std::istringstream first(raw.substr(0,line_end));std::string target,version;first>>req.method.v>>target>>version;auto q=target.find('?');req.path=strut_string(target.substr(0,q));if(q!=std::string::npos)strut_parse_query(target.substr(q+1),req.query);auto header_end=raw.find("\r\n\r\n");std::size_t p=line_end+2;std::size_t content_len=0;while(p<header_end){auto e=raw.find("\r\n",p);auto ln=raw.substr(p,e-p);auto colon=ln.find(':');if(colon!=std::string::npos){auto k=strut_trim_ascii(ln.substr(0,colon));auto v=strut_trim_ascii(ln.substr(colon+1));req.headers[strut_string(k)]=strut_string(v);if(k=="Content-Length")content_len=static_cast<std::size_t>(std::strtoull(v.c_str(),nullptr,10));}p=e+2;}if(header_end!=std::string::npos){req.body=strut_string(raw.substr(header_end+4));while(req.body.v.size()<content_len){auto more=sock.read(static_cast<std::int64_t>(content_len-req.body.v.size())).v;if(more.empty())break;req.body.v+=more;}}
@@ -712,7 +949,7 @@ inline strut_sqlite_db strut_sqlite_open(const strut_string& path){sqlite3* db=n
 #endif
 
 inline strut_string strut_embed_file(const strut_string& path){std::ifstream f(path.v,std::ios::binary);if(!f)throw strut_checked_error("EmbedError","unable to open embedded file");std::ostringstream o;o<<f.rdbuf();return strut_string(o.str());}
-inline std::map<strut_string,strut_string> strut_embed_dir(const strut_string& root){std::map<strut_string,strut_string> out;for(auto& e:std::filesystem::recursive_directory_iterator(root.v)){if(!e.is_regular_file())continue;std::ifstream f(e.path(),std::ios::binary);std::ostringstream o;o<<f.rdbuf();out[strut_string(std::filesystem::relative(e.path(),root.v).generic_string())]=strut_string(o.str());}return out;}
+inline std::unordered_map<strut_string,strut_string> strut_embed_dir(const strut_string& root){std::unordered_map<strut_string,strut_string> out;for(auto& e:std::filesystem::recursive_directory_iterator(root.v)){if(!e.is_regular_file())continue;std::ifstream f(e.path(),std::ios::binary);std::ostringstream o;o<<f.rdbuf();out[strut_string(std::filesystem::relative(e.path(),root.v).generic_string())]=strut_string(o.str());}return out;}
 
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
 )CPP";for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
@@ -760,7 +997,7 @@ std::string target_compiler(const std::string& target, bool& msvc) {
 bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
  auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
 bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd;
- if(msvc) cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy /GL ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
+ if(msvc) cmd=cxx+" /nologo /std:c++20 /EHsc /c "+(link.release?"/O2 /Gy ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
  else cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
  if(std::system(cmd.c_str())!=0){error="native C++ object compilation failed";return false;}return true;
 }
@@ -813,17 +1050,17 @@ bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,
 #endif
  const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:def;std::string cmd;
 #ifdef _WIN32
- cmd=cxx+" /nologo /std:c++20 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy /GL ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ cmd=cxx+" /nologo /std:c++20 /EHsc "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"/Od /Zi ")+"/I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
  bool link_section=false;
  for(const auto& d:link.search_paths){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}
  if(!link_section){cmd+=" /link";link_section=true;}cmd+=" ws2_32.lib";
- if(link.release){cmd+=" /OPT:REF /OPT:ICF /LTCG";}else{cmd+=" /DEBUG";}
+ if(link.release){cmd+=" /OPT:REF /OPT:ICF";}else{cmd+=" /DEBUG";}
 #else
  #ifdef __APPLE__
  if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";std::error_code ec;std::filesystem::remove(tmp,ec);return false;}
  #endif
- cmd=cxx+" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
+ cmd=cxx+" -std=c++20 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O0 -g ")+"-I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
  if(link.fully_static)cmd+=" -static";
  for(const auto& d:link.search_paths)cmd+=" -L\""+d.string()+"\"";
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);if(lp.has_extension()||lib.value.find('/')!=std::string::npos){cmd+=" \""+lib.value+"\"";continue;}

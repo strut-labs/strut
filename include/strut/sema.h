@@ -50,6 +50,8 @@ private:
     bool compatible(const TypeInfo& from, const TypeInfo& to) const;
     static std::unordered_map<std::string, Symbol>& namespace_map(Scope& scope, SymbolNamespace name_space);
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
+    void require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const;
+    void require_module(SemanticResult& result, std::string_view module, SourceSpan span, std::string_view facility) const;
 
     std::unordered_map<std::string, std::string> aliases_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
@@ -66,6 +68,8 @@ private:
     std::unordered_set<std::string> extern_c_functions_;
     int unsafe_depth_ = 0;
     int catch_all_depth_ = 0;
+    bool enforce_standard_modules_ = false;
+    std::unordered_set<std::string> standard_modules_;
 };
 
 } // namespace strut

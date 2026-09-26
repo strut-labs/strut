@@ -12,7 +12,7 @@ The language handover has been reviewed against the implemented compiler rather 
 - `.p` source and optional `.h` declaration/header files;
 - `T[]` dynamic arrays and `T[n]` fixed arrays;
 - keyed `[...]` map literals and `{...}` JSON literals;
-- `ptr<T>`, `ref<T>`, `weak_ptr<T>`, and unsafe `raw_ptr<T>`; no tracing GC;
+- `T*`, `T&`, `weak_ptr<T>`, and unsafe `ptr<T>`; no tracing GC;
 - checked errors use `-> R : E` or `-> R : (E1, E2)` plus `throw`/`try`/`catch`;
 - local `include "file.h";` and package `include <package>;`;
 - fixed language-defined operator set and precedence; no parser-extension/custom-precedence mechanism;

@@ -1,8 +1,8 @@
 # CP95 reference-count optimisation
 
-The first Strut-specific ownership optimisation targets function parameters. A `ptr<T>` parameter that is not reassigned by the callee is emitted as a borrowed `const std::shared_ptr<T>&` in the bootstrap backend instead of a by-value `std::shared_ptr<T>`. That preserves source semantics for read-only parameters while avoiding an otherwise mandatory atomic reference-count increment/decrement on every call. Parameters that are reassigned remain by-value owners.
+The first Strut-specific ownership optimisation targets function parameters. A `T*` parameter that is not reassigned by the callee is emitted as a borrowed `const std::shared_ptr<T>&` in the bootstrap backend instead of a by-value `std::shared_ptr<T>`. That preserves source semantics for read-only parameters while avoiding an otherwise mandatory atomic reference-count increment/decrement on every call. Parameters that are reassigned remain by-value owners.
 
-This is deliberately conservative: it does not change explicit Strut `ptr<T>` copies, returned ownership, stored ownership, or parameters whose bodies assign to the binding. The optimisation is verified in codegen tests so later compiler changes cannot silently reintroduce the copy.
+This is deliberately conservative: it does not change explicit Strut `T*` copies, returned ownership, stored ownership, or parameters whose bodies assign to the binding. The optimisation is verified in codegen tests so later compiler changes cannot silently reintroduce the copy.
 
 `ptr_param.cpp` provides a host-level before/after model using non-inlined shared-pointer calls. `ptr_param.cp95.txt` records the current development-host result. `ptr_baseline.cpp` remains the lower-level copy-cost baseline. These microbenchmarks are for regression/profiling guidance, not public cross-language claims.
 

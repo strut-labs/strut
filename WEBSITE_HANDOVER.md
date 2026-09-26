@@ -94,6 +94,6 @@ Keep dedicated/reference coverage for:
 - `istream`/`ostream`/`sstream`/`ifstream`/`ofstream` plus `in`/`out`/`err`;
 - `exec` and child-process/pipe APIs;
 - static, dynamic, and mixed linking plus executable-size/deployment guidance;
-- `ptr<T>`, `ref<T>`, `weak_ptr<T>`, and unsafe `raw_ptr<T>`.
+- `T*`, `T&`, `weak_ptr<T>`, and unsafe `ptr<T>`.
 
 Do not document planned syntax as shipped without clear planned/provisional labelling.
