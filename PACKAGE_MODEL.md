@@ -86,14 +86,18 @@ The resolver checkpoint must:
 5. reject conflicting requirements with a dependency-path diagnostic rather than choosing nondeterministically;
 6. verify cached/downloaded content against the lockfile checksum before use.
 
-CP71 defined the base contract; CP72–CP73 added the `strut-packages` repository convention, local package development/cache flow, deterministic lockfile mutation, `strut add/remove/list/install`, and package include resolution. The reproducibility phase upgraded the lockfile to schema 2 with content digests, logical source identities, direct/transitive edges, round-trip validation, stale-entry checks, duplicate rejection, and cycle rejection. Remote fetching remains intentionally separate from the local/cache workflow.
+CP71 defined the base contract; CP72–CP73 added the `strut-packages` repository convention and local package workflow. The reproducibility phase upgraded the lockfile to schema 2 with content digests, immutable Git revisions, direct/transitive edges, deterministic graph resolution, conflict and cycle diagnostics, atomic cache repair, and offline installation.
 
 ## Package CLI (CP73)
 
-`strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. `strut remove <name>`, `strut list`, and `strut install` manage the local dependency set. Remote fetching is intentionally not guessed at before the HTTP client exists; CP73 operates against explicit local checkouts and cached versions.
+`strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. Remote dependencies are declared with a semantic `version`, Git URL, and exact hexadecimal `rev`. `strut remove <name>`, `strut list`, `strut install`, `strut update`, and `strut packages [--json]` manage and inspect the graph.
 
-`include <name>` loads the package entry declared by the resolved cached package. `include <name/path.h>` loads an explicit file inside that package. Package includes must also appear in the project manifest.
+`include <name>` loads the package entry declared by the exact locked and checksum-verified package. `include <name/path.h>` loads an explicit file inside it. Includes may name direct or transitive packages present in the validated lock graph.
 
 ## Install, update, and offline behavior
 
 `strut install` consumes an existing valid lockfile exactly. It verifies every content-addressed cache entry and restores missing or corrupt Git packages from the locked URL and exact commit, rejecting any checksum mismatch without rewriting the lock. When no lockfile exists, it resolves the manifest and writes one. `strut update` is the explicit operation that re-resolves current manifest sources and rewrites the lockfile. `strut install --offline` never performs acquisition: it requires a valid lockfile and every exact locked digest to already be cached, otherwise it fails with the missing identity and remediation.
+
+`strut packages` reports every locked package, its direct/transitive status, request, resolved version, source, revision, checksum, and verified-cache state. `strut packages --json` and `strut project --json` expose stable schema-versioned state for CI, agents, and editors. The LSP reads the same validated lock/cache state for completion, hover, signatures, definitions, and missing-package diagnostics; it never acquires packages or contacts the network.
+
+The permanent `dogfood/package_certification.py` matrix fixture certifies a Git-backed diamond graph twice from empty caches, byte-stable locks, compilation through a shared transitive package, network-disabled offline install, missing/corrupt cache handling, interrupted staging isolation, concurrent promotion, and controlled updates on Linux, macOS, and Windows.

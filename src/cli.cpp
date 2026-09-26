@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <iomanip>
+#include <initializer_list>
 #include <unordered_set>
 #include <ostream>
 #include <string>
@@ -83,7 +84,7 @@ void print_help(std::ostream& out) {
 
 void print_command_help(std::string_view command, std::ostream& out) {
     if (command == "compile") out << "Usage: strut compile <source.p> [-o path] [--release] [link options]\n";
-    else if (command == "init") out << "Usage: strut init\nCreates .strut/config.json for the current project.\n";
+    else if (command == "init") out << "Usage: strut init\nCreates .strut/config.json and strut.json for the current project.\n";
     else if (command == "make") out << "Usage: strut make [--release] [--verbose]\nBuilds the configured project entrypoint using incremental object metadata.\n";
     else if (command == "test") out << "Usage: strut test [filter] [--verbose]\nDiscovers tests/**/*_test.p; tests run deterministically and sequentially.\n";
     else if (command == "fmt") out << "Usage: strut fmt [path] [--check]\nFormats .p/.h files; --check reports drift without writing.\n";
@@ -121,6 +122,7 @@ json::Document api_index(std::string_view query) {
     root["functions"]=functions;
     root["methods"]=methods;
     json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","update","packages","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
+    json::Document options=json::Document::make_object();auto option_list=[&](std::initializer_list<const char*> values){json::Document list=json::Document::make_array();for(const auto* value:values)list.array.emplace_back(value);return list;};options["install"]=option_list({"--offline"});options["packages"]=option_list({"--json"});options["project"]=option_list({"--json"});options["api"]=option_list({"--json"});options["fmt"]=option_list({"--check"});options["make"]=option_list({"--release","--verbose"});root["cli_options"]=options;
     json::Document notes=json::Document::make_object();notes["range_loop"]="for (item : items)";notes["core_array"]="T[] (no include required)";notes["custom_checked_errors"]="Custom error declarations are not currently supported; use documented built-in checked error types.";root["language_notes"]=notes;
     return root;
 }

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "task": "locked-package-workflow",
+  "information_sources": ["cli-help", "website-docs", "diagnostics", "machine-readable-json"],
+  "implementation_source_inspected": false,
+  "attempts": 1,
+  "correction_cycles": 0,
+  "result": "success",
+  "certification": "dogfood/package_certification.py"
+}

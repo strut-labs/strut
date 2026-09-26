@@ -94,6 +94,7 @@ int main() {
         require(out.str().find("\"http_get\"")!=std::string::npos,"API contains builtins");
         require(out.str().find("\"HttpError\"")!=std::string::npos,"API contains checked errors");
         require(out.str().find("\"libcurl\"")!=std::string::npos,"API contains native dependencies");
+        require(out.str().find("\"packages\"")!=std::string::npos&&out.str().find("\"--offline\"")!=std::string::npos,"API contains package commands and flags");
     }
     {
         char arg0[]="strut";char arg1[]="api";char arg2[]="--json";char arg3[]="sqlite";char* argv[]={arg0,arg1,arg2,arg3};
