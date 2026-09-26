@@ -29,6 +29,12 @@ Certify that six common mistakes produce actionable Strut-level guidance with:
 python3 dogfood/diagnostics.py build/strut
 ```
 
+Exercise the built-in language server through its standard stdio protocol:
+
+```sh
+python3 dogfood/lsp_check.py build/strut
+```
+
 The controlled mistakes cover a missing standard module, an unhandled checked
 error, an unsafe pointer operation, an invalid generic key, package dependency
 resolution, and a missing native HTTP dependency. Each must be fixable from the

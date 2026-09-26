@@ -91,7 +91,7 @@ void print_command_help(std::string_view command, std::ostream& out) {
     else if (command == "install") out << "Usage: strut install\n";
     else if (command == "project") out << "Usage: strut project [--json]\nShows the discovered project root, build configuration, manifest and package cache.\n";
     else if (command == "api") out << "Usage: strut api [--json] [query]\nBrowses built-ins, methods, modules, checked errors and native dependencies. Query by name, module, category, summary, or `checked-errors`.\n";
-    else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout.\n";
+    else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout with contextual completion, signature help, hover, diagnostics, symbols, formatting, and go-to-definition.\n";
     else print_help(out);
 }
 
