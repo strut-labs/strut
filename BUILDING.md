@@ -36,8 +36,8 @@ Release archives use the same relocatable layout produced by CMake:
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
-cmake --install build --config Release --prefix ./strut-0.0.1
-./strut-0.0.1/bin/strut --version
+cmake --install build --config Release --prefix ./strut-0.0.2
+./strut-0.0.2/bin/strut --version
 ```
 
 Keep `bin/` and `share/` together when moving an installation. The compiler finds

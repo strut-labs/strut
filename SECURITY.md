@@ -56,4 +56,4 @@ Release-candidate certification should include, at minimum:
 
 ## Current limitations
 
-Strut is pre-1.0. The 0.0.1 release candidate is certified on Linux x64/ARM64, macOS ARM64, and Windows x64. The independent regression suite remains a required CI gate for release candidates.
+Strut is pre-1.0. Release candidates are certified on Linux x64/ARM64, macOS ARM64, and Windows x64. The independent regression suite remains a required CI gate.

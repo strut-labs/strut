@@ -1,7 +1,35 @@
-# Unreleased
+# Strut 0.0.2
 
-- Prefix and postfix `++`/`--` are distinct overload identities; postfix
+Strut 0.0.2 consolidates the language, tooling, package ecosystem, and native
+backend work completed since the first release.
+
+## Highlights
+
+- Runtime support is composed from program dependencies, keeping generated
+  executables focused while preserving strict native-code certification.
+- Structured `TypeId` information now drives nested types and stronger generic
+  inference, including contextual empty literals, pointers, nullability, and
+  nested collections.
+- Nominal custom checked errors support structured payloads, propagation,
+  typed handling, modules, generics, async code, diagnostics, and editor data.
+- `atomic<int>` and `atomic<bool>` provide sequentially consistent operations;
+  integer atomics additionally provide `fetch_add` and `fetch_sub`.
+- Prefix and postfix `++`/`--` are distinct overload identities. Postfix
   declarations use the compile-time-only `postfix` marker.
+- The canonical machine-readable API registry powers improved diagnostics and
+  richer completion, hover, signature, definition, and checked-error metadata.
+- Executable documentation and AI-DX benchmarks continuously certify examples,
+  generated code, diagnostics, and common agent-authored programs.
+- Package installs are reproducible through deterministic machine-independent
+  lockfiles, immutable Git revisions, SHA-256 integrity, offline cache use, and
+  package-aware editor tooling. Official shorthand such as `strut install sqlite`
+  resolves only through the `strut-packages` organization.
+- HTTPS serving, verified client TLS/private CAs, concurrent HTTP handling,
+  lifecycle limits, timeouts, signals, and graceful idempotent shutdown are
+  covered by backend dogfood and cross-platform CI.
+- Release archives are relocatable, include JSONIC and required notices, and
+  publish a generated `SHA256SUMS` file for Linux x64/ARM64, macOS ARM64, and
+  Windows x64 artifacts.
 
 # Strut 0.0.1
 
@@ -36,15 +64,3 @@ pre-1.0 language and toolchain baseline across Linux, macOS, and Windows.
 
 Strut remains pre-1.0. See `COMPATIBILITY.md` for the compatibility policy and
 `BUILDING.md` for source and installed-layout instructions.
-
-## Development after 0.0.1
-
-- Generic calls now use destination, assignment, return, parameter, and nested
-  `TypeId` context, including empty literals, nullable values, pointers, and
-  recursively nested containers.
-- Applications can declare nominal structured checked errors with
-  `error Name { ... }`; contracts, throws, typed catches, generic functions,
-  async functions, modules, diagnostics, and editor metadata preserve identity.
-- `atomic<int>` and `atomic<bool>` provide sequentially consistent load/store,
-  exchange, compare-exchange, and integer fetch-add/fetch-sub operations.
-- Executable documentation now certifies every enabled operator-overload family.
