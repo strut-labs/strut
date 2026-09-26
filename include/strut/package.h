@@ -55,6 +55,7 @@ std::optional<std::filesystem::path> resolve_cached_package(const std::string& n
 bool verify_cached_package(const std::filesystem::path& cached_root, std::string& checksum, std::string& error);
 bool cache_local_package(const std::filesystem::path& source_root, std::filesystem::path& cached_root, PackageManifest& manifest, std::string& error);
 bool acquire_git_package(const PackageSource& source, std::filesystem::path& cached_root, PackageManifest& manifest, std::string& error);
+bool resolve_official_package_source(const std::string& name, const std::string& requirement, PackageSource& source, std::string& version, std::string& error);
 bool parse_package_lock(const std::string& text, PackageLock& out, std::string& error);
 bool load_package_lock_file(const std::filesystem::path& path, PackageLock& out, std::string& error);
 bool write_package_lock_file(const std::filesystem::path& path, const PackageLock& lock, std::string& error);

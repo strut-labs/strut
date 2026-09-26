@@ -2,6 +2,8 @@
 
 Official packages live under the `strut-packages` GitHub organisation, one repository per package: `strut-packages/http`, `strut-packages/sqlite`, and so on. Package names use lowercase ASCII letters, digits, `-`, and `_`; the repository name and manifest `name` must agree.
 
+The CLI makes that ownership boundary explicit: `strut install sqlite` resolves only `https://github.com/strut-packages/sqlite`, and `strut install sqlite@^1.0.0` selects the highest compatible immutable semantic-version tag. There is no registry search or third-party fallback. Non-official Git sources must be written explicitly in `strut.json` with an exact commit revision.
+
 Package implementations are **not stored inside the Strut compiler repository**. Compiler tests that need package fixtures must create temporary/local test packages or consume a sibling package checkout; this keeps package release history independent from compiler history.
 
 ## Quality contract

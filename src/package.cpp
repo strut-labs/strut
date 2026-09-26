@@ -163,7 +163,7 @@ bool load_package_manifest_file(const std::filesystem::path& path, PackageManife
 
 bool write_package_manifest_file(const std::filesystem::path& path, const PackageManifest& manifest, std::string& error) {
     json::Document doc=json::Document::make_object(); doc["name"]=manifest.name; doc["version"]=manifest.version; if(!manifest.entry.empty())doc["entry"]=manifest.entry; if(!manifest.description.empty())doc["description"]=manifest.description; if(!manifest.license.empty())doc["license"]=manifest.license; if(!manifest.repository.empty())doc["repository"]=manifest.repository;
-    json::Document deps=json::Document::make_object(); for(const auto& d:manifest.dependencies){auto source=manifest.dependency_sources.find(d.first);if(source==manifest.dependency_sources.end())deps[d.first]=d.second;else{json::Document remote=json::Document::make_object();remote["version"]=d.second;remote["git"]=source->second.url;remote["rev"]=source->second.revision;deps[d.first]=remote;}} doc["dependencies"]=deps;
+    json::Document deps=json::Document::make_object(); for(const auto& d:manifest.dependencies){auto source=manifest.dependency_sources.find(d.first);if(source==manifest.dependency_sources.end()||source->second.kind!="git")deps[d.first]=d.second;else{json::Document remote=json::Document::make_object();remote["version"]=d.second;remote["git"]=source->second.url;remote["rev"]=source->second.revision;deps[d.first]=remote;}} doc["dependencies"]=deps;
     std::ofstream output(path); if(!output){error="unable to write " + path.string();return false;} output<<doc.dump(2)<<'\n'; return static_cast<bool>(output);
 }
 
@@ -206,6 +206,24 @@ std::string shell_quote(const std::filesystem::path& value){
 }
 }
 
+bool resolve_official_package_source(const std::string& name,const std::string& requirement,PackageSource& source,std::string& version,std::string& error){
+    if(!valid_package_name(name)){error="invalid official package name '"+name+"'";return false;}
+    if(!valid_version_requirement(requirement)){error="invalid version requirement '"+requirement+"' for official package '"+name+"'";return false;}
+    std::string base="https://github.com/strut-packages";if(const char* override_base=std::getenv("STRUT_OFFICIAL_PACKAGE_BASE");override_base&&*override_base)base=override_base;
+    while(!base.empty()&&base.back()=='/')base.pop_back();
+    const std::string url=base+"/"+name;
+    const auto acquisition_root=package_cache_root()/".acquire";std::error_code ec;std::filesystem::create_directories(acquisition_root,ec);if(ec){error="unable to create package acquisition directory: "+ec.message();return false;}
+    std::random_device random;std::filesystem::path output;for(unsigned attempt=0;attempt<32;++attempt){std::ostringstream id;id<<"official-tags-"<<std::hex<<random()<<random();output=acquisition_root/id.str();if(!std::filesystem::exists(output,ec))break;output.clear();}if(output.empty()){error="unable to allocate official package discovery output";return false;}
+    const auto command="git -c core.hooksPath="+shell_quote(acquisition_root/"disabled-hooks")+" ls-remote --tags -- "+shell_quote(url)+" > "+shell_quote(output)+" 2>&1";
+    if(std::system(command.c_str())!=0){std::filesystem::remove(output,ec);error="official package '"+name+"' was not found at "+url+"\nhelp: use an explicit Git dependency in strut.json for third-party packages";return false;}
+    std::ifstream input(output);std::map<std::string,std::string> revisions;std::string revision,reference;
+    while(input>>revision>>reference){constexpr std::string_view prefix="refs/tags/";if(reference.rfind(prefix,0)!=0)continue;std::string tag=reference.substr(prefix.size());const bool peeled=tag.size()>3&&tag.compare(tag.size()-3,3,"^{}") == 0;if(peeled)tag.resize(tag.size()-3);std::string candidate=tag;if(!candidate.empty()&&candidate.front()=='v')candidate.erase(candidate.begin());if(!valid_semver(candidate))continue;auto found=revisions.find(candidate);if(found==revisions.end()||peeled)revisions[candidate]=revision;}
+    std::filesystem::remove(output,ec);bool found=false;std::array<unsigned,3> best{};
+    for(const auto& candidate:revisions){if(!satisfies(candidate.first,requirement))continue;bool ok=false;const auto parts=semver_parts(candidate.first,ok);if(ok&&(!found||parts>best)){found=true;best=parts;version=candidate.first;revision=candidate.second;}}
+    if(!found){error="official package '"+name+"' has no immutable semantic-version tag satisfying '"+requirement+"' at "+url;return false;}
+    source={"official",url,revision};return true;
+}
+
 bool cache_local_package(const std::filesystem::path& source_root,std::filesystem::path& cached_root,PackageManifest& manifest,std::string& error) {
     if(!load_package_manifest_file(source_root/"strut.json",manifest,error))return false;
     std::string checksum;if(!package_content_checksum(source_root,checksum,error))return false;
@@ -244,7 +262,7 @@ bool cache_local_package(const std::filesystem::path& source_root,std::filesyste
 }
 
 bool acquire_git_package(const PackageSource& source,std::filesystem::path& cached_root,PackageManifest& manifest,std::string& error){
-    if(source.kind!="git"||source.url.empty()||source.url.front()=='-'||source.url.find_first_of("\r\n")!=std::string::npos){error="invalid Git package source";return false;}
+    if((source.kind!="git"&&source.kind!="official")||source.url.empty()||source.url.front()=='-'||source.url.find_first_of("\r\n")!=std::string::npos){error="invalid Git package source";return false;}
     if(source.revision.size()<40||source.revision.size()>64||!std::all_of(source.revision.begin(),source.revision.end(),[](unsigned char c){return std::isxdigit(c);})){error="Git package source requires an exact commit revision";return false;}
     const auto acquisition_root=package_cache_root()/".acquire";std::error_code ec;std::filesystem::create_directories(acquisition_root,ec);if(ec){error="unable to create acquisition directory: "+ec.message();return false;}
     std::random_device random;std::filesystem::path checkout;for(unsigned attempt=0;attempt<32;++attempt){std::ostringstream id;id<<"git-"<<std::hex<<random()<<random();checkout=acquisition_root/id.str();if(!std::filesystem::exists(checkout,ec))break;checkout.clear();}if(checkout.empty()){error="unable to allocate Git acquisition directory";return false;}
@@ -288,6 +306,7 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
         return false;
     };
     for(const auto& source:manifest.dependency_sources)if(!register_source(source.first,source.second,"project '"+manifest.name+"'"))return false;
+    PackageLock previous;std::string previous_error;if(load_package_lock_file(project_root/"strut.lock.json",previous,previous_error))for(const auto& package:previous.packages)if(package.source_kind=="official"&&manifest.dependencies.count(package.name)&&!sources.count(package.name))if(!register_source(package.name,{"official",package.source,""},"project '"+manifest.name+"'"))return false;
     std::function<bool(const std::string&,const std::string&,bool,const std::string&)> resolve;
     resolve=[&](const std::string& name,const std::string& requirement,bool direct,const std::string& requester) {
         if(!valid_package_name(name)){error="invalid dependency package name '"+name+"' requested by "+requester;return false;}
@@ -308,19 +327,32 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
         }
         first_requirements.emplace(name,std::make_pair(requirement,requester));
         std::string cache_error;std::optional<std::filesystem::path> root;auto remote=sources.find(name);
-        if(remote!=sources.end()){
+        std::string official_version;
+        if(remote!=sources.end()&&remote->second.kind=="official"&&remote->second.revision.empty()){
+            PackageSource discovered;if(!resolve_official_package_source(name,requirement,discovered,official_version,error))return false;remote->second=std::move(discovered);
+        }
+        if(remote!=sources.end()&&remote->second.kind!="local-cache"){
             std::filesystem::path acquired;PackageManifest acquired_manifest;
             if(!acquire_git_package(remote->second,acquired,acquired_manifest,cache_error)){error=cache_error;return false;}
-            if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement+" required by "+requester;return false;}
+            if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)||(!official_version.empty()&&acquired_manifest.version!=official_version)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement+" required by "+requester;return false;}
             root=acquired;
-        }else root=resolve_cached_package(name,requirement,&cache_error);
+        }else{
+            root=resolve_cached_package(name,requirement,&cache_error);
+            if(!root&&cache_error.empty()){
+                PackageSource discovered;if(!resolve_official_package_source(name,requirement,discovered,official_version,error))return false;
+                if(!register_source(name,discovered,requester))return false;
+                remote=sources.find(name);
+                std::filesystem::path acquired;PackageManifest acquired_manifest;if(!acquire_git_package(remote->second,acquired,acquired_manifest,error))return false;
+                if(acquired_manifest.name!=name||acquired_manifest.version!=official_version){error="official package metadata at '"+remote->second.url+"' does not match tag v"+official_version;return false;}root=acquired;
+            }
+        }
         if(!root){error=cache_error.empty()?"dependency '"+name+"' is not present in the package cache\nnote: "+requester+" requires version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
         PackageManifest package;
         if(!load_package_manifest_file(*root/"strut.json",package,cache_error)||package.name!=name||!satisfies(package.version,requirement)){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(cache_error.empty()?std::string{}:": "+cache_error);return false;}
         for(const auto& source:package.dependency_sources)if(!register_source(source.first,source.second,"package '"+name+"'"))return false;
         active.insert(name);stack.push_back(name);
         LockedPackage locked;locked.name=name;locked.requested=requirement;locked.version=package.version;locked.source_kind="local-cache";locked.source="local:"+name;locked.revision=package.version;locked.direct=direct;
-        auto own_source=sources.find(name);if(own_source!=sources.end()){locked.source_kind="git";locked.source=own_source->second.url;locked.revision=own_source->second.revision;}
+        auto own_source=sources.find(name);if(own_source!=sources.end()&&own_source->second.kind!="local-cache"){locked.source_kind=own_source->second.kind;locked.source=own_source->second.url;locked.revision=own_source->second.revision;}
         if(!package_content_checksum(*root,locked.checksum,error))return false;
         for(const auto& dependency:package.dependencies){
             if(!resolve(dependency.first,dependency.second,false,"package '"+name+"'"))return false;
@@ -346,8 +378,8 @@ bool install_packages(const std::filesystem::path& project_root,bool offline,boo
         const auto cached=package_cache_root()/package.name/package.version/package.checksum.substr(7);std::string actual,cache_error;
         if(verify_cached_package(cached,actual,cache_error)&&actual==package.checksum)continue;
         if(offline){error="offline install is missing verified package '"+package.name+"' "+package.version+" at revision "+package.revision+"\nnote: expected verified cache entry "+cached.string()+" ("+package.checksum+")\nhelp: run `strut install` with network access to restore the locked package";return false;}
-        if(package.source_kind!="git"){error="locked local package '"+package.name+"' is missing or corrupt and has no reproducible remote source";return false;}
-        PackageSource source{"git",package.source,package.revision};std::filesystem::path acquired;PackageManifest acquired_manifest;
+        if(package.source_kind!="git"&&package.source_kind!="official"){error="locked local package '"+package.name+"' is missing or corrupt and has no reproducible remote source";return false;}
+        PackageSource source{package.source_kind,package.source,package.revision};std::filesystem::path acquired;PackageManifest acquired_manifest;
         if(!acquire_git_package(source,acquired,acquired_manifest,error))return false;
         if(acquired_manifest.name!=package.name||acquired_manifest.version!=package.version||!verify_cached_package(acquired,actual,error)||actual!=package.checksum){error="integrity mismatch while restoring locked package '"+package.name+"'; expected "+package.checksum+", received "+actual;return false;}
     }

@@ -90,13 +90,17 @@ CP71 defined the base contract; CP72–CP73 added the `strut-packages` repositor
 
 ## Package CLI (CP73)
 
-`strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. Remote dependencies are declared with a semantic `version`, Git URL, and exact hexadecimal `rev`. `strut remove <name>`, `strut list`, `strut install`, `strut update`, and `strut packages [--json]` manage and inspect the graph.
+`strut install <name>[@<requirement>]` is the official-package shorthand. A bare name has exactly one meaning: `https://github.com/strut-packages/<name>`. The resolver reads immutable semantic-version Git tags, chooses the highest compatible version, resolves that tag to an exact commit, and records the canonical repository, commit and content checksum in the lockfile. It never searches GitHub, guesses owners, or falls back to a similarly named third-party repository.
+
+For example, `strut install sqlite` installs the highest tagged official SQLite package, while `strut install sqlite@^1.2.0` constrains selection. The resulting manifest remains concise (`"sqlite": "^1.2.0"`); `strut packages --json` exposes `official`, `source_owner`, `source_repo`, and `canonical_source` for tooling.
+
+`strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. Third-party remote dependencies remain explicit objects with a semantic `version`, Git URL, and exact hexadecimal `rev`. `strut remove <name>`, `strut list`, `strut install`, `strut update`, and `strut packages [--json]` manage and inspect the graph.
 
 `include <name>` loads the package entry declared by the exact locked and checksum-verified package. `include <name/path.h>` loads an explicit file inside it. Includes may name direct or transitive packages present in the validated lock graph.
 
 ## Install, update, and offline behavior
 
-`strut install` consumes an existing valid lockfile exactly. It verifies every content-addressed cache entry and restores missing or corrupt Git packages from the locked URL and exact commit, rejecting any checksum mismatch without rewriting the lock. When no lockfile exists, it resolves the manifest and writes one. `strut update` is the explicit operation that re-resolves current manifest sources and rewrites the lockfile. `strut install --offline` never performs acquisition: it requires a valid lockfile and every exact locked digest to already be cached, otherwise it fails with the missing identity and remediation.
+`strut install` consumes an existing valid lockfile exactly. It verifies every content-addressed cache entry and restores missing or corrupt Git or official packages from the locked URL and exact commit, rejecting any checksum mismatch without rewriting the lock. When no lockfile exists, a string dependency resolves from the official namespace if it is not already available as an explicitly added local package. `strut update` re-reads official tags and explicit manifest sources, then rewrites the lockfile. `strut install --offline` never performs acquisition: it requires a valid lockfile and every exact locked digest to already be cached, otherwise it fails with the missing identity and remediation.
 
 `strut packages` reports every locked package, its direct/transitive status, request, resolved version, source, revision, checksum, and verified-cache state. `strut packages --json` and `strut project --json` expose stable schema-versioned state for CI, agents, and editors. The LSP reads the same validated lock/cache state for completion, hover, signatures, definitions, and missing-package diagnostics; it never acquires packages or contacts the network.
 

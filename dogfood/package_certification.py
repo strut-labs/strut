@@ -67,6 +67,34 @@ def main():
             "dependencies": {"common": dependency(common, common_rev)}
         }, "include <common>;\nfunction package_b_value() -> int { return common_value() + 1; }\n")
 
+        official_root = root / "official repositories"
+        official_root.mkdir()
+        sqlite, _ = make_repo(official_root, "sqlite", {
+            "name": "sqlite", "version": "1.0.0", "entry": "main.p"
+        }, "function sqlite_value() -> int { return 22; }\n")
+        run(["git", "tag", "v1.0.0"], sqlite)
+        official_project = root / "official shorthand"
+        official_project.mkdir()
+        write_json(official_project / "strut.json", {
+            "name": "official-app", "version": "0.1.0", "entry": "main.p", "dependencies": {}
+        })
+        (official_project / "main.p").write_text(
+            "include <sqlite>;\nfunction main() -> int { print(sqlite_value()); return 0; }\n", encoding="utf-8")
+        official_env = os.environ.copy()
+        official_env["STRUT_HOME"] = str(root / "official home")
+        official_env["STRUT_OFFICIAL_PACKAGE_BASE"] = str(official_root)
+        install = run([compiler, "install", "sqlite@^1.0.0"], official_project, official_env)
+        assert "installed official package sqlite 1.0.0" in install.stdout
+        official_manifest = json.loads((official_project / "strut.json").read_text(encoding="utf-8"))
+        assert official_manifest["dependencies"] == {"sqlite": "^1.0.0"}
+        official_lock = json.loads((official_project / "strut.lock.json").read_text(encoding="utf-8"))
+        assert official_lock["packages"][0]["source_kind"] == "official"
+        official_packages = json.loads(run([compiler, "packages", "--json"], official_project, official_env).stdout)
+        assert official_packages["packages"][0]["official"] is True
+        official_app = executable(official_project / "app")
+        run([compiler, "main.p", "-o", official_app], official_project, official_env)
+        assert run([official_app], official_project, official_env).stdout.strip() == "22"
+
         seed = root / "seed project"
         seed.mkdir()
         manifest = {"name": "package-app", "version": "0.1.0", "entry": "main.p", "dependencies": {

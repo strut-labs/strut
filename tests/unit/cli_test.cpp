@@ -16,6 +16,7 @@ void require(bool condition, const char* message) {
         std::exit(1);
     }
 }
+std::string quote(const std::filesystem::path& path){return "\""+path.string()+"\"";}
 }
 
 int main() {
@@ -129,6 +130,17 @@ int main() {
         std::ofstream(temp.path()/"strut.json")<<R"({"name":"strut-project","version":"0.1.0","dependencies":{"demo-package":"2.0.0"}})";std::ostringstream stale_out,stale_err;require(strut::run_cli(3,packages_argv,stale_out,stale_err)==1,"stale lock exit status");require(stale_out.str().find("\"lock_state\": \"stale\"")!=std::string::npos,"stale lock JSON state");
         std::ofstream(temp.path()/"strut.lock.json")<<"not json\n";std::ostringstream corrupt_out,corrupt_err;require(strut::run_cli(3,packages_argv,corrupt_out,corrupt_err)==1,"corrupt lock exit status");require(corrupt_out.str().find("\"lock_state\": \"corrupt\"")!=std::string::npos,"corrupt lock JSON state");
         std::filesystem::current_path(old);
+    }
+    {
+        const auto old=std::filesystem::current_path();TestTempDirectory temp("strut-cli-official-package");std::filesystem::current_path(temp.path());const auto home=temp.path()/"home",base=temp.path()/"official",repo=base/"sqlite";std::filesystem::create_directories(repo);
+#ifdef _WIN32
+        _putenv_s("STRUT_HOME",home.string().c_str());_putenv_s("STRUT_OFFICIAL_PACKAGE_BASE",base.string().c_str());
+#else
+        setenv("STRUT_HOME",home.string().c_str(),1);setenv("STRUT_OFFICIAL_PACKAGE_BASE",base.string().c_str(),1);
+#endif
+        std::ofstream(temp.path()/"strut.json")<<R"({"name":"app","version":"0.1.0","dependencies":{}})";std::ofstream(repo/"strut.json")<<R"({"name":"sqlite","version":"1.0.0","entry":"main.p"})";std::ofstream(repo/"main.p")<<"function sqlite_fixture() -> int { return 1; }\n";require(std::system(("git init --quiet "+quote(repo)).c_str())==0,"official CLI git init");require(std::system(("git -C "+quote(repo)+" config user.email strut@example.invalid").c_str())==0,"official CLI git email");require(std::system(("git -C "+quote(repo)+" config user.name Strut").c_str())==0,"official CLI git name");require(std::system(("git -C "+quote(repo)+" add strut.json main.p").c_str())==0,"official CLI git add");require(std::system(("git -C "+quote(repo)+" commit --quiet -m fixture").c_str())==0,"official CLI git commit");require(std::system(("git -C "+quote(repo)+" tag v1.0.0").c_str())==0,"official CLI git tag");
+        char arg0[]="strut",install[]="install",spec[]="sqlite@^1.0.0";char* install_argv[]={arg0,install,spec};std::ostringstream install_out,install_err;require(strut::run_cli(3,install_argv,install_out,install_err)==0,"official CLI install");require(install_out.str().find("installed official package sqlite 1.0.0")!=std::string::npos,"official CLI result");std::ifstream manifest(temp.path()/"strut.json");const std::string manifest_text{std::istreambuf_iterator<char>(manifest),{}};require(manifest_text.find("\"sqlite\": \"^1.0.0\"")!=std::string::npos&&manifest_text.find("\"git\"")==std::string::npos,"official CLI shorthand manifest");
+        char packages[]="packages",json[]="--json";char* packages_argv[]={arg0,packages,json};std::ostringstream packages_out,packages_err;require(strut::run_cli(3,packages_argv,packages_out,packages_err)==0,"official packages JSON");require(packages_out.str().find("\"official\": true")!=std::string::npos&&packages_out.str().find("\"source_owner\": \"strut-packages\"")!=std::string::npos,"official package metadata");std::filesystem::current_path(old);
     }
     return 0;
 }
