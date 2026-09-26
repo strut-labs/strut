@@ -71,6 +71,7 @@ public:
         auto out = std::make_unique<IRExpr>();
         out->kind = convert_expr_kind(expr->kind); out->text = expr->text; out->span = expr->span;
         out->type_name = literal_type(*expr);
+        if(expr->inferred_type)out->type_name=type_spelling(expr->inferred_type);
         if (expr->kind == Expr::Kind::identifier) {
             auto it = value_types_.find(expr->text); if (it != value_types_.end()) out->type_name = it->second; else { auto fn=function_types_.find(expr->text); if(fn!=function_types_.end()) out->type_name=fn->second; }
         }
@@ -95,6 +96,7 @@ public:
                 else out->type_name="ref<"+out->arguments.front()->type_name+">";
             }else if(const auto* callable=api_callable(name);callable&&!callable->overloads.empty())out->type_name=type_spelling(callable->overloads.front().return_type);
         }
+        if(expr->inferred_type)out->type_name=type_spelling(expr->inferred_type);
         out->type_id=intern_type(out->type_name);
         return out;
     }

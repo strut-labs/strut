@@ -37,6 +37,7 @@ struct Expr {
     Kind kind;
     std::string text;
     SourceSpan span;
+    mutable TypeId inferred_type;
     ExprPtr left;
     ExprPtr right;
     std::vector<ExprPtr> arguments;

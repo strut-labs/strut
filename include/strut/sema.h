@@ -49,7 +49,7 @@ private:
     Symbol* lookup(std::string_view name, SymbolNamespace name_space);
     void analyze_statements(SemanticResult& result, const std::vector<StmtPtr>& statements, bool create_scope);
     void analyze_statement(SemanticResult& result, const Stmt& statement);
-    TypeInfo infer_expression(SemanticResult& result, const Expr& expression);
+    TypeInfo infer_expression(SemanticResult& result, const Expr& expression, TypeId expected = {});
     TypeInfo resolve_type(std::string_view name) const;
     std::string resolved_type_name(std::string_view name) const;
     bool compatible(const TypeInfo& from, const TypeInfo& to) const;
@@ -68,6 +68,7 @@ private:
     std::string current_function_return_type_;
     std::unordered_set<std::string> current_function_errors_;
     std::unordered_map<std::string, std::unordered_set<std::string>> function_errors_;
+    std::unordered_map<std::string, std::vector<const Stmt*>> function_candidates_;
     std::unordered_map<std::string, std::unordered_set<std::string>> operator_signatures_;
     std::unordered_map<std::string, std::string> operator_returns_;
     std::unordered_set<std::string> extern_c_functions_;

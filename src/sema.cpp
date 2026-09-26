@@ -29,6 +29,33 @@ std::string iterable_element(std::string type){
     return {};
 }
 bool unordered_iterable(std::string_view type){const auto& node=type_node(intern_type(type));return node.kind==TypeNodeKind::generic&&node.name=="set";}
+using TypeBindings=std::unordered_map<std::string,TypeId>;
+bool generic_name(TypeId id,const std::unordered_set<std::string>& parameters){const auto& n=type_node(id);return n.kind==TypeNodeKind::named&&parameters.find(n.name)!=parameters.end();}
+bool unify_type(TypeId pattern,TypeId actual,const std::unordered_set<std::string>& parameters,TypeBindings& bindings){
+    if(!pattern||!actual)return false;
+    if(generic_name(pattern,parameters)){const auto name=type_node(pattern).name;auto [it,inserted]=bindings.emplace(name,actual);return inserted||it->second==actual;}
+    const auto& p=type_node(pattern);const auto& a=type_node(actual);
+    if(p.kind!=a.kind||p.name!=a.name||p.extent!=a.extent||p.children.size()!=a.children.size())return false;
+    for(std::size_t i=0;i<p.children.size();++i)if(!unify_type(p.children[i],a.children[i],parameters,bindings))return false;
+    return true;
+}
+TypeId substitute_type(TypeId pattern,const std::unordered_set<std::string>& parameters,const TypeBindings& bindings){
+    if(generic_name(pattern,parameters)){auto it=bindings.find(type_node(pattern).name);return it==bindings.end()?pattern:it->second;}
+    const auto& n=type_node(pattern);if(n.children.empty())return pattern;
+    std::vector<TypeId> children;children.reserve(n.children.size());bool changed=false;for(auto child:n.children){auto replacement=substitute_type(child,parameters,bindings);children.push_back(replacement);changed|=replacement!=child;}if(!changed)return pattern;
+    std::string spelling;
+    if(n.kind==TypeNodeKind::const_type)spelling="const "+type_spelling(children[0]);
+    else if(n.kind==TypeNodeKind::reference)spelling="ref<"+type_spelling(children[0])+">";
+    else if(n.kind==TypeNodeKind::safe_pointer)spelling="ptr<"+type_spelling(children[0])+">";
+    else if(n.kind==TypeNodeKind::raw_pointer)spelling="raw_ptr<"+type_spelling(children[0])+">";
+    else if(n.kind==TypeNodeKind::weak_pointer)spelling="weak_ptr<"+type_spelling(children[0])+">";
+    else if(n.kind==TypeNodeKind::nullable)spelling=type_spelling(children[0])+"?";
+    else if(n.kind==TypeNodeKind::vector)spelling=type_spelling(children[0])+"[]";
+    else if(n.kind==TypeNodeKind::fixed_array)spelling=type_spelling(children[0])+"["+std::to_string(n.extent)+"]";
+    else if(n.kind==TypeNodeKind::function){spelling=n.name+"<(";for(std::size_t i=0;i+1<children.size();++i){if(i)spelling+=",";spelling+=type_spelling(children[i]);}spelling+=")->"+type_spelling(children.back())+">";}
+    else {spelling=n.kind==TypeNodeKind::tuple?"tuple<":n.name+"<";for(std::size_t i=0;i<children.size();++i){if(i)spelling+=",";spelling+=type_spelling(children[i]);}spelling+=">";}
+    return intern_type(spelling);
+}
 }
 
 std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& scope, SymbolNamespace ns) {
@@ -106,7 +133,7 @@ void SemanticAnalyzer::require_type_module(SemanticResult& result, std::string_v
     visit(intern_type(type_name));
 }
 
-TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& expr) {
+TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& expr, TypeId expected) {
     switch (expr.kind) {
         case Expr::Kind::integer_literal: return infer_integer_literal(expr.text);
         case Expr::Kind::floating_literal: return infer_floating_literal(expr.text);
@@ -114,10 +141,11 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::boolean_literal: return {TypeKind::bool_type, 0, "bool"};
         case Expr::Kind::null_literal: return {TypeKind::null_type, 0, "null"};
         case Expr::Kind::array_literal: {
-            if (expr.arguments.empty()) return {TypeKind::named,0,"opaque[]"};
-            auto first=infer_expression(result,*expr.arguments.front());
-            for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i]);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch: expected "+first.name+", found "+next.name+"\nhelp: use one compatible element type or declare and populate separate typed arrays"});}
-            return {TypeKind::named,0,(first.name.empty()?std::string("opaque"):first.name)+"[]"};
+            TypeId element;const auto& expected_node=type_node(expected);if(expected_node.kind==TypeNodeKind::vector||expected_node.kind==TypeNodeKind::fixed_array)element=type_element(expected);
+            if (expr.arguments.empty()) {if(element)expr.inferred_type=expected;return element?resolve_type(type_spelling(expected)) : TypeInfo{TypeKind::named,0,"opaque[]"};}
+            auto first=infer_expression(result,*expr.arguments.front(),element);
+            for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i],element);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch at index "+std::to_string(i)+": expected "+first.name+", found "+next.name+"\nhelp: use one compatible element type or declare and populate separate typed arrays"});}
+            TypeInfo inferred{TypeKind::named,0,(first.name.empty()?std::string("opaque"):first.name)+"[]"};expr.inferred_type=inferred.id;return inferred;
         }
         case Expr::Kind::tuple_literal: {
             require_module(result, "tuple", expr.span, "tuple literal");
@@ -184,8 +212,19 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {};
         }
         case Expr::Kind::call: {
+            const Stmt* selected=nullptr;TypeBindings selected_bindings;std::unordered_set<std::string> selected_generics;
+            if(expr.left&&expr.left->kind==Expr::Kind::identifier){auto found=function_candidates_.find(expr.left->text);if(found!=function_candidates_.end()){
+                std::vector<std::tuple<const Stmt*,TypeBindings,std::unordered_set<std::string>,int>> viable;
+                for(const auto* candidate:found->second){if(candidate->parameters.size()!=expr.arguments.size())continue;std::unordered_set<std::string> generics(candidate->generic_parameters.begin(),candidate->generic_parameters.end());TypeBindings bindings;int rank=generics.empty()?0:1;bool ok=true;
+                    if(expected&&candidate->return_type&&type_node(expected).kind!=TypeNodeKind::nullable&&!unify_type(candidate->return_type->type_id,expected,generics,bindings))ok=false;
+                    for(std::size_t i=0;ok&&i<expr.arguments.size();++i){auto parameter=substitute_type(candidate->parameters[i].type.type_id,generics,bindings);auto argument=infer_expression(result,*expr.arguments[i],parameter);if(argument.name=="opaque[]")continue;if(!unify_type(candidate->parameters[i].type.type_id,argument.id,generics,bindings)){auto resolved=resolve_type(type_spelling(parameter));if(!compatible(argument,resolved))ok=false;else ++rank;}}
+                    for(const auto& generic:generics)if(bindings.find(generic)==bindings.end())ok=false;
+                    if(ok)viable.emplace_back(candidate,std::move(bindings),std::move(generics),rank);
+                }
+                if(!viable.empty()){std::sort(viable.begin(),viable.end(),[](const auto& a,const auto& b){return std::get<3>(a)<std::get<3>(b);});if(viable.size()>1&&std::get<3>(viable[0])==std::get<3>(viable[1])){std::string message="ambiguous call to '"+expr.left->text+"'; viable candidates:";for(const auto& item:viable)message+="\n  "+function_signature(*std::get<0>(item));result.diagnostics.push_back(Diagnostic{expr.span,std::move(message)});}selected=std::get<0>(viable[0]);selected_bindings=std::get<1>(viable[0]);selected_generics=std::get<2>(viable[0]);}
+            }}
             std::vector<TypeInfo> argument_types;argument_types.reserve(expr.arguments.size());
-            for (const auto& arg : expr.arguments) argument_types.push_back(infer_expression(result, *arg));
+            for (std::size_t i=0;i<expr.arguments.size();++i){TypeId argument_expected;if(selected)argument_expected=substitute_type(selected->parameters[i].type.type_id,selected_generics,selected_bindings);argument_types.push_back(infer_expression(result,*expr.arguments[i],argument_expected));}
             for(std::size_t i=0;i<argument_types.size();++i)if(argument_types[i].name=="opaque[]")
                 result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"cannot infer element type of empty array literal\nhelp: add an explicit type, for example `string[] values := []`, before passing it"});
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function\nhelp: handle "+e+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
@@ -254,6 +293,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 }
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (const auto* callable=api_callable(name);callable&&!callable->overloads.empty())return resolve_type(type_spelling(callable->overloads.front().return_type));
+                if(selected&&selected->return_type){auto inferred=type_spelling(substitute_type(selected->return_type->type_id,selected_generics,selected_bindings));auto resolved=resolve_type(selected->is_async?"future<"+inferred+">":inferred);expr.inferred_type=resolved.id;return resolved;}
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value)) { if(value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name)); if(value->type_name=="async_function") return {TypeKind::named,0,"future<opaque>"}; }
             }
@@ -311,7 +351,8 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
     for (const auto& f : st.fields) require_type_module(result, f.type.name, f.type.span);
     switch (st.kind) {
         case Stmt::Kind::declaration: {
-            TypeInfo value_type = st.value ? infer_expression(result, *st.value) : TypeInfo{};
+            const TypeId destination_context=st.declared_type?st.declared_type->type_id:TypeId{};
+            TypeInfo value_type = st.value ? infer_expression(result, *st.value,destination_context) : TypeInfo{};
             std::string type_name;
             if (st.declared_type) {
                 auto destination = resolve_type(st.declared_type->name);
@@ -370,7 +411,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 if (target->type_name.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"T& bindings cannot be reassigned"});
                 lhs=resolve_type(target->type_name);
             }
-            if (st.value) { auto rhs=infer_expression(result,*st.value); if(rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key="infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
+            if (st.value) { auto rhs=infer_expression(result,*st.value,lhs.id); if(rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key="infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
             break;
         }
         case Stmt::Kind::type_alias:
@@ -399,7 +440,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             break;
         }
         case Stmt::Kind::function_decl: {
-            declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
+            if(!lookup(st.name,SymbolNamespace::function))declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
             if(st.name=="main"&&st.owner.empty()){
                 const std::string result_type=st.return_type?resolved_type_name(st.return_type->name):"void";
                 const bool params_ok=st.parameters.empty()||(st.parameters.size()==2&&resolved_type_name(st.parameters[0].type.name)=="string"&&resolved_type_name(st.parameters[1].type.name)=="string[]");
@@ -455,7 +496,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             push_scope(); declare(result, Symbol{st.name, SymbolNamespace::value, st.span, false, "opaque"}); analyze_statements(result, st.body, false); pop_scope(); break;
         case Stmt::Kind::expression: if (st.value) infer_expression(result, *st.value); break;
         case Stmt::Kind::return_stmt: if (st.value) {
-            auto returned = infer_expression(result,*st.value);
+            auto returned = infer_expression(result,*st.value,intern_type(current_function_return_type_));
             auto expected=resolve_type(current_function_return_type_);
             if(!current_function_return_type_.empty()&&expected.kind==TypeKind::void_type)result.diagnostics.push_back(Diagnostic{st.span,"void function cannot return a value"});
             else if(!current_function_return_type_.empty()&&returned.valid()&&expected.valid()&&!compatible(returned,expected))result.diagnostics.push_back(Diagnostic{st.span,"return value is incompatible with function return type '"+current_function_return_type_+"'"});
@@ -502,7 +543,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); function_candidates_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
     named_types_.insert(api_named_types().begin(),api_named_types().end());
     struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
     struct_fields_["http_response"]={{"status","int"},{"body","string"},{"headers","map<string,string>"}};
@@ -515,7 +556,7 @@ SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){if(st->is_extern_c)extern_c_functions_.insert(st->name);auto& errs=function_errors_[st->name];for(const auto& e:st->error_types)errs.insert(resolved_type_name(e.name));}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){function_candidates_[st->name].push_back(st.get());if(st->is_extern_c)extern_c_functions_.insert(st->name);auto& errs=function_errors_[st->name];for(const auto& e:st->error_types)errs.insert(resolved_type_name(e.name));}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=resolved_type_name(st->parameters[i].type.name);}const std::string fixity=st->parameters.size()==1?"prefix":"infix";operator_returns_[fixity+":"+st->op+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }
