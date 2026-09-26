@@ -102,6 +102,9 @@ jobs:
           pattern: strut-*
           path: dist
           merge-multiple: true
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: (cd dist && sha256sum strut-*) > dist/SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
