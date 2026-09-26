@@ -31,3 +31,15 @@ pre-1.0 language and toolchain baseline across Linux, macOS, and Windows.
 
 Strut remains pre-1.0. See `COMPATIBILITY.md` for the compatibility policy and
 `BUILDING.md` for source and installed-layout instructions.
+
+## Development after 0.0.1
+
+- Generic calls now use destination, assignment, return, parameter, and nested
+  `TypeId` context, including empty literals, nullable values, pointers, and
+  recursively nested containers.
+- Applications can declare nominal structured checked errors with
+  `error Name { ... }`; contracts, throws, typed catches, generic functions,
+  async functions, modules, diagnostics, and editor metadata preserve identity.
+- `atomic<int>` and `atomic<bool>` provide sequentially consistent load/store,
+  exchange, compare-exchange, and integer fetch-add/fetch-sub operations.
+- Executable documentation now certifies every enabled operator-overload family.

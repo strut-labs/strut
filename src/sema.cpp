@@ -554,6 +554,8 @@ SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     struct_fields_["http_server_response"]={{"status","int"},{"body","string"},{"content_type","string"},{"headers","map<string,string>"}};
     struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
     checked_error_types_.insert("Error");
+    checked_error_types_.insert("IOError");
+    checked_error_types_.insert("ParseError");
     for(const auto& name:api_named_types())if(name.size()>=5&&name.compare(name.size()-5,5,"Error")==0)checked_error_types_.insert(name);
     for(const auto& callable:api_callables())for(const auto& error:callable.checked_errors){checked_error_types_.insert(error);if(callable.owner.empty())function_errors_[callable.name].insert(error);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);if(st->is_error)checked_error_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
