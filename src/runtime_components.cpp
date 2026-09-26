@@ -28,6 +28,7 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::threading,"threading",{Id::core,Id::safe_pointer},{"thread","functional"},{}},
         {Id::channels,"channels",{Id::threading,Id::collections},{"mutex","condition_variable"},{}},
         {Id::mutex,"mutex",{Id::threading},{"mutex"},{}},
+        {Id::atomics,"atomics",{Id::threading},{"atomic"},{}},
         {Id::async,"async",{Id::threading,Id::channels},{"future"},{}},
         {Id::networking,"networking",{Id::strings,Id::safe_pointer},{},{}},
         {Id::http_client,"http_client",{Id::networking,Id::json},{"curl/curl.h"},{"curl"}},
@@ -54,6 +55,7 @@ void request_type(std::vector<Id>& out,TypeId type) {
         if(collections.count(node.name))add(Id::collections);
         if(node.name=="future")add(Id::async);
         if(node.name=="channel")add(Id::channels);
+        if(node.name=="atomic")add(Id::atomics);
         if(node.name.rfind("http_",0)==0)add(Id::networking);
     }
     if(node.kind==TypeNodeKind::named){if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}

@@ -24,6 +24,7 @@ enum class RuntimeComponentId {
     threading,
     channels,
     mutex,
+    atomics,
     async,
     networking,
     http_client,

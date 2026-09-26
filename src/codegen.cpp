@@ -53,6 +53,7 @@ std::string cpp_type(TypeId id){
             if(n.name=="list")return generic("std::list");
             if(n.name=="future")return generic("strut_future");
             if(n.name=="channel")return generic("strut_channel");
+            if(n.name=="atomic")return generic("strut_atomic");
             if(n.name=="priority_queue"&&!n.children.empty()){auto elem=child(0);if(n.children.size()>1&&type_spelling(n.children[1])=="min")return "std::priority_queue<"+elem+",std::vector<"+elem+">,std::greater<"+elem+">>";return "std::priority_queue<"+elem+">";}return generic(n.name);
         }
         case TypeNodeKind::primitive:case TypeNodeKind::named:return cpp_type_legacy(n.name);
@@ -116,6 +117,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="mutex") return "strut_mutex";
     if(t.rfind("future<",0)==0&&t.back()=='>') return "strut_future<"+cpp_type(t.substr(7,t.size()-8))+">";
     if(t.rfind("channel<",0)==0&&t.back()=='>') return "strut_channel<"+cpp_type(t.substr(8,t.size()-9))+">";
+    if(t.rfind("atomic<",0)==0&&t.back()=='>') return "strut_atomic<"+cpp_type(t.substr(7,t.size()-8))+">";
     if(t=="int"||t=="int_32") return "std::int32_t";
     if(t=="int_8") return "std::int8_t";
     if(t=="int_16") return "std::int16_t";
@@ -258,7 +260,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
         }
         case IRStmt::Kind::expression:o<<pad<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::return_stmt:o<<pad<<"return"<<(s.value?" "+expr(*s.value):"")<<";\n";break;
-        case IRStmt::Kind::throw_stmt:{std::string en="Error";std::string msg="\"checked error\"";if(s.value&&s.value->kind==IRExpr::Kind::call&&s.value->left&&s.value->left->kind==IRExpr::Kind::identifier){en=s.value->left->text;if(!s.value->arguments.empty())msg=(s.value->arguments[0]->kind==IRExpr::Kind::string_literal?s.value->arguments[0]->text:expr(*s.value->arguments[0]));}o<<pad<<"throw strut_checked_error(\""<<en<<"\","<<msg<<");\n";break;}
+        case IRStmt::Kind::throw_stmt:{std::string en="Error";std::string msg="\"checked error\"",code="0";if(s.value&&s.value->kind==IRExpr::Kind::call&&s.value->left&&s.value->left->kind==IRExpr::Kind::identifier){en=s.value->left->text;if(!s.value->arguments.empty())msg=(s.value->arguments[0]->kind==IRExpr::Kind::string_literal?s.value->arguments[0]->text:expr(*s.value->arguments[0])+".v");if(s.value->arguments.size()>1)code=expr(*s.value->arguments[1]);}else if(s.value&&s.value->kind==IRExpr::Kind::struct_literal){en=s.value->text;for(std::size_t i=0;i<s.value->names.size();++i){if(s.value->names[i]=="message")msg=s.value->arguments[i]->kind==IRExpr::Kind::string_literal?s.value->arguments[i]->text:expr(*s.value->arguments[i])+".v";else if(s.value->names[i]=="code")code=expr(*s.value->arguments[i]);}}o<<pad<<"throw strut_checked_error(\""<<en<<"\","<<msg<<","<<code<<");\n";break;}
         case IRStmt::Kind::try_stmt:{
             o<<pad<<"try {\n";for(const auto& c:s.body)stmt(o,*c,n+4);o<<pad<<"} catch (const strut_checked_error& __strut_error) {\n";
             bool first=true;bool catch_all=false;
@@ -512,7 +514,7 @@ void emit_light_sqlite_runtime(std::ostringstream& o,const MinimalRuntimeFeature
     emit_light_json_runtime(o,f);
     o << "#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n#include <memory>\n#include <functional>\n#include <cstdlib>\n";
     o << R"STRUT_SQLITE(
-struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 inline void strut_sqlite_bind(sqlite3_stmt* st,const json::Document& params){if(params.type!=json::Type::Array)return;for(std::size_t i=0;i<params.array.size();++i){const auto& v=params.array[i];int n=static_cast<int>(i+1);switch(v.type){case json::Type::Null:sqlite3_bind_null(st,n);break;case json::Type::Boolean:sqlite3_bind_int(st,n,v.boolean?1:0);break;case json::Type::Number:case json::Type::StrNumber:sqlite3_bind_double(st,n,v.is_number()?std::strtod(v.type==json::Type::StrNumber?v.string.c_str():v.dump().c_str(),nullptr):0.0);break;case json::Type::String:sqlite3_bind_text(st,n,v.string.c_str(),-1,SQLITE_TRANSIENT);break;default:{auto text=v.dump();sqlite3_bind_text(st,n,text.c_str(),-1,SQLITE_TRANSIENT);break;}}}}
 struct strut_sqlite_state{sqlite3* db=nullptr;~strut_sqlite_state(){if(db)sqlite3_close(db);}};
 class strut_sqlite_db {
@@ -711,7 +713,7 @@ void emit_light_http_client_runtime(std::ostringstream& o,const MinimalRuntimeFe
     emit_light_json_runtime(o,f);
     o << "#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n#include <unordered_map>\n";
     o << R"STRHTTPCLI(
-struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 struct strut_curl_global{strut_curl_global(){if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw strut_checked_error("HttpError","libcurl global initialization failed");}~strut_curl_global(){curl_global_cleanup();}};
 inline void strut_curl_init(){static strut_curl_global g;(void)g;}
 struct strut_http_response {
@@ -858,7 +860,7 @@ void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures&
     o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n#include <algorithm>\n#include <cctype>\n#include <atomic>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <chrono>\n";
     o << "#ifdef _WIN32\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n#endif\n";
     o << R"STRUT_HTTP(
-struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 struct strut_string {
     std::string v;
     strut_string()=default;strut_string(const char* s):v(s){}strut_string(std::string s):v(std::move(s)){}
@@ -1007,7 +1009,7 @@ void emit_light_filesystem_runtime(std::ostringstream& o,const MinimalRuntimeFea
     if(fs.io||fs.mutate)o << "#include <fstream>\n";
     if(fs.io)o << "#include <vector>\n";
     o << R"STRUT_FS_BASE(
-struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 struct strut_string {
     std::string v;
     strut_string()=default;strut_string(const char* s):v(s){}strut_string(std::string s):v(std::move(s)){}
@@ -1101,7 +1103,7 @@ private:
     T* p_;
 };
 template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
-struct strut_checked_error : std::runtime_error { std::string type; strut_checked_error(std::string t,const std::string& m):std::runtime_error(m),type(std::move(t)){} };
+struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 struct strut_null_t {
     template<class T> operator std::optional<T>() const { return std::nullopt; }
     template<class T> operator std::shared_ptr<T>() const { return {}; }
@@ -1375,6 +1377,23 @@ template<class T> T strut_await(strut_future<T>& f){return f.get();}
 template<class T> T strut_await(strut_future<T>&& f){return f.get();}
 inline void strut_await(strut_future<void>& f){f.get();}
 inline void strut_await(strut_future<void>&& f){f.get();}
+
+#include <atomic>
+template<class T> class strut_atomic {
+    static_assert(std::is_integral_v<T>,"atomic<T> supports integer and bool scalar types");
+public:
+    strut_atomic() noexcept=default;
+    strut_atomic(T value) noexcept:value_(value){}
+    strut_atomic(const strut_atomic&)=delete;
+    strut_atomic& operator=(const strut_atomic&)=delete;
+    T load() const noexcept{return value_.load();}
+    void store(T value) noexcept{value_.store(value);}
+    T exchange(T value) noexcept{return value_.exchange(value);}
+    bool compare_exchange(T expected,T desired) noexcept{return value_.compare_exchange_strong(expected,desired);}
+    template<class U=T> std::enable_if_t<!std::is_same_v<U,bool>,U> fetch_add(U value) noexcept{return value_.fetch_add(value);}
+    template<class U=T> std::enable_if_t<!std::is_same_v<U,bool>,U> fetch_sub(U value) noexcept{return value_.fetch_sub(value);}
+private: std::atomic<T> value_{};
+};
 
 class strut_mutex {
 public:

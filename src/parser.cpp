@@ -493,6 +493,7 @@ StmtPtr Parser::parse_try(ParseResult& result){
 StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("include")) return parse_include(result);
     if (match("type")) return parse_type_alias(result);
+    if (match("error")) { auto st=parse_struct(result);if(st)st->is_error=true;return st; }
     if (match("struct")) return parse_struct(result);
     if (match("enum")) return parse_enum(result);
     if (match("unsafe")) { const Token kw=previous(); if(!match("{")){error(result,peek(),"expected '{' after unsafe");return nullptr;} auto block=parse_block(result); if(!block)return nullptr; block->kind=Stmt::Kind::unsafe_stmt; block->span=join(kw.span,block->span); return block; }

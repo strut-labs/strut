@@ -7,10 +7,10 @@
 
 namespace strut {
 namespace {
-constexpr std::array<std::string_view, 26> keywords = {
+constexpr std::array<std::string_view, 27> keywords = {
     "async", "await", "break", "case", "catch", "const", "continue",
     "default", "else", "enum", "extern", "for", "function", "if", "include", "match",
-    "operator", "return", "struct", "switch", "throw", "try", "type", "unsafe",
+    "error", "operator", "return", "struct", "switch", "throw", "try", "type", "unsafe",
     "void", "while"
 };
 

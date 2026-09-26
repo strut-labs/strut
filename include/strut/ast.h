@@ -78,6 +78,7 @@ struct Stmt {
     bool include_is_package = false;
     bool is_async = false;
     bool is_extern_c = false;
+    bool is_error = false;
 };
 
 struct LambdaData {

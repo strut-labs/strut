@@ -76,6 +76,12 @@ const std::vector<ApiCallable>& api_callables(){
         call("extension","function","filesystem","",overload({{"path","string"}},"string"),{"FilesystemError"},{R::filesystem},"Read a file extension."),
         call("stem","function","filesystem","",overload({{"path","string"}},"string"),{"FilesystemError"},{R::filesystem},"Read a file stem."),
         call("join_path","function","filesystem","",overload({{"left","string"},{"right","string"}},"string"),{"FilesystemError"},{R::filesystem},"Join path components."),
+        call("atomic<T>.load","method","concurrency","atomic<T>",overload({},"T"),{},{R::atomics},"Load the value with sequentially consistent ordering."),
+        call("atomic<T>.store","method","concurrency","atomic<T>",overload({{"value","T"}},"void"),{},{R::atomics},"Store a value with sequentially consistent ordering."),
+        call("atomic<T>.exchange","method","concurrency","atomic<T>",overload({{"value","T"}},"T"),{},{R::atomics},"Replace and return the previous value."),
+        call("atomic<T>.compare_exchange","method","concurrency","atomic<T>",overload({{"expected","T"},{"desired","T"}},"bool"),{},{R::atomics},"Replace the expected value atomically."),
+        call("atomic<T>.fetch_add","method","concurrency","atomic<T>",overload({{"value","T"}},"T"),{},{R::atomics},"Add and return the previous integer value."),
+        call("atomic<T>.fetch_sub","method","concurrency","atomic<T>",overload({{"value","T"}},"T"),{},{R::atomics},"Subtract and return the previous integer value."),
         call("http_response.json","method","http","http_response",overload({},"json"),{"HttpError"},{R::http_client,R::json},"Parse the response body as JSON."),
         call("http_request.json","method","http","http_request",overload({},"json"),{"HttpError"},{R::http_server,R::json},"Parse the request body as JSON."),
         call("sqlite_db.query","method","sqlite","sqlite_db",overload({{"sql","string"}},"json"),{"SqliteError"},{R::sqlite},"Execute a query and return rows as JSON."),
@@ -93,7 +99,7 @@ const std::vector<ApiCallable>& api_callables(){
     };
     return items;
 }
-const ApiCallable* api_callable(std::string_view name,std::string_view owner){for(const auto& item:api_callables()){const auto leaf=item.owner.empty()?item.name:item.name.substr(item.name.find('.')+1);if(leaf==name&&item.owner==owner)return &item;}return nullptr;}
+const ApiCallable* api_callable(std::string_view name,std::string_view owner){for(const auto& item:api_callables()){const auto leaf=item.owner.empty()?item.name:item.name.substr(item.name.find('.')+1);const bool owner_match=item.owner==owner||(item.owner=="atomic<T>"&&owner.rfind("atomic<",0)==0);if(leaf==name&&owner_match)return &item;}return nullptr;}
 const std::vector<std::string>& standard_modules(){static const std::vector<std::string> value={"vector","map","set","ordered_map","ordered_set","queue","stack","deque","list","priority_queue","tuple","filesystem"};return value;}
 const std::vector<std::string>& api_named_types(){static const std::vector<std::string> value={"http_request","http_server_response","http_server","SqliteError","sqlite_db","EmbedError","FilesystemError","StreamError","EnvironmentError","TimeError","ExecError","exec_result","process","thread","ThreadError","process_in","process_out","mutex","MutexError","NetworkError","tcp_socket","tcp_listener","TlsError","tls_stream","HttpError","http_response","istream","ostream","sstream","ifstream","ofstream","bytes"};return value;}
 std::string api_signature(const ApiCallable& c,const ApiOverload& o){std::string value=c.owner.empty()?c.name:c.name.substr(c.name.find('.')+1);value+="(";for(std::size_t i=0;i<o.parameters.size();++i){if(i)value+=", ";value+=type_spelling(o.parameters[i].type)+" "+o.parameters[i].name;if(o.parameters[i].optional)value+="?";}return value+") -> "+type_spelling(o.return_type);}

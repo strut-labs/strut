@@ -64,6 +64,7 @@ private:
     std::unordered_map<std::string, std::vector<std::string>> struct_bases_;
     std::unordered_map<std::string, std::unordered_set<std::string>> enum_members_;
     std::unordered_set<std::string> named_types_;
+    std::unordered_set<std::string> checked_error_types_;
     std::vector<Scope> scopes_;
     std::string current_function_return_type_;
     std::unordered_set<std::string> current_function_errors_;

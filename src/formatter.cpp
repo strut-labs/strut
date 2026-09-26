@@ -48,7 +48,7 @@ std::string canonical_type_spacing(std::string line) {
     // Remove whitespace immediately inside generic closers for the canonical pointer spellings.
     static const std::regex pointer_body(R"(\b(ptr|weak_ptr)<([^>]*?)\s+>)");
     line = std::regex_replace(line, pointer_body, "$1<$2>");
-    static const std::regex stdlib_generic(R"(\b(vector|deque|list|map|set|ordered_map|ordered_set|queue|stack|priority_queue|tuple)\s*<\s*([^>]*)\s*>)");
+    static const std::regex stdlib_generic(R"(\b(atomic|vector|deque|list|map|set|ordered_map|ordered_set|queue|stack|priority_queue|tuple)\s*<\s*([^>]*)\s*>)");
     std::smatch m;
     std::string rest=line,out;
     while(std::regex_search(rest,m,stdlib_generic)){
