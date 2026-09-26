@@ -1,0 +1,40 @@
+{
+  "attempt_0_compiled": true,
+  "attempt_0_correct": true,
+  "correction_cycles": 0,
+  "docs_consulted": [
+    "getting-started",
+    "cli"
+  ],
+  "diagnostics_sufficient": null,
+  "implementation_source_inspected": false,
+  "category": null,
+  "final_source": "attempt-0.p",
+  "attempt_0_observation": {
+    "task": "01-cli",
+    "source": "01-cli/attempt-0.p",
+    "compile": {
+      "command": [
+        "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+        "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/01-cli/attempt-0.p",
+        "-o",
+        "/tmp/strut-ai-dx-01-cli-qwn1n27w/program"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "compiled": true,
+    "ran_correctly": true,
+    "execute": {
+      "command": [
+        "/tmp/strut-ai-dx-01-cli-qwn1n27w/program",
+        "alpha",
+        "beta"
+      ],
+      "exit_status": 0,
+      "stdout": "alpha\nbeta\n",
+      "stderr": ""
+    }
+  }
+}

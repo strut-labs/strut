@@ -112,6 +112,7 @@ jobs:
         run: |
           python3 dogfood/check.py build/strut
           python3 dogfood/diagnostics.py build/strut
+          python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -148,3 +149,4 @@ jobs:
         run: |
           python3 dogfood/check.py build/strut
           python3 dogfood/diagnostics.py build/strut
+          python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after

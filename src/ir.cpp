@@ -84,6 +84,15 @@ public:
             if (out->left->text == "parse" || out->left->text == "encode") out->type_name = "json";
             if (out->left->text == "stringify" || out->left->text == "pretty") out->type_name = "string";
         }
+        if (expr->kind == Expr::Kind::call && out->left && out->left->kind == IRExpr::Kind::identifier) {
+            const auto& name = out->left->text;
+            if (name == "http_get_json") out->type_name = "json";
+            else if (name == "http_get" || name == "http_request") out->type_name = "http_response";
+            else if (name == "sqlite_open") out->type_name = "sqlite_db";
+            else if (name == "exec" || name == "exec_shell" || name == "pipe_exec") out->type_name = "exec_result";
+            else if (name == "ls" || name == "walk") out->type_name = "string[]";
+            else if (name == "read_file" || name == "cwd" || name == "absolute" || name == "canonical" || name == "parent" || name == "filename" || name == "extension" || name == "stem" || name == "join_path") out->type_name = "string";
+        }
         out->type_id=intern_type(out->type_name);
         return out;
     }

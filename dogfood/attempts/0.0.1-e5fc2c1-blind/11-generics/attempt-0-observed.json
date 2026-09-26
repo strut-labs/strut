@@ -1,0 +1,17 @@
+{
+  "task": "11-generics",
+  "source": "11-generics/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-11-generics-fy_jys4k/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p: In function \u2018int main(int, char**)\u2019:\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p:6:48: error: no matching function for call to \u2018identity(<brace-enclosed initializer list>)\u2019\n    6 |     int[] values := identity([1, 2, 3]);\n      |                                        ~       ^        \n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p:6:48: note: there is 1 candidate\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p:2:3: note: candidate 1: \u2018template<class T> T identity(T)\u2019\n    2 |     return value;\n      |   ^ ~~~~~~\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p:2:3: note: template argument deduction/substitution failed:\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p:6:48: note:   couldn\u2019t deduce template parameter \u2018T\u2019\n    6 |     int[] values := identity([1, 2, 3]);\n      |                                        ~       ^        \n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/11-generics/attempt-0.p: error: native C++ compilation/linking failed\nhelp: verify the configured C++20 compiler and native link options\nnote: the native toolchain output above is secondary detail\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

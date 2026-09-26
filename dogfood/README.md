@@ -12,6 +12,8 @@ These programs exercise Strut as an application language rather than isolated sy
 - `nift-info/main.p` — parsing and reporting real Nift metadata.
 
 `FIRST_ATTEMPT.md` records compiler/doc feedback cycles from the independent dogfood audit.
+`AI_DX_BENCHMARK.md` reports the repeatable twelve-task blind benchmark and its
+before/after metrics. Run preserved attempts with `dogfood/benchmark.py`.
 
 Compile every program and run the offline-safe subset with:
 

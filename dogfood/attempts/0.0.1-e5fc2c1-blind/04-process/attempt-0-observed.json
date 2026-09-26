@@ -1,0 +1,17 @@
+{
+  "task": "04-process",
+  "source": "04-process/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/04-process/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-04-process-grung80z/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/04-process/attempt-0.p:2:15: error: call to 'exec' may throw checked error ExecError not declared by current function\nhelp: handle ExecError with `try`/`catch`, or add it after `:` in the enclosing function signature\n  2 |     result := exec(\u001b[32m\"printf\"\u001b[0m, [\u001b[32m\"hello\\\\n\"\u001b[0m]);\n    |               \u001b[1;31m^~~~~~~~~~~~~~~~~~~~~~~~~~~~\u001b[0m\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

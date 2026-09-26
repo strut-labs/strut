@@ -1,0 +1,31 @@
+{
+  "attempt_0_compiled": true,
+  "attempt_0_correct": true,
+  "correction_cycles": 0,
+  "implementation_source_inspected": false,
+  "attempt_0_observation": {
+    "task": "07-async",
+    "source": "07-async/attempt-0.p",
+    "compile": {
+      "command": [
+        "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+        "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-ai-dx-after/07-async/attempt-0.p",
+        "-o",
+        "/tmp/strut-ai-dx-07-async-ia5lhgug/program"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "compiled": true,
+    "ran_correctly": true,
+    "execute": {
+      "command": [
+        "/tmp/strut-ai-dx-07-async-ia5lhgug/program"
+      ],
+      "exit_status": 0,
+      "stdout": "42\n",
+      "stderr": ""
+    }
+  }
+}

@@ -56,3 +56,10 @@ zero-retry control. Missing-module, checked-error, pointer, invalid-generic,
 package-resolution, and native-dependency cases must all identify the category and
 the next corrective action on the first compiler invocation. The suite reports one
 compiler cycle per case; needing compiler source or generated C++ is a failure.
+
+## Controlled benchmark result
+
+The first protocol-complete twelve-task run and its post-fix repetition are
+documented in `AI_DX_BENCHMARK.md`. Preserved sources and machine-readable results
+live under `dogfood/attempts/0.0.1-e5fc2c1-blind/` and
+`dogfood/attempts/0.0.1-ai-dx-after/`.

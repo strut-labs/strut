@@ -1,0 +1,17 @@
+{
+  "task": "05-http",
+  "source": "05-http/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-05-http-tm5736uo/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/attempt-0.p: In function \u2018int main(int, char**)\u2019:\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/attempt-0.p:3:22: error: \u2018class json::Document\u2019 has no member named \u2018at\u2019\n    3 |     print(body[\"name\"]);\n      |                      ^~\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/attempt-0.p: error: native C++ compilation/linking failed\nhelp: install the development package for required native library curl and ensure its headers and linker path are visible to the configured C++ toolchain\nnote: the native toolchain output above is secondary detail\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

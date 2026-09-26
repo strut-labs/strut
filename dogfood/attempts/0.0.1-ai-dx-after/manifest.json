@@ -1,0 +1,19 @@
+{
+  "compiler_revision": "benchmark-driven fixes after e5fc2c1",
+  "documentation_revision": "benchmark-driven fixes after d6dceba",
+  "protocol": "dogfood/FIRST_ATTEMPT.md",
+  "tasks": [
+    {"id":"01-cli","args":["alpha","beta"],"expected":{"stdout":"alpha\nbeta\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"02-json","expected":{"stdout":"{\"name\":\"Ada\",\"active\":true}\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"03-filesystem","expected":{"stdout":"2\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"04-process","expected":{"stdout":"hello\n\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"05-http","execute":false,"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"06-concurrency","expected":{"stdout":"42\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"07-async","expected":{"stdout":"42\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"08-sqlite","expected":{"stdout":"[{\"id\":1,\"name\":\"Ada\"}]\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"09-multifile","expected":{"stdout":"42\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"10-pointers","expected":{"stdout":"Ada\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"11-generics","expected":{"stdout":"6\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}},
+    {"id":"12-checked-error","expected":{"stdout":"6\n"},"result":{"attempt_0_compiled":true,"attempt_0_correct":true,"correction_cycles":0,"implementation_source_inspected":false}}
+  ]
+}

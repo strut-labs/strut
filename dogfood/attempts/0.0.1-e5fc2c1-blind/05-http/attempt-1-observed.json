@@ -1,0 +1,17 @@
+{
+  "task": "05-http",
+  "source": "05-http/attempt-1.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/attempt-1.p",
+      "-o",
+      "/tmp/strut-ai-dx-05-http-f27aj6pq/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/attempt-1.p: error: package dependency include <http> requires a project strut.json: unable to open /home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/05-http/strut.json\nhelp: run `strut init`, then add the package dependency\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

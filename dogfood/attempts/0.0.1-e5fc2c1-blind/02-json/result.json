@@ -1,0 +1,37 @@
+{
+  "attempt_0_compiled": true,
+  "attempt_0_correct": true,
+  "correction_cycles": 0,
+  "docs_consulted": [
+    "json"
+  ],
+  "diagnostics_sufficient": null,
+  "implementation_source_inspected": false,
+  "category": null,
+  "final_source": "attempt-0.p",
+  "attempt_0_observation": {
+    "task": "02-json",
+    "source": "02-json/attempt-0.p",
+    "compile": {
+      "command": [
+        "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+        "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-e5fc2c1-blind/02-json/attempt-0.p",
+        "-o",
+        "/tmp/strut-ai-dx-02-json-8wh8jhyw/program"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "compiled": true,
+    "ran_correctly": true,
+    "execute": {
+      "command": [
+        "/tmp/strut-ai-dx-02-json-8wh8jhyw/program"
+      ],
+      "exit_status": 0,
+      "stdout": "{\"name\":\"Ada\",\"active\":true}\n",
+      "stderr": ""
+    }
+  }
+}

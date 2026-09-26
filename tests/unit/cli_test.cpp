@@ -26,6 +26,9 @@ int main() {
         std::ostringstream err;
         require(strut::run_cli(2, argv, out, err) == 0, "--help exit status");
         require(out.str().find("Usage: strut") != std::string::npos, "--help output");
+        require(out.str().find("function main(string cmd, string[] args) -> int") != std::string::npos, "--help entry point discovery");
+        require(out.str().find("for (item : items)") != std::string::npos, "--help range loop discovery");
+        require(out.str().find("https://strut-labs.github.io/docs.html") != std::string::npos, "--help docs discovery");
         require(err.str().empty(), "--help stderr");
     }
 

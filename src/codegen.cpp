@@ -159,6 +159,13 @@ void emit_source_line(std::ostringstream& o,const IRStmt& s){if(!strut_codegen_s
 std::string expr(const IRExpr& e);
 void stmt(std::ostringstream& o,const IRStmt& s,int n);
 
+std::string call_argument(const IRExpr& e) {
+    if (e.kind == IRExpr::Kind::array_literal && e.type_name != "opaque[]" && e.type_name.size() > 2 && e.type_name.compare(e.type_name.size() - 2, 2, "[]") == 0) {
+        return cpp_type(e.type_name) + expr(e);
+    }
+    return expr(e);
+}
+
 bool stmt_assigns_name(const IRStmt& s,const std::string& name){
     if(s.kind==IRStmt::Kind::assignment && !s.target && s.name==name)return true;
     auto scan=[&](const std::vector<IRStmtPtr>& body){for(const auto& child:body)if(stmt_assigns_name(*child,name))return true;return false;};
@@ -229,7 +236,7 @@ std::string expr(const IRExpr& e){
             if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.arguments.size()==1&&e.arguments[0]->kind==IRExpr::Kind::string_literal){if(e.left->text=="embed_file")return compile_embed_file(e.arguments[0]->text);if(e.left->text=="embed_dir")return compile_embed_dir(e.arguments[0]->text);}
             std::string name=expr(*e.left); if(name=="new"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ptr"&&e.arguments.size()==1)return "strut_raw("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="weak"&&e.arguments.size()==1)return "strut_weak("+expr(*e.arguments[0])+")"; if(name=="print"||name=="println"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="is_file") name="strut_fs_is_file"; else if(name=="is_dir") name="strut_fs_is_dir"; else if(name=="file_size") name="strut_fs_file_size"; else if(name=="modified") name="strut_fs_modified"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="remove_all") name="strut_fs_remove_all"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="walk") name="strut_fs_walk"; else if(name=="cwd") name="strut_fs_cwd"; else if(name=="cd") name="strut_fs_cd"; else if(name=="absolute") name="strut_fs_absolute"; else if(name=="canonical") name="strut_fs_canonical"; else if(name=="parent") name="strut_fs_parent"; else if(name=="filename") name="strut_fs_filename"; else if(name=="extension") name="strut_fs_extension"; else if(name=="stem") name="strut_fs_stem"; else if(name=="join_path") name="strut_fs_join_path"; else if(name=="read_file") name="strut_fs_read_file"; else if(name=="read_bytes") name="strut_fs_read_bytes"; else if(name=="write_file") name="strut_fs_write_file"; else if(name=="append_file") name="strut_fs_append_file"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
-            std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";
+            std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=call_argument(*e.arguments[i]);}return out+")";
         }
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<"[[maybe_unused]] "<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
     } return {};
@@ -652,7 +659,9 @@ template<class T> class strut_future { public: strut_future()=default; explicit 
 template<> class strut_future<void> { public: strut_future()=default; explicit strut_future(std::future<void>&& f):f_(std::move(f)){} void get(){f_.get();} bool valid() const{return f_.valid();} private: std::future<void> f_; };
 template<class F> auto strut_async(F&& f)->strut_future<std::invoke_result_t<F>>{using R=std::invoke_result_t<F>;return strut_future<R>(strut_global_executor().submit(std::forward<F>(f)));}
 template<class T> T strut_await(strut_future<T>& f){return f.get();}
+template<class T> T strut_await(strut_future<T>&& f){return f.get();}
 inline void strut_await(strut_future<void>& f){f.get();}
+inline void strut_await(strut_future<void>&& f){f.get();}
 
 )STRUT_ASYNC";
 }
@@ -1257,7 +1266,9 @@ template<class T> class strut_future { public: strut_future()=default; explicit 
 template<> class strut_future<void> { public: strut_future()=default; explicit strut_future(std::future<void>&& f):f_(std::move(f)){} void get(){f_.get();} bool valid() const{return f_.valid();} private: std::future<void> f_; };
 template<class F> auto strut_async(F&& f)->strut_future<std::invoke_result_t<F>>{using R=std::invoke_result_t<F>;return strut_future<R>(strut_global_executor().submit(std::forward<F>(f)));}
 template<class T> T strut_await(strut_future<T>& f){return f.get();}
+template<class T> T strut_await(strut_future<T>&& f){return f.get();}
 inline void strut_await(strut_future<void>& f){f.get();}
+inline void strut_await(strut_future<void>&& f){f.get();}
 
 class strut_mutex {
 public:

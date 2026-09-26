@@ -459,6 +459,10 @@ StmtPtr Parser::parse_for(ParseResult& result){
     const Token begin=previous();if(!match("(")){error(result,peek(),"expected '(' after 'for'");return nullptr;}
     // range form: identifier ':' expression
     if(peek().kind==TokenKind::identifier&&peek(1).lexeme==":"){Token name=advance();advance();auto items=parse_expression(result);if(!items)return nullptr;if(!match(")")){error(result,peek(),"expected ')' after range for");return nullptr;}if(!match("{")){error(result,peek(),"expected '{' after range for");return nullptr;}auto body=parse_block(result);auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::range_for;st->name=name.lexeme;st->value=std::move(items);st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;}
+    if(peek().kind==TokenKind::identifier&&peek(1).lexeme=="in"){
+        error(result,peek(1),"Strut range loops use `:` rather than `in`; write `for ("+peek().lexeme+" : collection)`");
+        return nullptr;
+    }
     auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::for_stmt;
     if(!check(";")){st->initializer=parse_declaration_or_assignment(result);if(!st->initializer)return nullptr;}else advance();
     if(!check(";")){st->condition=parse_expression(result);if(!st->condition)return nullptr;}if(!match(";")){error(result,peek(),"expected ';' after for condition");return nullptr;}

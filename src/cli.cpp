@@ -65,6 +65,13 @@ void print_help(std::ostream& out) {
         << "  -h, --help        Show help\n"
         << "  -v, --version     Show compiler version\n"
         << "  --json            With --version, emit JSON metadata\n\n"
+        << "Quick start:\n"
+        << "  function main() -> int { return 0; }\n"
+        << "  function main(string cmd, string[] args) -> int { return 0; }\n"
+        << "  Compile with 'strut app.p -o app', then run the native output.\n"
+        << "  Range loops use 'for (item : items)'. Checked errors are handled or listed after ':'.\n\n"
+        << "Documentation: https://strut-labs.github.io/docs.html\n"
+        << "Diagnostics are source-mapped and include corrective help where available.\n\n"
         << "Exit codes: 0 success, 1 compile/build/test failure, 2 command-line usage/configuration error.\n";
 }
 

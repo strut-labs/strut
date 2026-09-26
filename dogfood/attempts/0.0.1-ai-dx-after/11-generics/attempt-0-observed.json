@@ -1,0 +1,25 @@
+{
+  "task": "11-generics",
+  "source": "11-generics/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-gcc/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-ai-dx-after/11-generics/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-11-generics-wmixcrds/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true,
+  "execute": {
+    "command": [
+      "/tmp/strut-ai-dx-11-generics-wmixcrds/program"
+    ],
+    "exit_status": 0,
+    "stdout": "6\n",
+    "stderr": ""
+  }
+}
