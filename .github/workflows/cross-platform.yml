@@ -46,6 +46,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Install generated-program dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
       - name: Enable MSVC developer environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -71,6 +74,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
+      - name: Install generated-program dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
