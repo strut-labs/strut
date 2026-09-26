@@ -1,0 +1,15 @@
+{
+  "task": "11-project-init",
+  "kind": "cli",
+  "command": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "init"
+    ],
+    "exit_status": 0,
+    "stdout": "created .strut/config.json\n",
+    "stderr": ""
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

@@ -1,0 +1,25 @@
+{
+  "task": "07-pointer-containers",
+  "source": "07-pointer-containers/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-clang/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-after/07-pointer-containers/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-07-pointer-containers-v089jxxb/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true,
+  "execute": {
+    "command": [
+      "/tmp/strut-ai-dx-07-pointer-containers-v089jxxb/program"
+    ],
+    "exit_status": 0,
+    "stdout": "7\n",
+    "stderr": ""
+  }
+}

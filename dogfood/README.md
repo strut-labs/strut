@@ -14,6 +14,8 @@ These programs exercise Strut as an application language rather than isolated sy
 `FIRST_ATTEMPT.md` records compiler/doc feedback cycles from the independent dogfood audit.
 `AI_DX_BENCHMARK.md` reports the repeatable twelve-task blind benchmark and its
 before/after metrics. Run preserved attempts with `dogfood/benchmark.py`.
+`ADVANCED_AI_DX_BENCHMARK.md` extends the same protocol to backend composition,
+TLS, packages, project discovery, nested generics, and machine-readable API help.
 
 Compile every program and run the offline-safe subset with:
 

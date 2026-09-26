@@ -1,0 +1,15 @@
+{
+  "task": "12-missing-cache",
+  "kind": "cli",
+  "command": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-clang/strut",
+      "install"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "strut: dependency 'missing' is not present in the package cache\n"
+  },
+  "compiled": true,
+  "ran_correctly": true
+}

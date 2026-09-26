@@ -1,0 +1,17 @@
+{
+  "task": "02-sqlite-service",
+  "source": "02-sqlite-service/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-clang/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-after/02-sqlite-service/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-02-sqlite-service-qgy02t3n/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true
+}

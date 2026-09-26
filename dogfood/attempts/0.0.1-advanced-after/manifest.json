@@ -1,0 +1,18 @@
+{
+  "protocol": "advanced AI-DX post-fix clean-room rerun",
+  "compiler_head": "post-advanced-fixes",
+  "tasks": [
+    {"id":"01-multimodule-http","execute":false},
+    {"id":"02-sqlite-service","execute":false},
+    {"id":"03-json-service","execute":false},
+    {"id":"04-tls-client","execute":false},
+    {"id":"05-nested-generics","expected":{"stdout":"3\n"}},
+    {"id":"06-empty-literal","execute":false},
+    {"id":"07-pointer-containers","expected":{"stdout":"7\n"}},
+    {"id":"08-async-backend","execute":false},
+    {"id":"09-multimodule-errors","expected":{"stdout":"ready\n"}},
+    {"id":"10-project-discovery","expected":{"stdout":"module-ok\n"}},
+    {"id":"11-project-init","kind":"cli","args":["init"],"reset":[".strut/config.json","strut.json"],"expected":{"exit_status":0,"stdout_contains":["strut.json"],"files":[".strut/config.json","strut.json"]}},
+    {"id":"12-missing-cache","kind":"cli","args":["install"],"env":{"STRUT_HOME":"{task}/isolated-home"},"expected":{"exit_status":1,"stderr_contains":["dependency 'missing' is not present in the package cache"]}}
+  ]
+}

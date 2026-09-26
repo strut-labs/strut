@@ -1,0 +1,17 @@
+{
+  "task": "01-multimodule-http",
+  "source": "01-multimodule-http/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/01-multimodule-http/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-01-multimodule-http-7l1ihik2/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true
+}

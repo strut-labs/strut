@@ -1,0 +1,17 @@
+{
+  "task": "04-tls-client",
+  "source": "04-tls-client/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/04-tls-client/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-04-tls-client-shazg4zh/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true
+}

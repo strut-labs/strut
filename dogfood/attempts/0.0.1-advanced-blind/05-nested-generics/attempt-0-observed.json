@@ -1,0 +1,25 @@
+{
+  "task": "05-nested-generics",
+  "source": "05-nested-generics/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/05-nested-generics/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-05-nested-generics-1p6ybnar/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": false,
+  "execute": {
+    "command": [
+      "/tmp/strut-ai-dx-05-nested-generics-1p6ybnar/program"
+    ],
+    "exit_status": -6,
+    "stdout": "",
+    "stderr": "terminate called after throwing an instance of 'std::out_of_range'\n  what():  unordered_map::at\n"
+  }
+}

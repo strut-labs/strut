@@ -12,6 +12,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <chrono>
+#include <cctype>
 
 #include "json.h"
 #include "strut/lexer.h"
@@ -44,6 +45,8 @@ void print_help(std::ostream& out) {
         << "  remove <name>     Remove a package dependency\n"
         << "  list              List project dependencies\n"
         << "  install           Resolve dependencies from the shared cache\n"
+        << "  project [--json]  Inspect project root, manifest and package cache\n"
+        << "  api --json        Emit the authoritative API and dependency index\n"
         << "  lsp               Run the Language Server Protocol server on stdio\n"
         << "  help [command]    Show general or command help\n\n"
         << "Compile options:\n"
@@ -64,7 +67,7 @@ void print_help(std::ostream& out) {
         << "Global options:\n"
         << "  -h, --help        Show help\n"
         << "  -v, --version     Show compiler version\n"
-        << "  --json            With --version, emit JSON metadata\n\n"
+        << "  --json            Emit machine-readable output where supported\n\n"
         << "Quick start:\n"
         << "  function main() -> int { return 0; }\n"
         << "  function main(string cmd, string[] args) -> int { return 0; }\n"
@@ -85,8 +88,58 @@ void print_command_help(std::string_view command, std::ostream& out) {
     else if (command == "remove") out << "Usage: strut remove <package-name>\n";
     else if (command == "list") out << "Usage: strut list\n";
     else if (command == "install") out << "Usage: strut install\n";
+    else if (command == "project") out << "Usage: strut project [--json]\nShows the discovered project root, build configuration, manifest and package cache.\n";
+    else if (command == "api") out << "Usage: strut api --json\nEmits built-ins, methods, modules, checked errors and native dependencies for agents and tooling.\n";
     else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout.\n";
     else print_help(out);
+}
+
+json::Document api_index() {
+    json::Document root=json::Document::make_object(); root["schema_version"]=1; root["language_version"]=std::string(version);
+    json::Document modules=json::Document::make_array();
+    for(const char* name:{"vector","map","set","ordered_map","ordered_set","queue","stack","deque","list","priority_queue","tuple","filesystem"})modules.array.emplace_back(name);
+    root["standard_modules"]=modules;
+    json::Document functions=json::Document::make_array();
+    auto add=[&](const char* name,const char* signature,const char* component,const char* error="",const char* native=""){
+        json::Document f=json::Document::make_object();f["name"]=name;f["signature"]=signature;f["runtime_component"]=component;
+        json::Document errors=json::Document::make_array();if(*error)errors.array.emplace_back(error);f["checked_errors"]=errors;
+        json::Document dependencies=json::Document::make_array();if(*native)dependencies.array.emplace_back(native);f["native_dependencies"]=dependencies;functions.array.push_back(std::move(f));
+    };
+    add("http_get","http_get(string url) -> http_response","http_client","HttpError","libcurl");
+    add("http_request","http_request(string method, string url, json options?) -> http_response","http_client","HttpError","libcurl");
+    add("http_get_json","http_get_json(string url) -> json","http_client","HttpError","libcurl");
+    add("http_get_async","http_get_async(string url) -> future<http_response>","http_client","HttpError","libcurl");
+    add("http_server","http_server() -> http_server","http_server");
+    add("http_text","http_text(string body) -> http_server_response","http_server");
+    add("http_json_response","http_json_response(json body) -> http_server_response","http_server");
+    add("tls_connect","tls_connect(string host, int port) -> tls_stream","http_client","TlsError","libcurl");
+    add("sqlite_open","sqlite_open(string path) -> sqlite_db","sqlite","SqliteError","SQLite3");
+    add("exec","exec(string program, string[] args, json options?) -> exec_result","process","ExecError");
+    add("process","process(string program, string[] args) -> process","process","ExecError");
+    add("tcp_connect","tcp_connect(string host, int port) -> tcp_socket","networking","NetworkError");
+    add("tcp_listen","tcp_listen(string host, int port, int backlog?) -> tcp_listener","networking","NetworkError");
+    add("read_file","read_file(string path) -> string","filesystem","FilesystemError");
+    add("write_file","write_file(string path, string|bytes data) -> void","filesystem","FilesystemError");
+    add("embed_file","embed_file(string path) -> string","embedded_assets","EmbedError");
+    add("new","new(T value) -> T*","safe_pointer"); add("ptr","ptr(T* owner) -> raw_ptr<T>","raw_pointer");
+    root["functions"]=functions;
+    json::Document methods=json::Document::make_array();
+    auto method=[&](const char* owner,const char* signature,const char* error="") {json::Document m=json::Document::make_object();m["owner"]=owner;m["signature"]=signature;json::Document e=json::Document::make_array();if(*error)e.array.emplace_back(error);m["checked_errors"]=e;methods.array.push_back(std::move(m));};
+    method("http_server","get(string route, function handler) -> void","NetworkError");method("http_server","post(string route, function handler) -> void","NetworkError");method("http_server","listen(string host, int port, int workers?) -> void","NetworkError");
+    method("http_request","json() -> json","HttpError");method("sqlite_db","exec(string sql, json params?) -> void","SqliteError");method("sqlite_db","query(string sql, json params?) -> json","SqliteError");
+    method("tls_stream","read(int max_bytes?) -> string","TlsError");method("tls_stream","write(string data) -> void","TlsError");
+    root["methods"]=methods;
+    json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
+    json::Document notes=json::Document::make_object();notes["range_loop"]="for (item : items)";notes["core_array"]="T[] (no include required)";notes["custom_checked_errors"]="Custom error declarations are not currently supported; use documented built-in checked error types.";root["language_notes"]=notes;
+    return root;
+}
+
+int print_project_info(bool as_json,std::ostream& out,std::ostream& err){
+    const auto root=find_project_root(std::filesystem::current_path());const auto config=root/".strut"/"config.json";const auto manifest=root/"strut.json";const auto cache=package_cache_root();
+    if(as_json){json::Document d=json::Document::make_object();d["project_root"]=root.generic_string();d["build_config"]=config.generic_string();d["build_config_exists"]=std::filesystem::exists(config);d["manifest"]=manifest.generic_string();d["manifest_exists"]=std::filesystem::exists(manifest);d["package_cache"]=cache.generic_string();out<<d.dump(2)<<'\n';return 0;}
+    out<<"project root: "<<root.generic_string()<<'\n'<<"build config: "<<config.generic_string()<<(std::filesystem::exists(config)?"":" (missing)")<<'\n'<<"manifest: "<<manifest.generic_string()<<(std::filesystem::exists(manifest)?"":" (missing)")<<'\n'<<"package cache: "<<cache.generic_string()<<'\n';
+    if(!std::filesystem::exists(config)&&!std::filesystem::exists(manifest)) err<<"help: run `strut init` to initialize this directory\n";
+    return 0;
 }
 
 std::string rich_diagnostic(const std::filesystem::path& path, const Diagnostic& diagnostic, bool warning=false);
@@ -397,6 +450,14 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             if (argc == 2) print_help(out); else print_command_help(argv[2], out);
             return 0;
         }
+        if(command=="api"){
+            if(argc!=3||std::string_view(argv[2])!="--json"){err<<"strut: api currently requires --json\n";return 2;}
+            out<<api_index().dump(2)<<'\n';return 0;
+        }
+        if(command=="project"){
+            if(argc>3||(argc==3&&std::string_view(argv[2])!="--json")){err<<"strut: project accepts only --json\n";return 2;}
+            return print_project_info(argc==3,out,err);
+        }
         if (argc >= 3 && (std::string_view(argv[2]) == "--help" || std::string_view(argv[2]) == "-h") && command != "compile") {
             print_command_help(command, out); return 0;
         }
@@ -404,7 +465,17 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
             if (argc != 2) { err << "strut: init takes no arguments\n"; return 2; }
             std::string init_error;
             if (!init_project_build_state(std::filesystem::current_path(), init_error)) { err << "strut: " << init_error << '\n'; return 1; }
-            out << "created .strut/config.json\n"; return 0;
+            const auto manifest_path=std::filesystem::current_path()/"strut.json";
+            if(!std::filesystem::exists(manifest_path)){
+                PackageManifest manifest;manifest.name=std::filesystem::current_path().filename().string();
+                std::transform(manifest.name.begin(),manifest.name.end(),manifest.name.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
+                for(char& c:manifest.name)if(!(std::isalnum(static_cast<unsigned char>(c))||c=='-'||c=='_'))c='-';
+                if(!valid_package_name(manifest.name)) manifest.name="strut-project";
+                manifest.version="0.1.0";
+                BuildConfig config;std::string ignored;if(load_build_config(std::filesystem::current_path()/".strut/config.json",config,ignored))manifest.entry=config.entrypoint;
+                if(!write_package_manifest_file(manifest_path,manifest,init_error)){err<<"strut: "<<init_error<<'\n';return 1;}
+            }
+            out << "created .strut/config.json and strut.json\n"; return 0;
         }
         if (command == "fmt") {
             std::filesystem::path format_path; bool check_only = false;

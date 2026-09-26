@@ -1,0 +1,17 @@
+{
+  "task": "09-multimodule-errors",
+  "source": "09-multimodule-errors/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/09-multimodule-errors/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-09-multimodule-errors-e9frzzcz/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/09-multimodule-errors/attempt-0.p:1:1: error: unknown type 'error'\n  1 | \u001b[1;35minclude\u001b[0m \u001b[32m\"service.h\"\u001b[0m;\n    | \u001b[1;31m^~~~~\u001b[0m\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

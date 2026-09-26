@@ -1,0 +1,8 @@
+{
+  "entrypoint": "main.p",
+  "output": "main",
+  "target": "native",
+  "mode": "debug",
+  "linking": "dynamic",
+  "incremental": "modified"
+}

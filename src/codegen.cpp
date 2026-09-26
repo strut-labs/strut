@@ -244,7 +244,18 @@ std::string expr(const IRExpr& e){
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');emit_source_line(o,s);
     switch(s.kind){
         case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name;if(s.value){o<<" = ";if(!s.overload_name.empty())o<<s.overload_name<<"("<<expr(*s.value)<<")";else o<<expr(*s.value);}else o<<"{}";o<<";\n";break;
-        case IRStmt::Kind::assignment:if(!s.overload_name.empty())o<<pad<<s.overload_name<<"("<<(s.target?expr(*s.target):s.name)<<","<<expr(*s.value)<<");\n";else o<<pad<<(s.target?expr(*s.target):s.name)<<" "<<s.op<<" "<<expr(*s.value)<<";\n";break;
+        case IRStmt::Kind::assignment:{
+            std::string target=s.name;
+            if(s.target){
+                if(s.target->kind==IRExpr::Kind::index&&s.target->left&&
+                   (s.target->left->type_name.rfind("map<",0)==0||s.target->left->type_name.rfind("ordered_map<",0)==0))
+                    target=expr(*s.target->left)+"["+expr(*s.target->right)+"]";
+                else target=expr(*s.target);
+            }
+            if(!s.overload_name.empty())o<<pad<<s.overload_name<<"("<<target<<","<<expr(*s.value)<<");\n";
+            else o<<pad<<target<<" "<<s.op<<" "<<expr(*s.value)<<";\n";
+            break;
+        }
         case IRStmt::Kind::expression:o<<pad<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::return_stmt:o<<pad<<"return"<<(s.value?" "+expr(*s.value):"")<<";\n";break;
         case IRStmt::Kind::throw_stmt:{std::string en="Error";std::string msg="\"checked error\"";if(s.value&&s.value->kind==IRExpr::Kind::call&&s.value->left&&s.value->left->kind==IRExpr::Kind::identifier){en=s.value->left->text;if(!s.value->arguments.empty())msg=(s.value->arguments[0]->kind==IRExpr::Kind::string_literal?s.value->arguments[0]->text:expr(*s.value->arguments[0]));}o<<pad<<"throw strut_checked_error(\""<<en<<"\","<<msg<<");\n";break;}
@@ -508,10 +519,10 @@ class strut_sqlite_db {
 public:
     strut_sqlite_db():s_(std::make_shared<strut_sqlite_state>()){} explicit strut_sqlite_db(sqlite3* db):s_(std::make_shared<strut_sqlite_state>()){s_->db=db;}
     void close(){if(s_&&s_->db){sqlite3_close(s_->db);s_->db=nullptr;}}
-    void exec(const strut_string& sql){exec(sql,json::Document::make_array());}
-    void exec(const strut_string& sql,const json::Document& params){auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);int rc=sqlite3_step(st);if(rc!=SQLITE_DONE&&rc!=SQLITE_ROW){std::string m=sqlite3_errmsg(db);sqlite3_finalize(st);throw strut_checked_error("SqliteError",m);}sqlite3_finalize(st);}
-    json::Document query(const strut_string& sql){return query(sql,json::Document::make_array());}
-    json::Document query(const strut_string& sql,const json::Document& params){auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);json::Document rows=json::Document::make_array();while(sqlite3_step(st)==SQLITE_ROW){json::Document row=json::Document::make_object();for(int i=0;i<sqlite3_column_count(st);++i){const char* n=sqlite3_column_name(st,i);switch(sqlite3_column_type(st,i)){case SQLITE_INTEGER:row[n]=static_cast<double>(sqlite3_column_int64(st,i));break;case SQLITE_FLOAT:row[n]=sqlite3_column_double(st,i);break;case SQLITE_TEXT:row[n]=reinterpret_cast<const char*>(sqlite3_column_text(st,i));break;case SQLITE_NULL:row[n]=json::Document(nullptr);break;default:row[n]="<blob>";}}rows.push_back(row);}sqlite3_finalize(st);return rows;}
+    void exec(const strut_string& sql) const{exec(sql,json::Document::make_array());}
+    void exec(const strut_string& sql,const json::Document& params) const{auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);int rc=sqlite3_step(st);if(rc!=SQLITE_DONE&&rc!=SQLITE_ROW){std::string m=sqlite3_errmsg(db);sqlite3_finalize(st);throw strut_checked_error("SqliteError",m);}sqlite3_finalize(st);}
+    json::Document query(const strut_string& sql) const{return query(sql,json::Document::make_array());}
+    json::Document query(const strut_string& sql,const json::Document& params) const{auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);json::Document rows=json::Document::make_array();while(sqlite3_step(st)==SQLITE_ROW){json::Document row=json::Document::make_object();for(int i=0;i<sqlite3_column_count(st);++i){const char* n=sqlite3_column_name(st,i);switch(sqlite3_column_type(st,i)){case SQLITE_INTEGER:row[n]=static_cast<double>(sqlite3_column_int64(st,i));break;case SQLITE_FLOAT:row[n]=sqlite3_column_double(st,i);break;case SQLITE_TEXT:row[n]=reinterpret_cast<const char*>(sqlite3_column_text(st,i));break;case SQLITE_NULL:row[n]=json::Document(nullptr);break;default:row[n]="<blob>";}}rows.push_back(row);}sqlite3_finalize(st);return rows;}
     void transaction(std::function<void()> body){exec("BEGIN");try{body();exec("COMMIT");}catch(...){try{exec("ROLLBACK");}catch(...){ }throw;}}
 private: sqlite3* handle() const{if(!s_||!s_->db)throw strut_checked_error("SqliteError","database is closed");return s_->db;} std::shared_ptr<strut_sqlite_state> s_;
 };
@@ -1561,10 +1572,10 @@ class strut_sqlite_db {
 public:
     strut_sqlite_db():s_(std::make_shared<strut_sqlite_state>()){} explicit strut_sqlite_db(sqlite3* db):s_(std::make_shared<strut_sqlite_state>()){s_->db=db;}
     void close(){if(s_&&s_->db){sqlite3_close(s_->db);s_->db=nullptr;}}
-    void exec(const strut_string& sql){exec(sql,json::Document::make_array());}
-    void exec(const strut_string& sql,const json::Document& params){auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);int rc=sqlite3_step(st);if(rc!=SQLITE_DONE&&rc!=SQLITE_ROW){std::string m=sqlite3_errmsg(db);sqlite3_finalize(st);throw strut_checked_error("SqliteError",m);}sqlite3_finalize(st);}
-    json::Document query(const strut_string& sql){return query(sql,json::Document::make_array());}
-    json::Document query(const strut_string& sql,const json::Document& params){auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);json::Document rows=json::Document::make_array();while(sqlite3_step(st)==SQLITE_ROW){json::Document row=json::Document::make_object();for(int i=0;i<sqlite3_column_count(st);++i){const char* n=sqlite3_column_name(st,i);switch(sqlite3_column_type(st,i)){case SQLITE_INTEGER:row[n]=static_cast<double>(sqlite3_column_int64(st,i));break;case SQLITE_FLOAT:row[n]=sqlite3_column_double(st,i);break;case SQLITE_TEXT:row[n]=reinterpret_cast<const char*>(sqlite3_column_text(st,i));break;case SQLITE_NULL:row[n]=json::Document(nullptr);break;default:row[n]="<blob>";}}rows.push_back(row);}sqlite3_finalize(st);return rows;}
+    void exec(const strut_string& sql) const{exec(sql,json::Document::make_array());}
+    void exec(const strut_string& sql,const json::Document& params) const{auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);int rc=sqlite3_step(st);if(rc!=SQLITE_DONE&&rc!=SQLITE_ROW){std::string m=sqlite3_errmsg(db);sqlite3_finalize(st);throw strut_checked_error("SqliteError",m);}sqlite3_finalize(st);}
+    json::Document query(const strut_string& sql) const{return query(sql,json::Document::make_array());}
+    json::Document query(const strut_string& sql,const json::Document& params) const{auto db=handle();sqlite3_stmt* st=nullptr;if(sqlite3_prepare_v2(db,sql.v.c_str(),-1,&st,nullptr)!=SQLITE_OK)throw strut_checked_error("SqliteError",sqlite3_errmsg(db));strut_sqlite_bind(st,params);json::Document rows=json::Document::make_array();while(sqlite3_step(st)==SQLITE_ROW){json::Document row=json::Document::make_object();for(int i=0;i<sqlite3_column_count(st);++i){const char* n=sqlite3_column_name(st,i);switch(sqlite3_column_type(st,i)){case SQLITE_INTEGER:row[n]=static_cast<double>(sqlite3_column_int64(st,i));break;case SQLITE_FLOAT:row[n]=sqlite3_column_double(st,i);break;case SQLITE_TEXT:row[n]=reinterpret_cast<const char*>(sqlite3_column_text(st,i));break;case SQLITE_NULL:row[n]=json::Document(nullptr);break;default:row[n]="<blob>";}}rows.push_back(row);}sqlite3_finalize(st);return rows;}
     void transaction(std::function<void()> body){exec("BEGIN");try{body();exec("COMMIT");}catch(...){try{exec("ROLLBACK");}catch(...){ }throw;}}
 private: sqlite3* handle() const{if(!s_||!s_->db)throw strut_checked_error("SqliteError","database is closed");return s_->db;} std::shared_ptr<strut_sqlite_state> s_;
 };
@@ -1596,6 +1607,14 @@ std::string native_failure(const IRProgram& program,std::string_view phase) {
         out << (libraries.size()==1?"library ":"libraries ");
         for(std::size_t i=0;i<libraries.size();++i){if(i)out<<", ";out<<libraries[i];}
         out << " and ensure its headers and linker path are visible to the configured C++ toolchain";
+#if defined(__linux__)
+        out << "\nhelp: on Debian/Ubuntu install ";
+        bool first=true;for(const auto& library:libraries){if(!first)out<<" ";first=false;if(library=="curl")out<<"libcurl4-openssl-dev";else if(library=="sqlite3")out<<"libsqlite3-dev";else out<<library<<" development files";}
+#elif defined(__APPLE__)
+        out << "\nhelp: on macOS install the dependency with Homebrew if it is not provided by the SDK";
+#elif defined(_WIN32)
+        out << "\nhelp: on Windows make the dependency available to MSVC (for example with vcpkg)";
+#endif
     } else {
         out << "\nhelp: verify the configured C++20 compiler and native link options";
     }

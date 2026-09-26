@@ -185,6 +185,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::call: {
             std::vector<TypeInfo> argument_types;argument_types.reserve(expr.arguments.size());
             for (const auto& arg : expr.arguments) argument_types.push_back(infer_expression(result, *arg));
+            for(std::size_t i=0;i<argument_types.size();++i)if(argument_types[i].name=="opaque[]")
+                result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"cannot infer element type of empty array literal\nhelp: add an explicit type, for example `string[] values := []`, before passing it"});
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function\nhelp: handle "+e+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
@@ -356,6 +358,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 }
             } else {
                 if (!value_type.valid()) result.diagnostics.push_back(Diagnostic{st.span, "cannot infer type of '" + st.name + "'"});
+                if (value_type.name == "opaque[]" && st.value && st.value->kind==Expr::Kind::array_literal) result.diagnostics.push_back(Diagnostic{st.value->span,"cannot infer element type of empty array literal\nhelp: add an explicit array type, for example `string[] " + st.name + " := []`"});
                 type_name = value_type.name.empty() ? "opaque" : std::string(value_type.name);
                 require_type_module(result, type_name, st.span);
             }

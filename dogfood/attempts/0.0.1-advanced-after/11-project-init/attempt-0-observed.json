@@ -1,0 +1,15 @@
+{
+  "task": "11-project-init",
+  "kind": "cli",
+  "command": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-clang/strut",
+      "init"
+    ],
+    "exit_status": 0,
+    "stdout": "created .strut/config.json and strut.json\n",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true
+}

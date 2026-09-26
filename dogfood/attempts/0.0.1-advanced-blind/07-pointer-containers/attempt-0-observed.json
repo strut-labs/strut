@@ -1,0 +1,25 @@
+{
+  "task": "07-pointer-containers",
+  "source": "07-pointer-containers/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/07-pointer-containers/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-07-pointer-containers-mx2bg_nr/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true,
+  "execute": {
+    "command": [
+      "/tmp/strut-ai-dx-07-pointer-containers-mx2bg_nr/program"
+    ],
+    "exit_status": 0,
+    "stdout": "7\n",
+    "stderr": ""
+  }
+}

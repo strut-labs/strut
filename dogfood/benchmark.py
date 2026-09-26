@@ -5,13 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 
 
-def run(command: list[str], cwd: Path) -> dict[str, object]:
-    completed = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+def run(command: list[str], cwd: Path, extra_env: dict[str, str] | None = None) -> dict[str, object]:
+    environment = os.environ.copy()
+    environment.update(extra_env or {})
+    completed = subprocess.run(command, cwd=cwd, text=True, capture_output=True, env=environment)
     return {
         "command": command,
         "exit_status": completed.returncode,
@@ -44,6 +47,24 @@ def main() -> int:
             (task_root / "result.json").write_text(json.dumps(preserved_result, indent=2) + "\n")
             summary.append(observation)
             print(f"PRESERVED {task['id']}")
+            continue
+        if task.get("kind") == "cli":
+            for relative in task.get("reset", []):
+                target = task_root / relative
+                if target.is_file(): target.unlink()
+            command = [str(compiler), *task.get("args", [])]
+            environment = {key: value.replace("{task}", str(task_root)) for key, value in task.get("env", {}).items()}
+            observation = run(command, task_root, environment)
+            expected = task.get("expected", {})
+            correct = observation["exit_status"] == expected.get("exit_status", 0)
+            correct = correct and all(value in observation["stdout"] for value in expected.get("stdout_contains", []))
+            correct = correct and all(value in observation["stderr"] for value in expected.get("stderr_contains", []))
+            correct = correct and all((task_root / value).exists() for value in expected.get("files", []))
+            record = {"task": task["id"], "kind": "cli", "command": observation, "compiled": correct, "ran_correctly": correct}
+            if not correct: failures += 1
+            summary.append(record)
+            print(f"{'PASS' if correct else 'FAIL'} {task['id']}")
+            if args.write_results: (task_root / "attempt-0-observed.json").write_text(json.dumps(record, indent=2) + "\n")
             continue
         source = task_root / args.attempt
         if not source.exists():

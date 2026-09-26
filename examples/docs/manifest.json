@@ -7,6 +7,7 @@
     {"name":"safe-and-raw-pointers","source":"safe-and-raw-pointers.p","mode":"run","stdout":"7\n","docs":[["content/docs/examples.html","safe-and-raw-pointers"]]},
     {"name":"nested-types","source":"nested-types.p","mode":"compile","docs":[["content/docs/functions.html","nested-types"]]},
     {"name":"iterable-filesystem","source":"iterable-filesystem.p","mode":"compile","docs":[["content/docs/system.html","iterable-filesystem"]]},
+    {"name":"sqlite-http-service","source":"sqlite-http-service.p","mode":"compile","docs":[["content/docs/http.html","sqlite-http-service"]]},
     {"name":"raw-pointer-outside-unsafe","source":"errors/raw-pointer-outside-unsafe.p","mode":"expected-error","stderr_contains":["ptr(...) requires unsafe block"]},
     {"name":"unhandled-checked-error","source":"errors/unhandled-checked-error.p","mode":"expected-error","stderr_contains":["call to 'load' may throw checked error IOError","not declared by current function"]},
     {"name":"invalid-main-signature","source":"errors/invalid-main-signature.p","mode":"expected-error","stderr_contains":["main must have signature"]},

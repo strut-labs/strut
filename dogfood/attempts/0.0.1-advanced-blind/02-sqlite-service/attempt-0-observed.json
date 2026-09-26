@@ -1,0 +1,17 @@
+{
+  "task": "02-sqlite-service",
+  "source": "02-sqlite-service/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/02-sqlite-service/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-02-sqlite-service-1olx42vi/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/02-sqlite-service/attempt-0.p: In lambda function:\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/02-sqlite-service/attempt-0.p:5:45: error: passing \u2018const strut_sqlite_db\u2019 as \u2018this\u2019 argument discards qualifiers [-fpermissive]\n    5 |     app.get(\"/notes\", (http_request req) => { return http_json_response(db.query(\"SELECT * FROM notes\")); });\n      |                                     ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n/tmp/strut-ai-dx-02-sqlite-service-1olx42vi/program.strut.cpp:632:20: note:   in call to \u2018json::Document strut_sqlite_db::query(const strut_string&)\u2019\n  632 |     json::Document query(const strut_string& sql){return query(sql,json::Document::make_array());}\n      |                    ^~~~~\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/02-sqlite-service/attempt-0.p: error: native C++ compilation/linking failed\nhelp: install the development package for required native library sqlite3 and ensure its headers and linker path are visible to the configured C++ toolchain\nnote: the native toolchain output above is secondary detail\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

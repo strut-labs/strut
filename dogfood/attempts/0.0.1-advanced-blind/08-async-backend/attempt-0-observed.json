@@ -1,0 +1,17 @@
+{
+  "task": "08-async-backend",
+  "source": "08-async-backend/attempt-0.p",
+  "compile": {
+    "command": [
+      "/tmp/strut-eaa4418-build/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/08-async-backend/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-08-async-backend-zntw3e6k/program"
+    ],
+    "exit_status": 1,
+    "stdout": "",
+    "stderr": "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/08-async-backend/attempt-0.p: In lambda function:\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/08-async-backend/attempt-0.p:6:42: error: invalid user-defined conversion from \u2018int32_t\u2019 {aka \u2018int\u2019} to \u2018const strut_string&\u2019 [-fpermissive]\n    6 |     return result.stdout + response.status;\n      |                                 ~~~~~~~~~^~    \n/tmp/strut-ai-dx-08-async-backend-zntw3e6k/program.strut.cpp:101:31: note: candidate is: \u2018strut_string::strut_string(const char*)\u2019 (near match)\n  101 |     strut_string() = default; strut_string(const char* s):v(s){} strut_string(std::string s):v(std::move(s)){}\n      |                               ^~~~~~~~~~~~\n/tmp/strut-ai-dx-08-async-backend-zntw3e6k/program.strut.cpp:101:31: note: conversion of argument 1 would be ill-formed:\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/08-async-backend/attempt-0.p:6:42: error: invalid conversion from \u2018int32_t\u2019 {aka \u2018int\u2019} to \u2018const char*\u2019 [-fpermissive]\n    6 |     return result.stdout + response.status;\n      |                                 ~~~~~~~~~^~    \n      |                                          |\n      |                                          int32_t {aka int}\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/08-async-backend/attempt-0.p:6:42: error: invalid conversion from \u2018int32_t\u2019 {aka \u2018int\u2019} to \u2018const char*\u2019 [-fpermissive]\n    6 |     return result.stdout + response.status;\n      |                                 ~~~~~~~~~^~    \n      |                                          |\n      |                                          int32_t {aka int}\n/tmp/strut-ai-dx-08-async-backend-zntw3e6k/program.strut.cpp:101:56: note: initializing argument 1 of \u2018strut_string::strut_string(const char*)\u2019\n  101 |     strut_string() = default; strut_string(const char* s):v(s){} strut_string(std::string s):v(std::move(s)){}\n      |                                            ~~~~~~~~~~~~^\n/tmp/strut-ai-dx-08-async-backend-zntw3e6k/program.strut.cpp:112:71: note: initializing argument 2 of \u2018strut_string operator+(const strut_string&, const strut_string&)\u2019\n  112 | inline strut_string operator+(const strut_string&a,const strut_string&b){return a.v+b.v;}\n      |                                                    ~~~~~~~~~~~~~~~~~~~^\n/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-blind/08-async-backend/attempt-0.p: error: native C++ compilation/linking failed\nhelp: install the development package for required native library curl and ensure its headers and linker path are visible to the configured C++ toolchain\nnote: the native toolchain output above is secondary detail\n"
+  },
+  "compiled": false,
+  "ran_correctly": false
+}

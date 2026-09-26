@@ -1,0 +1,17 @@
+{
+  "task": "04-tls-client",
+  "source": "04-tls-client/attempt-0.p",
+  "compile": {
+    "command": [
+      "/home/nick/Repositories/strut-labs/strut/build-reconcile-clang/strut",
+      "/home/nick/Repositories/strut-labs/strut/dogfood/attempts/0.0.1-advanced-after/04-tls-client/attempt-0.p",
+      "-o",
+      "/tmp/strut-ai-dx-04-tls-client-ohvp8uib/program"
+    ],
+    "exit_status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "compiled": true,
+  "ran_correctly": true
+}
