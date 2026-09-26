@@ -5,6 +5,14 @@ pre-1.0 language and toolchain baseline across Linux, macOS, and Windows.
 
 ## Highlights
 
+- Executables use `function main() -> int` or `function main(string[] args) -> int`;
+  the returned value becomes the process exit status, `args` excludes the
+  executable name, and `program_path()` exposes that name separately.
+- Dynamic arrays (`T[]`) are a core language facility and no longer require
+  `include <vector>;`; `vector<T>` remains available as a compatibility spelling.
+- Filesystem `copy`, `move`, and `remove` operations accept compatible iterable
+  path collections. Pairwise copy/move mappings require ordered collections and
+  equal lengths.
 - Safe owning pointers use `T* owner := new(...)`; raw pointer extraction is an
   explicit unsafe operation written `ptr<T> raw := ptr(owner)`.
 - Typed and inferred lambdas compose with generic functions, containers, async

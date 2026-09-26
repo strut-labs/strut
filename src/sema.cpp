@@ -9,6 +9,23 @@ std::string function_signature(const Stmt& st){std::string sig="function<(";for(
 std::string function_return(std::string_view sig){auto p=sig.rfind(")->");if(p==std::string_view::npos||sig.empty()||sig.back()!='>')return "opaque";return std::string(sig.substr(p+3,sig.size()-(p+4)));}
 std::string generic_inner(std::string_view type,std::string_view head){if(type.rfind(head,0)!=0||type.size()<=head.size()+1||type.back()!='>')return {};return std::string(type.substr(head.size(),type.size()-head.size()-1));}
 std::string normalize_operator_type(std::string t){if(t.rfind("ref<",0)==0&&t.back()=='>')t=t.substr(4,t.size()-5);if(t.rfind("const ",0)==0)t=t.substr(6);return t;}
+bool statement_returns(const Stmt& st);
+bool block_returns(const std::vector<StmtPtr>& body){for(const auto& st:body)if(statement_returns(*st))return true;return false;}
+bool statement_returns(const Stmt& st){
+    if(st.kind==Stmt::Kind::return_stmt||st.kind==Stmt::Kind::throw_stmt)return true;
+    if(st.kind==Stmt::Kind::block||st.kind==Stmt::Kind::unsafe_stmt)return block_returns(st.body);
+    if(st.kind==Stmt::Kind::if_stmt)return !st.else_body.empty()&&block_returns(st.body)&&block_returns(st.else_body);
+    if(st.kind==Stmt::Kind::match_stmt||st.kind==Stmt::Kind::switch_stmt){bool fallback=false;if(st.switch_cases.empty())return false;for(const auto& c:st.switch_cases){fallback|=c.is_default;if(!block_returns(c.body))return false;}return fallback;}
+    if(st.kind==Stmt::Kind::try_stmt){if(!block_returns(st.body)||st.catches.empty())return false;for(const auto& c:st.catches)if(!block_returns(c.body))return false;return true;}
+    return false;
+}
+std::string iterable_element(std::string type){
+    if(type.size()>2&&type.compare(type.size()-2,2,"[]")==0)return type.substr(0,type.size()-2);
+    if(auto open=type.find('[');open!=std::string::npos&&type.back()==']')return type.substr(0,open);
+    for(auto head:{std::string_view("vector<"),std::string_view("list<"),std::string_view("deque<"),std::string_view("set<"),std::string_view("ordered_set<")}){auto inner=generic_inner(type,head);if(!inner.empty())return inner;}
+    return {};
+}
+bool unordered_iterable(std::string_view type){return type.rfind("set<",0)==0;}
 }
 
 std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& scope, SymbolNamespace ns) {
@@ -81,7 +98,7 @@ void SemanticAnalyzer::require_type_module(SemanticResult& result, std::string_v
     const std::string t(type_name);
     auto first_arg=[](const std::string& value,std::string_view head){if(value.rfind(std::string(head),0)!=0||value.back()!='>')return std::string();auto inner=value.substr(head.size(),value.size()-head.size()-1);int depth=0;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0)return inner.substr(0,i);}return inner;};
     auto key_supported=[&](std::string key){if(key.rfind("const ",0)==0)key=key.substr(6);auto b=builtin_type(key);if(b.valid()&&b.kind!=TypeKind::void_type&&b.kind!=TypeKind::json_type)return true;if(enum_members_.find(key)!=enum_members_.end())return true;if(key.rfind("ptr<",0)==0||key.rfind("raw_ptr<",0)==0)return true;return false;};
-    if (t.find("[]") != std::string::npos || t.find("vector<") != std::string::npos) require_module(result, "vector", span, type_name);
+    // T[] is the core dynamic vector type. vector<T> remains a compatibility spelling.
     if (t.find("ordered_map<") != std::string::npos) require_module(result, "ordered_map", span, type_name);
     else if (t.find("map<") != std::string::npos) require_module(result, "map", span, type_name);
     if (t.find("ordered_set<") != std::string::npos) require_module(result, "ordered_set", span, type_name);
@@ -177,7 +194,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {};
         }
         case Expr::Kind::call: {
-            for (const auto& arg : expr.arguments) { if(arg && arg->kind==Expr::Kind::array_literal) require_module(result,"vector",arg->span,"array/vector argument"); infer_expression(result, *arg); }
+            std::vector<TypeInfo> argument_types;argument_types.reserve(expr.arguments.size());
+            for (const auto& arg : expr.arguments) argument_types.push_back(infer_expression(result, *arg));
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
@@ -218,10 +236,12 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires a T* safe pointer"});return {TypeKind::named,0,"weak_ptr<"+inner+">"};}
                 if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});if(a.kind==Expr::Kind::index&&a.left){auto owner=infer_expression(result,*a.left);if(owner.name.size()>2&&owner.name.compare(owner.name.size()-2,2,"[]")==0)result.diagnostics.push_back(Diagnostic{a.span,"T& cannot borrow a dynamic-array element because later mutation could invalidate the reference"});}auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
                 if (name == "print") return {TypeKind::void_type, 0, "void"};
+                if (name == "println") return {TypeKind::void_type, 0, "void"};
+                if (name == "program_path") { if(!expr.arguments.empty())result.diagnostics.push_back(Diagnostic{expr.span,"program_path() takes no arguments"}); return builtin_type("string"); }
                 if (name == "input") return expr.arguments.empty()?builtin_type("string"):TypeInfo{TypeKind::void_type,0,"void"};
                 if (name == "istream" || name == "ostream" || name == "sstream" || name == "ifstream" || name == "ofstream") return {TypeKind::named,0,name};
                 if (name == "exists" || name == "is_file" || name == "is_dir") { require_module(result, "filesystem", expr.span, name); return builtin_type("bool"); }
-                if (name == "ls" || name == "walk") { require_module(result, "filesystem", expr.span, name); require_module(result, "vector", expr.span, name + std::string(" result")); return {TypeKind::named,0,"string[]"}; }
+                if (name == "ls" || name == "walk") { require_module(result, "filesystem", expr.span, name); return {TypeKind::named,0,"string[]"}; }
                 if (name == "file_size" || name == "modified") { require_module(result, "filesystem", expr.span, name); return builtin_type("int_64"); }
                 if (name == "cwd" || name == "absolute" || name == "canonical" || name == "parent" || name == "filename" || name == "extension" || name == "stem" || name == "join_path" || name == "read_file") { require_module(result, "filesystem", expr.span, name); return builtin_type("string"); }
                 if (name == "read_bytes") { require_module(result, "filesystem", expr.span, name); return {TypeKind::named,0,"bytes"}; }
@@ -243,7 +263,18 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "http_get_async" || name == "http_request_async") return {TypeKind::named,0,"future<http_response>"};
                 if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(t.name.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"T& cannot be passed directly across a thread boundary; use T* or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
-                if (name == "make_dir" || name == "remove" || name == "remove_all" || name == "copy" || name == "move" || name == "touch" || name == "cd" || name == "write_file" || name == "append_file") { require_module(result, "filesystem", expr.span, name); return {TypeKind::void_type,0,"void"}; }
+                if (name == "make_dir" || name == "remove" || name == "remove_all" || name == "copy" || name == "move" || name == "touch" || name == "cd" || name == "write_file" || name == "append_file") {
+                    require_module(result, "filesystem", expr.span, name);
+                    if((name=="remove"||name=="copy"||name=="move")&&!argument_types.empty()){
+                        auto check_paths=[&](std::size_t i){if(i>=argument_types.size())return;const auto& t=argument_types[i].name;if(t=="string")return;auto elem=iterable_element(t);if(elem.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,name+" expects a path string or iterable collection of strings"});else if(elem!="string")result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,name+" iterable elements must be convertible to string paths"});};
+                        check_paths(0);
+                        if((name=="copy"||name=="move")&&argument_types.size()>1&&argument_types[1].name!="string"){
+                            check_paths(1);
+                            if(unordered_iterable(argument_types[0].name)||unordered_iterable(argument_types[1].name))result.diagnostics.push_back(Diagnostic{expr.span,name+" pairwise mapping requires ordered iterable collections"});
+                        }
+                    }
+                    return {TypeKind::void_type,0,"void"};
+                }
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value)) { if(value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name)); if(value->type_name=="async_function") return {TypeKind::named,0,"future<opaque>"}; }
@@ -251,9 +282,9 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {TypeKind::named, 0, "opaque"};
         }
         case Expr::Kind::lambda: {
-            push_scope();
+            const auto enclosing_return=current_function_return_type_;current_function_return_type_.clear();push_scope();
             if(expr.lambda){for(const auto& p:expr.lambda->parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,true,p.type.name.empty()?"opaque":resolved_type_name(p.type.name)});if(expr.lambda->expression_body)infer_expression(result,*expr.lambda->expression_body);analyze_statements(result,expr.lambda->body,false);}
-            pop_scope();
+            pop_scope();current_function_return_type_=enclosing_return;
             return {TypeKind::named, 0, expr.lambda && expr.lambda->is_async ? "async_function" : "function"};
         }
         case Expr::Kind::member: {
@@ -390,6 +421,12 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         }
         case Stmt::Kind::function_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
+            if(st.name=="main"&&st.owner.empty()){
+                const std::string result_type=st.return_type?resolved_type_name(st.return_type->name):"void";
+                const bool params_ok=st.parameters.empty()||(st.parameters.size()==1&&resolved_type_name(st.parameters[0].type.name)=="string[]");
+                if(st.is_async||!params_ok||(result_type!="int_32"&&result_type!="void"))result.diagnostics.push_back(Diagnostic{st.span,"main must have signature function main() -> int or function main(string[] args) -> int"});
+                if(result_type=="int_32"&&st.has_body&&!block_returns(st.body))result.diagnostics.push_back(Diagnostic{st.span,"main -> int must explicitly return an integer value on every reachable path"});
+            }
             if (st.has_body) {
                 const auto previous_return=current_function_return_type_; const auto previous_errors=current_function_errors_; current_function_return_type_=st.return_type?st.return_type->name:"void"; current_function_errors_.clear();for(const auto& e:st.error_types)current_function_errors_.insert(resolved_type_name(e.name));
                 push_scope();
@@ -440,6 +477,9 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::expression: if (st.value) infer_expression(result, *st.value); break;
         case Stmt::Kind::return_stmt: if (st.value) {
             auto returned = infer_expression(result,*st.value);
+            auto expected=resolve_type(current_function_return_type_);
+            if(!current_function_return_type_.empty()&&expected.kind==TypeKind::void_type)result.diagnostics.push_back(Diagnostic{st.span,"void function cannot return a value"});
+            else if(!current_function_return_type_.empty()&&returned.valid()&&expected.valid()&&!compatible(returned,expected))result.diagnostics.push_back(Diagnostic{st.span,"return value is incompatible with function return type '"+current_function_return_type_+"'"});
             if(current_function_return_type_.rfind("ref<",0)==0) {
                 bool safe_escape=false;
                 if(st.value->kind==Expr::Kind::identifier) {
@@ -450,7 +490,8 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 if(!safe_escape) result.diagnostics.push_back(Diagnostic{st.span,"returning T& is only permitted when returning an existing compatible T& binding"});
             }
             (void)returned;
-        } break;
+        } else if(!current_function_return_type_.empty()&&resolve_type(current_function_return_type_).kind!=TypeKind::void_type)result.diagnostics.push_back(Diagnostic{st.span,"non-void function must return a value"});
+        break;
         case Stmt::Kind::throw_stmt: {
             std::string thrown; if(st.value){if(st.value->kind==Expr::Kind::call&&st.value->left&&st.value->left->kind==Expr::Kind::identifier){thrown=st.value->left->text;for(const auto& a:st.value->arguments)infer_expression(result,*a);}else if(st.value->kind==Expr::Kind::struct_literal)thrown=st.value->text;else {auto t=infer_expression(result,*st.value);thrown=t.name;}}
             thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in function signature"});break;

@@ -46,7 +46,7 @@ def main() -> int:
         input_path.write_text("a\nb\n", encoding="utf-8")
         cli_env = os.environ.copy()
         cli_env["STRUT_INPUT"] = str(input_path)
-        cli = run([str(binaries["dogfood/cli/file_stats.p"])], cwd=temp, env=cli_env)
+        cli = run([str(binaries["dogfood/cli/file_stats.p"]), str(input_path)], cwd=temp, env=cli_env)
         if cli.stdout != "4\n3\n":
             raise RuntimeError(f"unexpected file-stats output: {cli.stdout!r}")
 

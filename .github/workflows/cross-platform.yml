@@ -55,6 +55,12 @@ jobs:
       - name: Install generated-program dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
+      - name: Install current LLVM toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm
+          echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
       - name: Install generated-program dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -69,8 +75,11 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       - name: Configure (POSIX)
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSTRUT_WARNINGS_AS_ERRORS=ON
+      - name: Configure (macOS with current libc++)
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER="$CXX" -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
