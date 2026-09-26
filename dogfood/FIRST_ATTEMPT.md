@@ -48,3 +48,11 @@ from language, documentation, and diagnostic failures.
 The original audit predates this protocol, so it is a useful retrospective baseline
 but not a controlled, independently repeatable benchmark. New rows should follow the
 protocol above.
+
+## Diagnostic-actionability control
+
+`dogfood/diagnostics.py` now runs six deliberately broken programs as a stable
+zero-retry control. Missing-module, checked-error, pointer, invalid-generic,
+package-resolution, and native-dependency cases must all identify the category and
+the next corrective action on the first compiler invocation. The suite reports one
+compiler cycle per case; needing compiler source or generated C++ is a failure.

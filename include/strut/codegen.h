@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "strut/ir.h"
 namespace strut {
@@ -15,6 +16,7 @@ struct NativeLinkOptions {
     bool release = false;
     std::string target = "native";
 };
+std::string classify_native_failure(const IRProgram& program, std::string_view phase);
 class CppBackend {
 public:
     CodegenResult generate(const IRProgram& program) const;

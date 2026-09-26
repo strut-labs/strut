@@ -19,4 +19,15 @@ Compile every program and run the offline-safe subset with:
 python3 dogfood/check.py build/strut
 ```
 
+Certify that six common mistakes produce actionable Strut-level guidance with:
+
+```sh
+python3 dogfood/diagnostics.py build/strut
+```
+
+The controlled mistakes cover a missing standard module, an unhandled checked
+error, an unsafe pointer operation, an invalid generic key, package dependency
+resolution, and a missing native HTTP dependency. Each must be fixable from the
+first diagnostic without inspecting compiler source or generated C++.
+
 They are deliberately kept small enough to remain regression-friendly while crossing multiple language/runtime subsystems. API pain discovered here should be fed back into the pre-stability design audit rather than worked around in examples.

@@ -9,10 +9,12 @@ on:
       - 'include/**'
       - 'tests/**'
       - 'dogfood/**'
+      - 'examples/docs/**'
       - 'benchmarks/programs/**'
       - 'third_party/**'
       - 'CMakeLists.txt'
       - 'tools/check_release.py'
+      - 'tools/certify_docs.py'
       - 'RELEASE_NOTES.md'
       - '.github/workflows/cross-platform.yml'
   pull_request:
@@ -21,10 +23,12 @@ on:
       - 'include/**'
       - 'tests/**'
       - 'dogfood/**'
+      - 'examples/docs/**'
       - 'benchmarks/programs/**'
       - 'third_party/**'
       - 'CMakeLists.txt'
       - 'tools/check_release.py'
+      - 'tools/certify_docs.py'
       - 'RELEASE_NOTES.md'
       - '.github/workflows/cross-platform.yml'
 
@@ -50,6 +54,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Checkout website documentation source
+        uses: actions/checkout@v5
+        with:
+          repository: strut-labs/strut-labs.github.io
+          ref: stage
+          path: website-source
       - name: Check release metadata
         run: python3 tools/check_release.py
       - name: Install generated-program dependencies
@@ -86,34 +96,55 @@ jobs:
         run: cmake -S . -B build -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
+      - name: Certify executable documentation (POSIX)
+        if: runner.os != 'Windows'
+        run: python3 tools/certify_docs.py build/strut --website-root website-source
+      - name: Certify executable documentation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python tools/certify_docs.py build/Release/strut.exe --website-root website-source
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Certify generated C++ and dogfood
         if: runner.os != 'Windows'
         env:
           STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
-        run: python3 dogfood/check.py build/strut
+        run: |
+          python3 dogfood/check.py build/strut
+          python3 dogfood/diagnostics.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           # `out`/`err` are intentional globals; JSONIC triggers C4702; getenv is portability-wrapped.
           STRUT_CXXFLAGS: /W4 /WX /wd4459 /wd4702 /D_CRT_SECURE_NO_WARNINGS
-        run: python dogfood/check.py build/Release/strut.exe
+        run: |
+          python dogfood/check.py build/Release/strut.exe
+          python dogfood/diagnostics.py build/Release/strut.exe
 
   linux-arm64:
     name: linux-arm64-gcc
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
+      - name: Checkout website documentation source
+        uses: actions/checkout@v5
+        with:
+          repository: strut-labs/strut-labs.github.io
+          ref: stage
+          path: website-source
       - name: Check release metadata
         run: python3 tools/check_release.py
       - name: Install generated-program dependencies
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON
       - run: cmake --build build --parallel
+      - name: Certify executable documentation
+        run: python3 tools/certify_docs.py build/strut --website-root website-source
       - run: ctest --test-dir build --output-on-failure
       - name: Certify generated C++ and dogfood
         env:
           STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
-        run: python3 dogfood/check.py build/strut
+        run: |
+          python3 dogfood/check.py build/strut
+          python3 dogfood/diagnostics.py build/strut

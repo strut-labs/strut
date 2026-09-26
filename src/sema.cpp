@@ -96,7 +96,7 @@ bool SemanticAnalyzer::compatible(const TypeInfo& from, const TypeInfo& to) cons
 
 void SemanticAnalyzer::require_module(SemanticResult& result, std::string_view module, SourceSpan span, std::string_view facility) const {
     if (!enforce_standard_modules_ || standard_modules_.find(std::string(module)) != standard_modules_.end()) return;
-    result.diagnostics.push_back(Diagnostic{span, "'" + std::string(facility) + "' requires include <" + std::string(module) + ">;"});
+    result.diagnostics.push_back(Diagnostic{span, "'" + std::string(facility) + "' requires standard module <" + std::string(module) + ">\nhelp: add `include <" + std::string(module) + ">;`"});
 }
 
 void SemanticAnalyzer::require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const {
@@ -185,7 +185,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::call: {
             std::vector<TypeInfo> argument_types;argument_types.reserve(expr.arguments.size());
             for (const auto& arg : expr.arguments) argument_types.push_back(infer_expression(result, *arg));
-            if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function"});}
+            if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function\nhelp: handle "+e+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
             if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
                 if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
                 if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
@@ -482,7 +482,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         break;
         case Stmt::Kind::throw_stmt: {
             std::string thrown; if(st.value){if(st.value->kind==Expr::Kind::call&&st.value->left&&st.value->left->kind==Expr::Kind::identifier){thrown=st.value->left->text;for(const auto& a:st.value->arguments)infer_expression(result,*a);}else if(st.value->kind==Expr::Kind::struct_literal)thrown=st.value->text;else {auto t=infer_expression(result,*st.value);thrown=t.name;}}
-            thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in function signature"});break;
+            thrown=resolved_type_name(thrown);if(current_function_errors_.find(thrown)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{st.span,"throw of checked error "+thrown+" is not declared in the enclosing function\nhelp: add `: "+thrown+"` to the function signature, or handle it before it escapes"});break;
         }
         case Stmt::Kind::try_stmt: {
             const auto saved_errors=current_function_errors_;

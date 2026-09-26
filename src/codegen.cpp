@@ -953,8 +953,8 @@ inline std::vector<strut_string> strut_fs_expand(const strut_string& pattern){if
 template<class C> inline std::vector<strut_string> strut_fs_expand_all(const C& paths){std::vector<strut_string> out;for(const auto& p:paths){auto xs=strut_fs_expand(strut_string(p));out.insert(out.end(),xs.begin(),xs.end());}return out;}
 inline void strut_fs_remove_exact(const strut_string& p){std::error_code ec;std::filesystem::remove(strut_fs_path(p),ec);strut_fs_fail("remove",ec);}inline void strut_fs_remove(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_exact(x);}template<class C> inline void strut_fs_remove(const C& ps){for(const auto& p:strut_fs_expand_all(ps))strut_fs_remove_exact(p);}
 inline void strut_fs_remove_all_exact(const strut_string& p){std::error_code ec;std::filesystem::remove_all(strut_fs_path(p),ec);strut_fs_fail("remove_all",ec);}inline void strut_fs_remove_all(const strut_string& p){for(const auto& x:strut_fs_expand(p))strut_fs_remove_all_exact(x);}inline void strut_fs_remove_all(const std::vector<strut_string>& ps){for(const auto& p:strut_fs_expand_all(ps))strut_fs_remove_all_exact(p);}
-inline void strut_fs_copy_exact(const strut_string&a,const strut_string&b){std::error_code ec;std::filesystem::copy(strut_fs_path(a),strut_fs_path(b),std::filesystem::copy_options::recursive|std::filesystem::copy_options::overwrite_existing,ec);strut_fs_fail("copy",ec);}inline void strut_fs_copy(const strut_string&a,const strut_string&b){if(!strut_fs_has_wildcards(a)){strut_fs_copy_exact(a,b);return;}auto ps=strut_fs_expand(a);if(ps.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: wildcard destination must be an existing directory");for(const auto&p:ps)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class C> inline void strut_fs_copy(const C& ps,const strut_string&d0){auto d=strut_fs_path(d0);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: bulk destination must be an existing directory");auto xs=strut_fs_expand_all(ps);if(xs.empty()&&ps.begin()!=ps.end())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");for(const auto&p:xs)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class A,class B> inline void strut_fs_copy(const A&a0,const B&b0){auto a=a0.begin(),ae=a0.end(),b=b0.begin(),be=b0.end();for(;a!=ae&&b!=be;++a,++b)strut_fs_copy(strut_string(*a),strut_string(*b));if(a!=ae||b!=be)throw strut_checked_error("FilesystemError","copy: paired collections must have equal lengths");}
-inline void strut_fs_move_exact(const strut_string&a,const strut_string&b){std::error_code ec;std::filesystem::rename(strut_fs_path(a),strut_fs_path(b),ec);strut_fs_fail("move",ec);}inline void strut_fs_move(const strut_string&a,const strut_string&b){if(!strut_fs_has_wildcards(a)){strut_fs_move_exact(a,b);return;}auto ps=strut_fs_expand(a);if(ps.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: wildcard destination must be an existing directory");for(const auto&p:ps)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class C> inline void strut_fs_move(const C& ps,const strut_string&d0){auto d=strut_fs_path(d0);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: bulk destination must be an existing directory");auto xs=strut_fs_expand_all(ps);if(xs.empty()&&ps.begin()!=ps.end())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");for(const auto&p:xs)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class A,class B> inline void strut_fs_move(const A&a0,const B&b0){auto a=a0.begin(),ae=a0.end(),b=b0.begin(),be=b0.end();for(;a!=ae&&b!=be;++a,++b)strut_fs_move(strut_string(*a),strut_string(*b));if(a!=ae||b!=be)throw strut_checked_error("FilesystemError","move: paired collections must have equal lengths");}
+inline void strut_fs_copy_exact(const strut_string&a,const strut_string&b){std::error_code ec;std::filesystem::copy(strut_fs_path(a),strut_fs_path(b),std::filesystem::copy_options::recursive|std::filesystem::copy_options::overwrite_existing,ec);strut_fs_fail("copy",ec);}inline void strut_fs_copy(const strut_string&a,const strut_string&b){if(!strut_fs_has_wildcards(a)){strut_fs_copy_exact(a,b);return;}auto ps=strut_fs_expand(a);if(ps.empty())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: wildcard destination must be an existing directory");for(const auto&p:ps)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class C> inline void strut_fs_copy(const C& ps,const strut_string&d0){auto d=strut_fs_path(d0);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","copy: bulk destination must be an existing directory");auto xs=strut_fs_expand_all(ps);if(xs.empty()&&ps.begin()!=ps.end())throw strut_checked_error("FilesystemError","copy: wildcard matched no paths");for(const auto&p:xs)strut_fs_copy_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class A,class B> inline void strut_fs_copy(const A&a0,const B&b0){auto a=a0.begin();auto ae=a0.end();auto b=b0.begin();auto be=b0.end();for(;a!=ae&&b!=be;++a,++b)strut_fs_copy(strut_string(*a),strut_string(*b));if(a!=ae||b!=be)throw strut_checked_error("FilesystemError","copy: paired collections must have equal lengths");}
+inline void strut_fs_move_exact(const strut_string&a,const strut_string&b){std::error_code ec;std::filesystem::rename(strut_fs_path(a),strut_fs_path(b),ec);strut_fs_fail("move",ec);}inline void strut_fs_move(const strut_string&a,const strut_string&b){if(!strut_fs_has_wildcards(a)){strut_fs_move_exact(a,b);return;}auto ps=strut_fs_expand(a);if(ps.empty())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");auto d=strut_fs_path(b);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: wildcard destination must be an existing directory");for(const auto&p:ps)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class C> inline void strut_fs_move(const C& ps,const strut_string&d0){auto d=strut_fs_path(d0);std::error_code ec;if(!std::filesystem::is_directory(d,ec)||ec)throw strut_checked_error("FilesystemError","move: bulk destination must be an existing directory");auto xs=strut_fs_expand_all(ps);if(xs.empty()&&ps.begin()!=ps.end())throw strut_checked_error("FilesystemError","move: wildcard matched no paths");for(const auto&p:xs)strut_fs_move_exact(p,strut_string((d/strut_fs_path(p).filename()).string()));}template<class A,class B> inline void strut_fs_move(const A&a0,const B&b0){auto a=a0.begin();auto ae=a0.end();auto b=b0.begin();auto be=b0.end();for(;a!=ae&&b!=be;++a,++b)strut_fs_move(strut_string(*a),strut_string(*b));if(a!=ae||b!=be)throw strut_checked_error("FilesystemError","move: paired collections must have equal lengths");}
 inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(p),std::ios::app|std::ios::binary);if(!f)throw strut_checked_error("FilesystemError","touch: unable to open path");}
 )STRUT_FS_MUT";
 }
@@ -1576,6 +1576,21 @@ int run_native_command(const std::string& command) {
     return std::system(command.c_str());
 #endif
 }
+std::string native_failure(const IRProgram& program,std::string_view phase) {
+    std::ostringstream out;
+    out << "native " << phase << " failed";
+    const auto libraries=analyze_runtime_components(program).link_libraries();
+    if(!libraries.empty()) {
+        out << "\nhelp: install the development package for required native ";
+        out << (libraries.size()==1?"library ":"libraries ");
+        for(std::size_t i=0;i<libraries.size();++i){if(i)out<<", ";out<<libraries[i];}
+        out << " and ensure its headers and linker path are visible to the configured C++ toolchain";
+    } else {
+        out << "\nhelp: verify the configured C++20 compiler and native link options";
+    }
+    out << "\nnote: the native toolchain output above is secondary detail";
+    return out.str();
+}
 std::string target_env_name(const std::string& target) {
     std::string out = "STRUT_CXX_";
     for (unsigned char c : target) out += std::isalnum(c) ? static_cast<char>(std::toupper(c)) : '_';
@@ -1656,12 +1671,13 @@ void append_runtime_link_libraries(std::string& command,const IRProgram& program
     }
 }
 }
+std::string classify_native_failure(const IRProgram& program,std::string_view phase){return native_failure(program,phase);}
 bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
  auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
 bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd; const auto jsonic=jsonic_include_dir().string();
  if(msvc) cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX /c "+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\""+jsonic+"\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
  else cmd="\""+cxx+"\" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+env_flags("STRUT_CXXFLAGS")+" -I\""+jsonic+"\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
- if(run_native_command(cmd)!=0){error="native C++ object compilation failed";return false;}return true;
+ if(run_native_command(cmd)!=0){error=native_failure(p,"C++ object compilation");return false;}return true;
 }
 
 bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesystem::path>& objects,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {
@@ -1697,7 +1713,7 @@ bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string 
  if(!msvc) cmd += env_flags("STRUT_LDFLAGS");
  if(!msvc && target_windows(link.target)) cmd += " -lws2_32";
  append_runtime_link_libraries(cmd,p,msvc);
- if(run_native_command(cmd)!=0){error="native linker failed";return false;}return true;
+ if(run_native_command(cmd)!=0){error=native_failure(p,"linking");return false;}return true;
 }
 
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {if(link.target!="native"){auto obj=output;obj += ".strut.o";auto gen=output;gen += ".strut.cpp";if(!compile_object(p,obj,gen,error,link))return false;bool ok=link_objects(p,{obj},output,error,link);std::error_code ec;std::filesystem::remove(obj,ec);std::filesystem::remove(gen,ec);return ok;}auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
@@ -1746,5 +1762,5 @@ const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;
  false
 #endif
  );
- int rc=run_native_command(cmd);std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error="native C++ compiler/linker failed";return false;}return true;}
+ int rc=run_native_command(cmd);std::error_code ec;std::filesystem::remove(tmp,ec);if(rc!=0){error=native_failure(p,"C++ compilation/linking");return false;}return true;}
 }
