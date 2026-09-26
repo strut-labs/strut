@@ -53,7 +53,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install curl:x64-windows
+          vcpkg install curl:x64-windows sqlite3:x64-windows
           $vcpkgRoot = Split-Path -Parent (Get-Command vcpkg).Source
           $installed = "$vcpkgRoot\installed\x64-windows"
           "INCLUDE=$env:INCLUDE;$installed\include" >> $env:GITHUB_ENV
