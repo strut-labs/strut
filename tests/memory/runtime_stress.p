@@ -1,5 +1,5 @@
 function main() -> void : ThreadError {
-    owner := ptr(7);
+    owner := new(7);
     weak_owner := weak(owner);
     worker := thread(() => {
         for (int i := 0; i < 10000; i++) {

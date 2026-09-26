@@ -3,7 +3,7 @@ async function plus_one(int x) -> int {
 }
 function main() -> void : ThreadError {
     mutex m;
-    total := ptr(0);
+    total := new(0);
     channel<int> jobs;
     producer := thread(() => {
         for (int i := 0; i < 1000; i++) {

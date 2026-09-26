@@ -405,7 +405,7 @@ Reference counting creates a cycle hazard. `weak_ptr<T>` is the explicit safe me
 
 Pointers compose recursively. Safe owning pointers may be nested (`T**`, `T***`, ...), and references to pointer bindings are valid (`T*&`). Const qualification may appear at each pointer/reference layer using the canonical Strut spelling. Pointers to references and references to references are rejected because references are aliases rather than independently addressable storage. Unsafe raw pointers compose with the generic raw-pointer spelling (`ptr<ptr<T>>`, `ptr<T*>`, etc.).
 
-`ptr<T>` is the explicit raw-pointer type for FFI, allocators, systems work, and users who choose unmanaged memory/performance trade-offs. The `ptr(value)` helper remains the current safe-pointer allocation helper; the angle-bracket type form is what denotes an unsafe raw pointer:
+`ptr<T>` is the explicit raw-pointer type for FFI, allocators, systems work, and users who choose unmanaged memory/performance trade-offs. The `new(value)` helper remains the current safe-pointer allocation helper; the angle-bracket type form is what denotes an unsafe raw pointer:
 
 ```strut
 unsafe {
@@ -808,7 +808,7 @@ Lambdas capture referenced outer values by value by default. This makes escaping
 
 ## Unsafe/raw pointer baseline
 
-`ptr<T>` is an unmanaged raw pointer and raw operations are restricted to `unsafe { ... }`. `raw(ptr_value)` exposes a non-owning raw address from a safe `T*` without changing ownership. Raw dereference and pointer arithmetic are only legal inside unsafe blocks. There is no automatic promotion from `ptr<T>` back to owning `T*`; callers must not manufacture ownership from an unmanaged address. `weak_ptr<T>` must be upgraded with `.lock()` before converting to raw.
+`ptr<T>` is an unmanaged raw pointer and raw operations are restricted to `unsafe { ... }`. `ptr(ptr_value)` exposes a non-owning raw address from a safe `T*` without changing ownership. Raw dereference and pointer arithmetic are only legal inside unsafe blocks. There is no automatic promotion from `ptr<T>` back to owning `T*`; callers must not manufacture ownership from an unmanaged address. `weak_ptr<T>` must be upgraded with `.lock()` before converting to raw.
 
 ### Native library selection
 

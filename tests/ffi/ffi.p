@@ -12,8 +12,8 @@ function main() -> void {
         made := c_pair_make(5, 6);
         print(made.a + made.b);
         print(c_scale(1.5, 2.0));
-        owner := ptr(9);
-        ptr<int> raw_value := raw(owner);
+        owner := new(9);
+        ptr<int> raw_value := ptr(owner);
         print(c_read_int(raw_value));
         c_increment(raw_value);
         print(*owner);

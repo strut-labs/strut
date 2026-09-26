@@ -3,7 +3,7 @@ async function answer(int value) -> int {
 }
 function main() -> void : ThreadError {
     mutex m;
-    total := ptr(0);
+    total := new(0);
     channel<int> jobs;
     producer := thread(() => {
         for (int i := 0; i < 100; i++) { jobs.send(i); }
