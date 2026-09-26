@@ -54,7 +54,6 @@ jobs:
           echo "CXX=$LLVM_PREFIX/bin/clang++" >> "$GITHUB_ENV"
           echo "STRUT_CXXFLAGS=-nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 -D_LIBCPP_DISABLE_AVAILABILITY" >> "$GITHUB_ENV"
           echo "STRUT_LDFLAGS=-L$LLVM_PREFIX/lib/c++ -Wl,-rpath,$LLVM_PREFIX/lib/c++" >> "$GITHUB_ENV"
-          echo "DYLD_LIBRARY_PATH=$LLVM_PREFIX/lib/c++" >> "$GITHUB_ENV"
       - name: Configure (POSIX)
         if: runner.os != 'Windows' && runner.os != 'macOS'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSTRUT_WARNINGS_AS_ERRORS=ON
