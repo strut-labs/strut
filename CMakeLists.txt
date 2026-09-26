@@ -44,6 +44,7 @@ target_compile_definitions(strut_compiler PRIVATE
 )
 
 if(MSVC)
+    target_compile_definitions(strut_compiler PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_options(strut_compiler PRIVATE /W4 /permissive-)
     if(STRUT_WARNINGS_AS_ERRORS)
         target_compile_options(strut_compiler PRIVATE /WX)
