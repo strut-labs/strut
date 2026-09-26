@@ -898,6 +898,8 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] use dogfood pain to revise APIs before stability freeze.
 
 ### CP107 — Package ecosystem dogfood
+> Historical note: the CP107 package implementations were subsequently extracted from `strut/dogfood/packages` into standalone `strut-packages/*` repositories. Do not add package implementation files back to the compiler repository.
+
 - [x] HTTP.
 - [x] SQLite.
 - [x] TLS.

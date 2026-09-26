@@ -2,6 +2,8 @@
 
 Official packages live under the `strut-packages` GitHub organisation, one repository per package: `strut-packages/http`, `strut-packages/sqlite`, and so on. Package names use lowercase ASCII letters, digits, `-`, and `_`; the repository name and manifest `name` must agree.
 
+Package implementations are **not stored inside the Strut compiler repository**. Compiler tests that need package fixtures must create temporary/local test packages or consume a sibling package checkout; this keeps package release history independent from compiler history.
+
 ## Quality contract
 
 An official package must have a versioned `strut.json`, tests that run without network access where practical, public API documentation, supported-platform notes, and reproducible native-link metadata. Releases use immutable semantic-version tags. A published version is never rewritten.
