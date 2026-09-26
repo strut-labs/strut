@@ -21,6 +21,17 @@ operator -(Number value) -> Number {
     return Number { value: -value.value };
 }
 
+operator ++(Number& value) -> Number& {
+    value.value = value.value + 1;
+    return value;
+}
+
+operator ++(Number& value, postfix) -> Number {
+    previous := Number { value: value.value };
+    value.value = value.value + 1;
+    return previous;
+}
+
 operator :=(Number destination, Config source) -> void {
     destination.value = source.value;
 }
@@ -37,10 +48,14 @@ function main() -> int {
     masked := sum & Number { value: 1 };
     shifted := masked << 2;
     negative := -shifted;
+    before := sum++;
+    updated := ++sum;
     Number configured := Config { value: 7 };
     configured = Config { value: 9 };
     println(same);
     println(negative.value);
+    println(before.value);
+    println(updated.value);
     println(configured.value);
     return 0;
 }

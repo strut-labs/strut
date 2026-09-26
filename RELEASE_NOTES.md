@@ -1,3 +1,8 @@
+# Unreleased
+
+- Prefix and postfix `++`/`--` are distinct overload identities; postfix
+  declarations use the compile-time-only `postfix` marker.
+
 # Strut 0.0.1
 
 Strut 0.0.1 is the first packaged compiler release. It establishes the current

@@ -39,6 +39,7 @@ struct IRStmt {
     SourceSpan span;
     std::string name;
     std::string op;
+    OperatorFixity operator_fixity = OperatorFixity::infix;
     std::string type_name;
     TypeId type_id;
     bool is_const = false;

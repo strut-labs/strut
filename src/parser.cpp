@@ -285,7 +285,7 @@ StmtPtr Parser::parse_operator(ParseResult& result) {
         st->return_type=parse_type(result);if(!st->return_type||st->return_type->name.empty())return nullptr;
         if(!match(">")){error(result,peek(),"expected '>' after operator callable signature");return nullptr;}
         if(peek().kind!=TokenKind::op){error(result,peek(),"expected overloadable operator token");return nullptr;}const Token op=advance();st->op=op.lexeme;
-        const OperatorFixity fixity=types.size()==1?OperatorFixity::prefix:OperatorFixity::infix;
+        const OperatorFixity fixity=types.size()==1?OperatorFixity::prefix:OperatorFixity::infix;st->operator_fixity=fixity;
         if(!overloadable_operator(st->op,fixity)){error(result,op,"operator does not support this arity/fixity");return nullptr;}
         if(!match(":=")){error(result,peek(),"expected ':=' before operator lambda");return nullptr;}
         st->value=parse_expression(result);if(!st->value||st->value->kind!=Expr::Kind::lambda){error(result,peek(),"operator lambda declaration requires a lambda expression");return nullptr;}
@@ -298,10 +298,27 @@ StmtPtr Parser::parse_operator(ParseResult& result) {
     const Token op=advance(); st->op=op.lexeme;
     if(!overloadable_operator(st->op,OperatorFixity::prefix) && !overloadable_operator(st->op,OperatorFixity::infix) && !overloadable_operator(st->op,OperatorFixity::postfix)){error(result,op,"operator is not overloadable in Strut");return nullptr;}
     if(!match("(")){error(result,peek(),"expected '(' after operator token");return nullptr;}
-    if(!check(")")){do{auto type=parse_type(result);if(type.name.empty())return nullptr;if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected operator parameter name");return nullptr;}auto name=advance();st->parameters.push_back(Parameter{std::move(type),name.lexeme,name.span});}while(match(","));}
+    bool postfix_marker=false;
+    if(!check(")")){
+        if(check("postfix")){error(result,peek(),"postfix marker must follow exactly one operator parameter");return nullptr;}
+        auto type=parse_type(result);if(type.name.empty())return nullptr;
+        if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected operator parameter name");return nullptr;}
+        auto name=advance();st->parameters.push_back(Parameter{std::move(type),name.lexeme,name.span});
+        while(match(",")){
+            if(check("postfix")){
+                const Token marker=advance();postfix_marker=true;
+                if(st->op!="++"&&st->op!="--"){error(result,marker,"postfix marker is only valid for operator ++ and operator --");return nullptr;}
+                if(!check(")")){error(result,peek(),"postfix marker must be the final item in an operator signature");return nullptr;}
+                break;
+            }
+            auto next_type=parse_type(result);if(next_type.name.empty())return nullptr;
+            if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected operator parameter name");return nullptr;}
+            auto next_name=advance();st->parameters.push_back(Parameter{std::move(next_type),next_name.lexeme,next_name.span});
+        }
+    }
     if(!match(")")){error(result,peek(),"expected ')' after operator parameters");return nullptr;}
     if(!match("->")){error(result,peek(),"expected '->' and operator return type");return nullptr;}st->return_type=parse_type(result);if(!st->return_type||st->return_type->name.empty())return nullptr;
-    const std::size_t arity=st->parameters.size();const OperatorFixity fixity=arity==1?OperatorFixity::prefix:OperatorFixity::infix;
+    const std::size_t arity=st->parameters.size();const OperatorFixity fixity=postfix_marker?OperatorFixity::postfix:(arity==1?OperatorFixity::prefix:OperatorFixity::infix);st->operator_fixity=fixity;
     if(!overloadable_operator(st->op,fixity)){error(result,op,"operator does not support this arity/fixity");return nullptr;}
     if(match(";")){st->has_body=false;st->span=join(begin.span,previous().span);return st;}
     if(!match("{")){error(result,peek(),"expected operator body or ';'");return nullptr;}auto body=parse_block(result);if(!body)return nullptr;st->has_body=true;st->body=std::move(body->body);st->span=join(begin.span,body->span);return st;

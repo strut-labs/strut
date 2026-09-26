@@ -5,6 +5,14 @@
 #include "strut/parser.h"
 #include "strut/source.h"
 namespace {void require(bool c,const char*m){if(!c){std::cerr<<"FAIL: "<<m<<'\n';std::exit(1);}} strut::ParseResult parse(std::string t){strut::SourceFile s("fixture.p",std::move(t));strut::Lexer l(s);auto x=l.lex();require(x.ok(),"fixture lex");strut::Parser p(x.tokens);return p.parse();}}
+namespace { struct IncrementOperatorParserTests { IncrementOperatorParserTests(){
+    auto prefix=parse("operator ++(Counter& x) -> Counter&;");require(prefix.ok()&&prefix.program.statements[0]->operator_fixity==strut::OperatorFixity::prefix,"prefix increment identity");
+    auto postfix=parse("operator ++(Counter& x, postfix) -> Counter;");require(postfix.ok()&&postfix.program.statements[0]->operator_fixity==strut::OperatorFixity::postfix&&postfix.program.statements[0]->parameters.size()==1,"postfix marker is structured, not a parameter");
+    require(!parse("operator +(Counter& x, postfix) -> Counter;").ok(),"postfix marker rejected for unsupported operator");
+    require(!parse("operator ++(postfix) -> Counter;").ok(),"leading postfix marker rejected");
+    require(!parse("operator ++(Counter& x, postfix, postfix) -> Counter;").ok(),"repeated postfix marker rejected");
+    require(!parse("operator ++(Counter& x, int dummy) -> Counter;").ok(),"dummy parameter spelling rejected");
+} } increment_operator_parser_tests; }
 int main(){require(parse("x := 2; int y := 3;").ok(),"decl");require(parse("if (x) { y := 1; } for (v : values) { x := v; }").ok(),"control");require(parse("function add[T](T a, T b) -> T { return a + b; } function main() -> void { return; }").ok(),"functions");
 auto l=parse("double_it := (x) => x * 2; max := (T x, T y) => { return x > y; }; fetch := async (url) => url; function<(double, double) -> double> mul := (a, b) => a * b; function[T]<(T, T) -> T> pick := (a, b) => a;");require(l.ok(),"lambdas and function types");require(l.program.statements.size()==5,"five lambdas");require(l.program.statements[1]->value->lambda->generic_parameters[0]=="T","inferred generic lambda");
 auto ptrs=parse("function f(int* a, const int* b, int* const c, int& d, int& const e, ptr<int> raw) -> void;");require(ptrs.ok(),"pointer/reference surface syntax");require(ptrs.program.statements[0]->parameters[0].type.name=="ptr<int>","safe pointer canonical type");require(ptrs.program.statements[0]->parameters[1].type.name=="ptr<int>" && ptrs.program.statements[0]->parameters[1].type.is_const,"const safe pointer binding type");require(ptrs.program.statements[0]->parameters[2].type.name=="ptr<const int>","pointer to const canonical type");require(ptrs.program.statements[0]->parameters[3].type.name=="ref<int>","reference canonical type");require(ptrs.program.statements[0]->parameters[4].type.name=="ref<const int>","const reference canonical type");require(ptrs.program.statements[0]->parameters[5].type.name=="raw_ptr<int>","raw pointer canonical type");

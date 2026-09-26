@@ -9,6 +9,7 @@
 
 #include "strut/source.h"
 #include "strut/type.h"
+#include "strut/operator.h"
 
 namespace strut {
 
@@ -53,6 +54,7 @@ struct Stmt {
     SourceSpan span;
     std::string name;
     std::string op;
+    OperatorFixity operator_fixity = OperatorFixity::infix;
     std::optional<TypeSyntax> declared_type;
     bool is_const = false;
     ExprPtr value;

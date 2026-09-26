@@ -30,6 +30,7 @@
 #include "strut/token.h"
 #include "strut/version.h"
 #include "strut/api_registry.h"
+#include "strut/operator.h"
 
 namespace strut {
 namespace {
@@ -121,6 +122,13 @@ json::Document api_index(std::string_view query) {
     }
     root["functions"]=functions;
     root["methods"]=methods;
+    json::Document operators=json::Document::make_array();
+    for(const auto& op:operator_table()){
+        const auto fixity=operator_fixity_name(op.fixity);const std::string identity=std::string(fixity)+" "+std::string(op.spelling);
+        if(!query.empty()&&identity.find(query)==std::string::npos&&std::string(op.spelling).find(query)==std::string::npos)continue;
+        json::Document item=json::Document::make_object();item["spelling"]=std::string(op.spelling);item["fixity"]=std::string(fixity);item["identity"]=identity;item["precedence"]=op.precedence;item["overloadable"]=op.overloadable;operators.push_back(item);
+    }
+    root["operators"]=operators;
     json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","update","packages","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
     json::Document options=json::Document::make_object();auto option_list=[&](std::initializer_list<const char*> values){json::Document list=json::Document::make_array();for(const auto* value:values)list.array.emplace_back(value);return list;};options["install"]=option_list({"--offline","<package>[@<version-requirement>]"});options["packages"]=option_list({"--json"});options["project"]=option_list({"--json"});options["api"]=option_list({"--json"});options["fmt"]=option_list({"--check"});options["make"]=option_list({"--release","--verbose"});root["cli_options"]=options;
     json::Document notes=json::Document::make_object();notes["range_loop"]="for (item : items)";notes["core_array"]="T[] (no include required)";notes["official_packages"]="strut install <name> resolves only https://github.com/strut-packages/<name> by immutable semantic-version tags";notes["custom_checked_errors"]="Declare nominal checked errors with `error Name { string message; int code; }`, list them after `:`, and handle them with typed catch clauses.";notes["atomics"]="atomic<int> and atomic<bool> use sequentially consistent load/store/exchange/compare_exchange operations; integer atomics also support fetch_add/fetch_sub.";root["language_notes"]=notes;
@@ -137,6 +145,11 @@ void print_api_index(std::string_view query,std::ostream& out){
         if(!callable.module.empty())out<<" ["<<callable.module<<']';
         if(!callable.checked_errors.empty()){out<<" throws ";for(std::size_t i=0;i<callable.checked_errors.size();++i){if(i)out<<", ";out<<callable.checked_errors[i];}}
         out<<"\n\n";
+    }
+    for(const auto& op:operator_table()){
+        const std::string identity=std::string(operator_fixity_name(op.fixity))+" "+std::string(op.spelling);
+        if(!query.empty()&&identity.find(query)==std::string::npos&&std::string(op.spelling).find(query)==std::string::npos)continue;
+        ++matches;out<<identity<<"\n  "<<(op.overloadable?"overloadable":"language-defined")<<" operator\n\n";
     }
     if(!matches)out<<"No API entries match '"<<query<<"'.\n";
 }

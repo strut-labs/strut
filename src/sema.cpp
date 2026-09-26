@@ -12,6 +12,7 @@ std::string function_return(std::string_view sig){const auto& args=type_argument
 std::string generic_inner(std::string_view type,std::string_view head){const auto& node=type_node(intern_type(type));const auto expected=head.empty()?std::string_view{}:head.substr(0,head.size()-1);const bool match=(node.kind==TypeNodeKind::generic&&node.name==expected)||(expected=="ref"&&node.kind==TypeNodeKind::reference)||(expected=="ptr"&&node.kind==TypeNodeKind::safe_pointer)||(expected=="raw_ptr"&&node.kind==TypeNodeKind::raw_pointer)||(expected=="weak_ptr"&&node.kind==TypeNodeKind::weak_pointer);return match&&!node.children.empty()?type_spelling(node.children.front()):std::string{};}
 TypeId child_of(const TypeInfo& type,TypeNodeKind kind){const auto id=type.id?type.id:intern_type(type.name);return type_is(id,kind)?type_element(id):TypeId{};}
 std::string normalize_operator_type(std::string t){if(t.rfind("ref<",0)==0&&t.back()=='>')t=t.substr(4,t.size()-5);if(t.rfind("const ",0)==0)t=t.substr(6);return t;}
+std::string operator_key(OperatorFixity fixity,std::string_view spelling){return std::string(operator_fixity_name(fixity))+":"+std::string(spelling);}
 bool statement_returns(const Stmt& st);
 bool block_returns(const std::vector<StmtPtr>& body){for(const auto& st:body)if(statement_returns(*st))return true;return false;}
 bool statement_returns(const Stmt& st){
@@ -186,7 +187,9 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
             if(expr.text=="await"){const auto& node=type_node(operand.id);auto inner=node.kind==TypeNodeKind::generic&&node.name=="future"&&!node.children.empty()?node.children.front():TypeId{};if(!inner)result.diagnostics.push_back(Diagnostic{expr.span,"await requires a future<T>"});return resolve_type(inner?type_spelling(inner):"opaque");}
             if(expr.text=="*"){const auto kind=type_node(operand.id).kind;if(kind==TypeNodeKind::raw_pointer&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> dereference requires unsafe block"});if(kind==TypeNodeKind::safe_pointer||kind==TypeNodeKind::raw_pointer||kind==TypeNodeKind::reference)return resolve_type(type_spelling(type_element(operand.id)));}
-            auto oit=operator_returns_.find("prefix:"+expr.text+"|"+operand.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
+            const auto fixity=expr.kind==Expr::Kind::postfix?OperatorFixity::postfix:OperatorFixity::prefix;
+            auto oit=operator_returns_.find(operator_key(fixity,expr.text)+"|"+normalize_operator_type(operand.name));if(oit!=operator_returns_.end())return resolve_type(oit->second);
+            if((expr.text=="++"||expr.text=="--")&&!operand.numeric()&&operand.name!="opaque")result.diagnostics.push_back(Diagnostic{expr.span,"no "+std::string(operator_fixity_name(fixity))+" "+expr.text+" overload exists for '"+operand.name+"'"});
             return operand;
         }
         case Expr::Kind::binary: {
@@ -437,7 +440,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         }
         case Stmt::Kind::operator_decl: {
             std::string signature;for(std::size_t i=0;i<st.parameters.size();++i){if(i)signature+=",";signature+=normalize_operator_type(resolved_type_name(st.parameters[i].type.name));}
-            const std::string fixity=st.parameters.size()==1?"prefix":"infix";const std::string key=fixity+":"+st.op;
+            const std::string key=operator_key(st.operator_fixity,st.op);
             auto& seen=operator_signatures_[key];if(!seen.insert(signature).second)result.diagnostics.push_back(Diagnostic{st.span,"ambiguous duplicate operator overload for '"+st.op+"' with signature ("+signature+")"});
             if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,p.type.is_const,resolved_type_name(p.type.name)});if(st.value)infer_expression(result,*st.value);else analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
             break;
@@ -564,7 +567,7 @@ SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){function_candidates_[st->name].push_back(st.get());if(st->is_extern_c)extern_c_functions_.insert(st->name);auto& errs=function_errors_[st->name];for(const auto& e:st->error_types){auto name=resolved_type_name(e.name);if(checked_error_types_.find(name)==checked_error_types_.end())result.diagnostics.push_back(Diagnostic{e.span,"'"+name+"' is not a declared checked-error type\nhelp: declare it with `error "+name+" { string message; }`"});errs.insert(std::move(name));}}
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=resolved_type_name(st->parameters[i].type.name);}const std::string fixity=st->parameters.size()==1?"prefix":"infix";operator_returns_[fixity+":"+st->op+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=normalize_operator_type(resolved_type_name(st->parameters[i].type.name));}operator_returns_[operator_key(st->operator_fixity,st->op)+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }
     analyze_statements(result, program.statements, false);

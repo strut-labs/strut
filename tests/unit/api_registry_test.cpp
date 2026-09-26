@@ -4,6 +4,7 @@
 #include <set>
 
 #include "strut/api_registry.h"
+#include "strut/operator.h"
 
 namespace { void require(bool value,const char* message){if(!value){std::cerr<<"FAIL: "<<message<<'\n';std::exit(1);}} }
 
@@ -28,5 +29,8 @@ int main(){
     require(api_callable("limits","http_server")->checked_errors==std::vector<std::string>{"NetworkError"},"HTTP limits checked error metadata");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
+    require(overloadable_operator("++",OperatorFixity::prefix),"prefix increment metadata");
+    require(overloadable_operator("++",OperatorFixity::postfix),"postfix increment metadata");
+    require(overloadable_operator("--",OperatorFixity::prefix)&&overloadable_operator("--",OperatorFixity::postfix),"decrement fixity metadata");
     return 0;
 }
