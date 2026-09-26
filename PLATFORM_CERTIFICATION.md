@@ -11,7 +11,7 @@ The current source has been built/tested locally with warnings-as-errors using b
 - concurrency stress: 20/20 passing;
 - native Linux x64 cross-target smoke has been exercised previously.
 
-This is useful Linux-x64 evidence but does **not** close CP98 because the full independent regression suite and Linux arm64 CI certification still belong in the release matrix.
+This local evidence is supplemented by the completed supported-platform CI matrix below.
 
 ## GitHub Actions
 
@@ -25,10 +25,10 @@ This is useful Linux-x64 evidence but does **not** close CP98 because the full i
 
 The independent regression repository has its own manually-triggered cross-platform workflow for Linux x64, macOS arm64, and Windows x64. It accepts a compiler git ref so a specific candidate can be certified without silently testing a different revision.
 
-## Pending checkpoints
+## Completed release-candidate certification
 
-- CP98 remains open until Linux CI/full regressions are recorded green (including arm64 where practical).
-- CP99 remains open until macOS arm64 CI/regressions are recorded green.
-- CP100 remains open until Windows x64 CI/regressions are recorded green.
-- CP115 is blocked on that supported-platform matrix plus the complete release-candidate regression/package/docs gates.
-- CP116 is an explicit release action and must not be performed merely because implementation is locally complete.
+- CP98: Linux x64 GCC/Clang and Linux ARM64 GCC compiler certification is green.
+- CP99: macOS ARM64 AppleClang compiler and regression certification is green.
+- CP100: Windows x64 MSVC compiler and regression certification is green.
+- CP115: the complete release-candidate regression, package, generated-code, dogfood, and documentation gates are green.
+- CP116 remains the explicit `v0.0.1` tag and release action.

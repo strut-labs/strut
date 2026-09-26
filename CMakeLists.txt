@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-project(strut VERSION 0.0.0 LANGUAGES CXX)
+project(strut VERSION 0.0.1 LANGUAGES CXX)
+
+include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,6 +62,12 @@ endif()
 
 add_executable(strut src/main.cpp)
 target_link_libraries(strut PRIVATE strut_compiler)
+
+install(TARGETS strut RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES third_party/jsonic/include/json.h
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/strut/jsonic)
+install(FILES LICENSE BUILDING.md COMPATIBILITY.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 add_executable(strut_unit_tests tests/unit/cli_test.cpp)
 target_link_libraries(strut_unit_tests PRIVATE strut_compiler)

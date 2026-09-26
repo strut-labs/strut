@@ -44,7 +44,7 @@ When a design decision changes, update these documents before or alongside imple
 
 ## Current status
 
-Local implementation is complete through CP114 except for the platform-certification checkpoints CP98–CP100, which are intentionally left open until their GitHub Actions runners and independent regressions are recorded green. CP115 release-candidate certification is therefore blocked, and CP116 remains an explicit release decision. Strut now includes the compiler/type/memory model, native code generation, concurrency/async, packages, networking/HTTP, external/system SQLite, embedding, incremental object builds, project tooling, LSP, hardening/fuzzing, dogfood programs/packages, compatibility/security policies, and cross-compilation architecture.
+Local implementation and the CP98–CP100 supported-platform checkpoints are complete. CP115 release-candidate certification is green across the compiler and independent regression matrices; CP116 remains the explicit `v0.0.1` tag and release action. Strut now includes the compiler/type/memory model, native code generation, concurrency/async, packages, networking/HTTP, external/system SQLite, embedding, incremental object builds, project tooling, LSP, hardening/fuzzing, dogfood programs/packages, compatibility/security policies, and cross-compilation architecture.
 
 ## Major acceptance target
 

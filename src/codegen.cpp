@@ -8,6 +8,15 @@
 #include <filesystem>
 #include <vector>
 #include <algorithm>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
+#include <unistd.h>
+#endif
 namespace strut { namespace {
 std::string cpp_type(std::string t);
 std::string safe_symbol(std::string s){for(char& c:s)if(!std::isalnum(static_cast<unsigned char>(c)))c='_';return s;}
@@ -1526,6 +1535,40 @@ std::string target_env_name(const std::string& target) {
     for (unsigned char c : target) out += std::isalnum(c) ? static_cast<char>(std::toupper(c)) : '_';
     return out;
 }
+std::filesystem::path executable_path() {
+#ifdef _WIN32
+    std::wstring buffer(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0 || length == buffer.size()) return {};
+    buffer.resize(length);
+    return std::filesystem::path(buffer);
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0) return {};
+    buffer.resize(std::char_traits<char>::length(buffer.c_str()));
+    return std::filesystem::weakly_canonical(buffer);
+#else
+    std::string buffer(4096, '\0');
+    const auto length = readlink("/proc/self/exe", buffer.data(), buffer.size());
+    if (length <= 0 || static_cast<std::size_t>(length) == buffer.size()) return {};
+    buffer.resize(static_cast<std::size_t>(length));
+    return std::filesystem::path(buffer);
+#endif
+}
+std::filesystem::path jsonic_include_dir() {
+    if (const char* override_dir = std::getenv("STRUT_JSONIC_INCLUDE_DIR"); override_dir && *override_dir)
+        return override_dir;
+    const auto executable = executable_path();
+    if (!executable.empty()) {
+        const auto installed = executable.parent_path().parent_path() / "share" / "strut" / "jsonic";
+        if (std::filesystem::exists(installed / "json.h")) return installed;
+    }
+    const std::filesystem::path build_dir = STRUT_JSONIC_INCLUDE_DIR;
+    if (std::filesystem::exists(build_dir / "json.h")) return build_dir;
+    return build_dir;
+}
 bool target_windows(const std::string& t) { return t == "windows-x64" || (t == "native"
 #ifdef _WIN32
     && true
@@ -1562,9 +1605,9 @@ std::string target_compiler(const std::string& target, bool& msvc) {
 }
 bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
  auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
-bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd;
- if(msvc) cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX /c "+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
- else cmd="\""+cxx+"\" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+env_flags("STRUT_CXXFLAGS")+" -I\"" STRUT_JSONIC_INCLUDE_DIR "\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
+bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd; const auto jsonic=jsonic_include_dir().string();
+ if(msvc) cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX /c "+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\""+jsonic+"\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
+ else cmd="\""+cxx+"\" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+env_flags("STRUT_CXXFLAGS")+" -I\""+jsonic+"\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
  if(run_native_command(cmd)!=0){error="native C++ object compilation failed";return false;}return true;
 }
 
@@ -1610,9 +1653,9 @@ if(msvc) cmd+=" libcurl.lib"; else cmd+=" -lcurl";
 }
 
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {if(link.target!="native"){auto obj=output;obj += ".strut.o";auto gen=output;gen += ".strut.cpp";if(!compile_object(p,obj,gen,error,link))return false;bool ok=link_objects(p,{obj},output,error,link);std::error_code ec;std::filesystem::remove(obj,ec);std::filesystem::remove(gen,ec);return ok;}auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
-const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;std::string cmd;
+const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;std::string cmd;const auto jsonic=jsonic_include_dir().string();
 #ifdef _WIN32
- cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
+ cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\""+jsonic+"\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";
  bool link_section=false;
  for(const auto& d:link.search_paths){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}
@@ -1622,7 +1665,7 @@ const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;
  #ifdef __APPLE__
  if(link.fully_static){error="fully static final executables are not supported by the default macOS toolchain";std::error_code ec;std::filesystem::remove(tmp,ec);return false;}
  #endif
- cmd="\""+cxx+"\" -std=c++20 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O0 -g ")+env_flags("STRUT_CXXFLAGS")+" -I\"" STRUT_JSONIC_INCLUDE_DIR "\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
+ cmd="\""+cxx+"\" -std=c++20 "+(link.release?"-O2 -ffunction-sections -fdata-sections ":"-O0 -g ")+env_flags("STRUT_CXXFLAGS")+" -I\""+jsonic+"\" \""+tmp.string()+"\" -o \""+output.string()+"\"";
  if(link.fully_static)cmd+=" -static";
  for(const auto& d:link.search_paths)cmd+=" -L\""+d.string()+"\"";
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);if(lp.has_extension()||lib.value.find('/')!=std::string::npos){cmd+=" \""+lib.value+"\"";continue;}

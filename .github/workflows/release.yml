@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+            archive: tar.gz
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+            archive: tar.gz
+          - os: macos-latest
+            platform: macos-arm64
+            archive: tar.gz
+          - os: windows-2022
+            platform: windows-x64
+            archive: zip
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate tag and release metadata (POSIX)
+        if: runner.os != 'Windows'
+        run: python3 tools/check_release.py "${GITHUB_REF_NAME}"
+      - name: Validate tag and release metadata (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python tools/check_release.py $env:GITHUB_REF_NAME
+      - name: Enable MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSTRUT_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install (POSIX)
+        if: runner.os != 'Windows'
+        run: cmake --install build --config Release --prefix "stage/strut-${GITHUB_REF_NAME#v}-${{ matrix.platform }}"
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake --install build --config Release --prefix "stage/strut-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.platform }}"
+      - name: Verify installed compiler (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          compiler="stage/strut-${GITHUB_REF_NAME#v}-${{ matrix.platform }}/bin/strut"
+          "$compiler" --version
+          "$compiler" dogfood/json/transform.p -o release-smoke
+          ./release-smoke
+      - name: Verify installed compiler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compiler = "stage/strut-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.platform }}/bin/strut.exe"
+          & $compiler --version
+          & $compiler dogfood/json/transform.p -o release-smoke.exe
+          & ./release-smoke.exe
+      - name: Archive (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tar -C stage -czf "strut-${version}-${{ matrix.platform }}.tar.gz" "strut-${version}-${{ matrix.platform }}"
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          Compress-Archive -Path "stage/strut-$version-${{ matrix.platform }}" -DestinationPath "strut-$version-${{ matrix.platform }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: strut-${{ matrix.platform }}
+          path: strut-*.${{ matrix.archive }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: strut-*
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Strut ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md

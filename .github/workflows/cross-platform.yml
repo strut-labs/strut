@@ -12,6 +12,8 @@ on:
       - 'benchmarks/programs/**'
       - 'third_party/**'
       - 'CMakeLists.txt'
+      - 'tools/check_release.py'
+      - 'RELEASE_NOTES.md'
       - '.github/workflows/cross-platform.yml'
   pull_request:
     paths:
@@ -22,6 +24,8 @@ on:
       - 'benchmarks/programs/**'
       - 'third_party/**'
       - 'CMakeLists.txt'
+      - 'tools/check_release.py'
+      - 'RELEASE_NOTES.md'
       - '.github/workflows/cross-platform.yml'
 
 jobs:
@@ -46,6 +50,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Check release metadata
+        run: python3 tools/check_release.py
       - name: Install generated-program dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
@@ -91,6 +97,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
+      - name: Check release metadata
+        run: python3 tools/check_release.py
       - name: Install generated-program dependencies
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON

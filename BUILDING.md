@@ -29,6 +29,21 @@ cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
+## Install
+
+Release archives use the same relocatable layout produced by CMake:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+cmake --install build --config Release --prefix ./strut-0.0.1
+./strut-0.0.1/bin/strut --version
+```
+
+Keep `bin/` and `share/` together when moving an installation. The compiler finds
+its bundled JSONIC header relative to its executable. Advanced installations may
+override that lookup with `STRUT_JSONIC_INCLUDE_DIR`.
+
 ## Build-tree policy
 
 Generated files and binaries belong under `build/` (or another caller-selected CMake build directory), never alongside source files.
