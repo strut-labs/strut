@@ -146,7 +146,7 @@ ExprPtr Parser::parse_expression(ParseResult& result,int minp){
 StmtPtr Parser::parse_declaration_or_assignment(ParseResult& result){
     const Token begin=peek();bool is_const=match("const");if(at_end()){error(result,peek(),"expected declaration after 'const'");return nullptr;}
     std::optional<TypeSyntax> type;Token name;
-    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}while(peek(i).lexeme=="*"||peek(i).lexeme=="&"){++i;if(peek(i).lexeme=="const")++i;}if(peek(i).lexeme=="?")++i;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&(peek(i+1).lexeme==":="||peek(i+1).lexeme=="("||peek(i+1).lexeme==";")){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
+    if(is_type_token(peek())){std::size_t i=1;if(peek(i).lexeme=="<"){int depth=0;do{if(peek(i).lexeme=="<")++depth;else if(peek(i).lexeme==">")--depth;else if(peek(i).lexeme==">>")depth-=2;++i;}while(depth>0&&peek(i).kind!=TokenKind::end_of_file);}while(peek(i).lexeme=="*"||peek(i).lexeme=="&"){++i;if(peek(i).lexeme=="const")++i;}if(peek(i).lexeme=="?")++i;while(peek(i).lexeme=="["){++i;if(peek(i).kind==TokenKind::integer_literal)++i;if(peek(i).lexeme!="]")break;++i;}if(peek(i).kind==TokenKind::identifier&&(peek(i+1).lexeme==":="||peek(i+1).lexeme=="("||peek(i+1).lexeme==";")){type=parse_type(result);if(type->name.empty())return nullptr;name=advance();}}
     if(name.lexeme.empty() && peek().kind==TokenKind::identifier&&(peek(1).lexeme==":="||is_assignment_operator(peek(1).lexeme))){name=advance();}
     if(type && name.lexeme.size() && check("(")){const Token open=advance();auto call=std::make_unique<Expr>();call->kind=Expr::Kind::call;auto callee=std::make_unique<Expr>();callee->kind=Expr::Kind::identifier;callee->text=type->name;callee->span=type->span;call->left=std::move(callee);if(!check(")")){do{auto arg=parse_expression(result);if(!arg)return nullptr;call->arguments.push_back(std::move(arg));}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after constructor arguments");return nullptr;}call->span=join(open.span,previous().span);if(!match(";")){error(result,peek(),"expected ';' after declaration");return nullptr;}auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::declaration;st->span=join(begin.span,previous().span);st->name=name.lexeme;st->op=":=";st->declared_type=std::move(type);st->is_const=is_const;st->value=std::move(call);return st;}
     if(type && name.lexeme.size() && match(";")){auto st=std::make_unique<Stmt>();st->kind=Stmt::Kind::declaration;st->span=join(begin.span,previous().span);st->name=name.lexeme;st->op=":=";st->declared_type=std::move(type);st->is_const=is_const;return st;}
@@ -182,15 +182,13 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
             text += "]";
         }
         if (!match("<")) { error(result, peek(), "expected '<' in function type"); return TypeSyntax{"", begin.span, false}; }
-        text += "<";
-        int depth = 1;
-        while (!at_end() && depth > 0) {
-            if (check("<")) { ++depth; text += advance().lexeme; continue; }
-            if (check(">")) { --depth; text += advance().lexeme; continue; }
-            if (check("const")) { text += "const "; advance(); continue; }
-            text += advance().lexeme;
-        }
-        if (depth != 0) { error(result, peek(), "unterminated function type"); return TypeSyntax{"", begin.span, false}; }
+        if(!match("(")){error(result,peek(),"expected '(' in function type");return TypeSyntax{"",begin.span,false};}
+        text += "<(";bool first_parameter=true;
+        while(!at_end()&&!check(")")){if(!first_parameter){if(!match(",")){error(result,peek(),"expected ',' in function parameter types");return TypeSyntax{"",begin.span,false};}text+=",";}auto parameter=parse_type(result);if(parameter.name.empty())return TypeSyntax{"",begin.span,false};text+=parameter.name;first_parameter=false;}
+        if(!match(")")){error(result,peek(),"expected ')' in function type");return TypeSyntax{"",begin.span,false};}
+        if(!match("->")){error(result,peek(),"expected '->' in function type");return TypeSyntax{"",begin.span,false};}
+        auto result_type=parse_type(result);if(result_type.name.empty())return TypeSyntax{"",begin.span,false};text+=")->"+result_type.name;
+        if(!match_type_close()){error(result,peek(),"unterminated function type");return TypeSyntax{"",begin.span,false};}text+=">";
         return TypeSyntax{text, SourceSpan{begin.span.begin, previous().span.end}, binding_const};
     }
     if (!is_type_token(type_begin)) { error(result, type_begin, "expected type"); return TypeSyntax{"", begin.span, false}; }

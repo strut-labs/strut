@@ -107,26 +107,24 @@ second linker scan or a new top-level runtime-template decision.
 
 ### Structured type migration
 
-`TypeSyntax`, semantic types, and typed IR still carry canonicalized type names as
-strings. This requires repeated parsing and textual prefix/subsequence checks in
-semantic analysis, IR lowering, and C++ generation. Surface pointer/reference forms
-inside generic arguments must therefore be canonicalized by the parser just as
-top-level forms are.
-
-The target `Type` is an interned immutable tree with a kind (`primitive`, `named`,
+The authoritative semantic identity is `TypeId`, backed by an interned immutable
+tree with a kind (`primitive`, `named`,
 `const`, `reference`, `safe_pointer`, `raw_pointer`, `weak_pointer`, `nullable`,
-`array`, `tuple`, `generic`, or `function`), child type IDs, optional array extent,
-function parameters/result, and a resolved symbol ID for user-defined types.
-Source spans remain on syntax nodes rather than interned semantic types. Formatting
-and C++ spelling become visitors over this tree.
+`vector`, fixed array, `tuple`, `generic`, or `function`), child type IDs, and an
+optional array extent. IDs are deterministic hashes of structural keys rather than
+addresses. Nested nodes are interned recursively, so equality and alias identity
+are constant-time ID comparisons. `T[]` and `vector<T>` share one vector node and
+use `T[]` as the preferred diagnostic spelling.
 
-Migration is likewise incremental:
+`TypeSyntax`, symbols, `TypeInfo`, and typed IR retain source/canonical strings for
+diagnostics and compatibility, but also carry their interned identity. Semantic
+compatibility, iterable element discovery, runtime-component type requirements,
+and C++ lowering use structural nodes. C++ spelling is produced by a single
+`TypeId` visitor. Source spans remain on syntax nodes and are never interned.
 
-1. Add a single canonical type parser/interner and round-trip tests while retaining
-   the existing string field as a compatibility spelling.
-2. Store a `TypeId` beside type strings in semantic results and typed IR.
-3. Replace compatibility, module-requirement, ownership, and container-element
-   string checks with structural queries.
-4. Convert C++ type emission and runtime-feature discovery to `TypeId` visitors.
-5. Remove compatibility strings after all backends and diagnostics use structured
-   types.
+Add future type forms in `TypeNodeKind`, the canonical parser/interner, the Strut
+pretty-printer, and the C++ lowering visitor. Semantic consumers should query node
+kinds and children; they must not introduce another generic-string parser. Some
+operation-specific semantic rules still use readable type spellings while their
+conversion to direct `TypeId` queries continues; those strings are not used by the
+runtime-component resolver or C++ type lowering.

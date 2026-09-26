@@ -13,6 +13,7 @@ auto bad_ptr_ref=parse("function bad(int&* p) -> void;");require(!bad_ptr_ref.ok
 auto typed_lambda=parse("f := (int& value, int* owner, string[] names) => *value;");require(typed_lambda.ok(),"composite typed lambda parameters");
 require(parse("f := (int*** owners, int*& alias, string[][4] grid) => 1;").ok(),"nested pointer/reference/array lambda parameters");
 require(parse("f := (map<string,vector<int>> values, Result<int?>? result) => 1;").ok(),"nested generic and nullable lambda parameters");
+require(parse("vector<function<(int)->int>> callbacks := [];").ok(),"function type nested in generic");
 require(parse("f := (const int* const value, function<(int)->int> callback) => callback(*value);").ok(),"const and function lambda parameters");
 require(parse("f := ( int & value , int * owner ) => * value;").ok(),"spaced composite lambda parameters");
 require(parse("f := (int value, inferred) => value; g := (inferred, int value) => value;").ok(),"typed and inferred lambda parameter combinations");

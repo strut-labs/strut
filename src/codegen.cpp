@@ -20,11 +20,46 @@
 #endif
 namespace strut { namespace {
 std::string cpp_type(std::string t);
+std::string cpp_type(TypeId id);
+std::string cpp_type_legacy(std::string t);
 std::string safe_symbol(std::string s){for(char& c:s)if(!std::isalnum(static_cast<unsigned char>(c)))c='_';return s;}
 std::string normalized_operator_type(std::string t){if(t.rfind("ref<",0)==0&&t.back()=='>')t=t.substr(4,t.size()-5);if(t.rfind("const ",0)==0)t=t.substr(6);return t;}
 std::string operator_param_cpp(const std::string& t,const std::string& name){if(t.rfind("ref<const ",0)==0&&t.back()=='>')return "const "+cpp_type(t.substr(10,t.size()-11))+"& "+name;if(t.rfind("ref<",0)==0&&t.back()=='>')return cpp_type(t.substr(4,t.size()-5))+"& "+name;return cpp_type(t)+" "+name;}
 std::string operator_return_cpp(const std::string& t){if(t.rfind("ref<const ",0)==0&&t.back()=='>')return "const "+cpp_type(t.substr(10,t.size()-11))+"&";if(t.rfind("ref<",0)==0&&t.back()=='>')return cpp_type(t.substr(4,t.size()-5))+"&";return cpp_type(t);}
-std::string cpp_type(std::string t){
+std::string cpp_type(std::string t){return cpp_type(intern_type(t));}
+std::string cpp_type(TypeId id){
+    if(!id)return "auto";
+    const auto& n=type_node(id);auto child=[&](std::size_t i){return i<n.children.size()?cpp_type(n.children[i]):std::string("auto");};
+    switch(n.kind){
+        case TypeNodeKind::const_type:return "const "+child(0);
+        case TypeNodeKind::reference:return "strut_ref<"+child(0)+">";
+        case TypeNodeKind::safe_pointer:return "std::shared_ptr<"+child(0)+">";
+        case TypeNodeKind::raw_pointer:return child(0)+"*";
+        case TypeNodeKind::weak_pointer:return "std::weak_ptr<"+child(0)+">";
+        case TypeNodeKind::nullable:return "std::optional<"+child(0)+">";
+        case TypeNodeKind::vector:return "std::vector<"+child(0)+">";
+        case TypeNodeKind::fixed_array:return "std::array<"+child(0)+","+std::to_string(n.extent)+">";
+        case TypeNodeKind::tuple:{std::string out="std::tuple<";for(std::size_t i=0;i<n.children.size();++i){if(i)out+=",";out+=child(i);}return out+">";}
+        case TypeNodeKind::function:{if(n.children.empty())return "auto";std::string out="std::function<"+child(n.children.size()-1)+"(";for(std::size_t i=0;i+1<n.children.size();++i){if(i)out+=",";out+=child(i);}return out+")>";}
+        case TypeNodeKind::generic:{
+            auto generic=[&](std::string head){std::string out=std::move(head)+"<";for(std::size_t i=0;i<n.children.size();++i){if(i)out+=",";out+=child(i);}return out+">";};
+            if(n.name=="map")return generic("std::unordered_map");
+            if(n.name=="ordered_map")return generic("std::map");
+            if(n.name=="set")return generic("std::unordered_set");
+            if(n.name=="ordered_set")return generic("std::set");
+            if(n.name=="queue")return generic("std::queue");
+            if(n.name=="stack")return generic("std::stack");
+            if(n.name=="deque")return generic("std::deque");
+            if(n.name=="list")return generic("std::list");
+            if(n.name=="future")return generic("strut_future");
+            if(n.name=="channel")return generic("strut_channel");
+            if(n.name=="priority_queue"&&!n.children.empty()){auto elem=child(0);if(n.children.size()>1&&type_spelling(n.children[1])=="min")return "std::priority_queue<"+elem+",std::vector<"+elem+">,std::greater<"+elem+">>";return "std::priority_queue<"+elem+">";}return generic(n.name);
+        }
+        case TypeNodeKind::primitive:case TypeNodeKind::named:return cpp_type_legacy(n.name);
+        case TypeNodeKind::invalid:return "auto";
+    }return "auto";
+}
+std::string cpp_type_legacy(std::string t){
     if(t.rfind("function<(",0)==0 && t.size()>12 && t.back()=='>'){
         auto arrow=t.rfind(")->");
         if(arrow!=std::string::npos){
@@ -223,6 +258,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
         case IRStmt::Kind::range_for:o<<pad<<"for (auto& "<<s.name<<" : "<<expr(*s.value)<<") {\n";for(auto&c:s.body)stmt(o,*c,n+4);o<<pad<<"}\n";break;
         case IRStmt::Kind::enum_decl:{o<<pad<<"enum class "<<s.name<<" : std::int32_t {";for(std::size_t i=0;i<s.enum_names.size();++i){if(i)o<<",";o<<s.enum_names[i]<<"="<<s.enum_values[i];}o<<"};\n";break;}
         case IRStmt::Kind::struct_decl:{if(!s.generic_parameters.empty()){o<<pad<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}o<<pad<<"struct "<<s.name; if(!s.bases.empty()){o<<" : ";for(std::size_t i=0;i<s.bases.size();++i){if(i)o<<", ";o<<"public "<<cpp_type(s.bases[i]);}} o<<" {\n";for(const auto& f:s.fields)o<<pad<<"    "<<cpp_type(f.type.name)<<" "<<f.name<<"{};\n";for(const auto& m:s.body){o<<pad<<"    "<<cpp_type(m->return_type)<<" "<<m->name<<"(";for(std::size_t i=0;i<m->parameters.size();++i){if(i)o<<",";o<<cpp_type(m->parameters[i].type.name)<<" "<<m->parameters[i].name;}o<<")";if(!m->has_body){o<<";\n";}else{o<<" {\n";for(const auto& c:m->body)stmt(o,*c,n+8);o<<pad<<"    }\n";}}o<<pad<<"};\n";break;}
+        case IRStmt::Kind::type_alias:o<<pad<<"using "<<s.name<<" = "<<cpp_type(s.alias_target_id)<<";\n";break;
         case IRStmt::Kind::operator_decl:{
             if(s.parameters.size()==2 && (s.op==":="||s.op=="=")){
                 const std::string dest=normalized_operator_type(s.parameters[0].type.name),src=normalized_operator_type(s.parameters[1].type.name);

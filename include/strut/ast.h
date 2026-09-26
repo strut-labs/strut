@@ -4,9 +4,11 @@
 #include <optional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "strut/source.h"
+#include "strut/type.h"
 
 namespace strut {
 
@@ -14,6 +16,10 @@ struct TypeSyntax {
     std::string name;
     SourceSpan span;
     bool is_const = false;
+    TypeId type_id;
+    TypeSyntax() = default;
+    TypeSyntax(std::string spelling, SourceSpan source_span, bool binding_const = false)
+        : name(std::move(spelling)), span(source_span), is_const(binding_const), type_id(intern_type(name)) {}
 };
 
 struct Stmt;

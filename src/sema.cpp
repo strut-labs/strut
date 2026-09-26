@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 
 namespace strut {
 namespace {
 std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}sig+=")->"+(st.is_async?("future<"+(st.return_type?st.return_type->name:std::string("void"))+">"):(st.return_type?st.return_type->name:std::string("void")))+">";return sig;}
-std::string function_return(std::string_view sig){auto p=sig.rfind(")->");if(p==std::string_view::npos||sig.empty()||sig.back()!='>')return "opaque";return std::string(sig.substr(p+3,sig.size()-(p+4)));}
-std::string generic_inner(std::string_view type,std::string_view head){if(type.rfind(head,0)!=0||type.size()<=head.size()+1||type.back()!='>')return {};return std::string(type.substr(head.size(),type.size()-head.size()-1));}
+std::string function_return(std::string_view sig){const auto& args=type_arguments(intern_type(sig));return type_is(intern_type(sig),TypeNodeKind::function)&&!args.empty()?type_spelling(args.back()):"opaque";}
+std::string generic_inner(std::string_view type,std::string_view head){const auto& node=type_node(intern_type(type));const auto expected=head.empty()?std::string_view{}:head.substr(0,head.size()-1);const bool match=(node.kind==TypeNodeKind::generic&&node.name==expected)||(expected=="ref"&&node.kind==TypeNodeKind::reference)||(expected=="ptr"&&node.kind==TypeNodeKind::safe_pointer)||(expected=="raw_ptr"&&node.kind==TypeNodeKind::raw_pointer)||(expected=="weak_ptr"&&node.kind==TypeNodeKind::weak_pointer);return match&&!node.children.empty()?type_spelling(node.children.front()):std::string{};}
+TypeId child_of(const TypeInfo& type,TypeNodeKind kind){const auto id=type.id?type.id:intern_type(type.name);return type_is(id,kind)?type_element(id):TypeId{};}
 std::string normalize_operator_type(std::string t){if(t.rfind("ref<",0)==0&&t.back()=='>')t=t.substr(4,t.size()-5);if(t.rfind("const ",0)==0)t=t.substr(6);return t;}
 bool statement_returns(const Stmt& st);
 bool block_returns(const std::vector<StmtPtr>& body){for(const auto& st:body)if(statement_returns(*st))return true;return false;}
@@ -20,12 +22,12 @@ bool statement_returns(const Stmt& st){
     return false;
 }
 std::string iterable_element(std::string type){
-    if(type.size()>2&&type.compare(type.size()-2,2,"[]")==0)return type.substr(0,type.size()-2);
-    if(auto open=type.find('[');open!=std::string::npos&&type.back()==']')return type.substr(0,open);
-    for(auto head:{std::string_view("vector<"),std::string_view("list<"),std::string_view("deque<"),std::string_view("set<"),std::string_view("ordered_set<")}){auto inner=generic_inner(type,head);if(!inner.empty())return inner;}
+    const auto id=intern_type(type);const auto& node=type_node(id);
+    if((node.kind==TypeNodeKind::vector||node.kind==TypeNodeKind::fixed_array)&&!node.children.empty())return type_spelling(node.children.front());
+    if(node.kind==TypeNodeKind::generic&&(node.name=="list"||node.name=="deque"||node.name=="set"||node.name=="ordered_set")&&!node.children.empty())return type_spelling(node.children.front());
     return {};
 }
-bool unordered_iterable(std::string_view type){return type.rfind("set<",0)==0;}
+bool unordered_iterable(std::string_view type){const auto& node=type_node(intern_type(type));return node.kind==TypeNodeKind::generic&&node.name=="set";}
 }
 
 std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& scope, SymbolNamespace ns) {
@@ -65,24 +67,27 @@ std::string SemanticAnalyzer::resolved_type_name(std::string_view name) const {
 }
 TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
     const std::string resolved = resolved_type_name(name);
-    if (is_nullable_type(resolved)) return {TypeKind::named, 0, resolved};
+    if (is_nullable_type(resolved)) return {TypeKind::named, 0, resolved,intern_type(resolved)};
     auto type = builtin_type(resolved);
     if (type.valid()) return type;
-    if (resolved == "null") return {TypeKind::null_type, 0, "null"};
-    if (resolved == "opaque") return {TypeKind::named, 0, "opaque"};
-    if (named_types_.find(resolved) != named_types_.end()) return {TypeKind::named,0,resolved};
+    if (resolved == "null") return {TypeKind::null_type, 0, "null",intern_type("null")};
+    if (resolved == "opaque") return {TypeKind::named, 0, "opaque",intern_type("opaque")};
+    if (named_types_.find(resolved) != named_types_.end()) return {TypeKind::named,0,resolved,intern_type(resolved)};
     if (resolved.find('<') != std::string::npos || resolved.find('[') != std::string::npos ||
         (!resolved.empty() && std::all_of(resolved.begin(), resolved.end(), [](unsigned char c){ return !std::islower(c); }))) {
-        return {TypeKind::named, 0, std::string(name)};
+        return {TypeKind::named, 0, resolved,intern_type(resolved)};
     }
     return {};
 }
 bool SemanticAnalyzer::compatible(const TypeInfo& from, const TypeInfo& to) const {
     if (!from.valid() || !to.valid()) return true; // later phases refine currently opaque compound/user types
     if (from.kind == TypeKind::named && from.name == "opaque") return true;
-    if (from.kind == TypeKind::null_type) return to.kind == TypeKind::null_type || is_nullable_type(to.name) || to.name.rfind("ptr<",0)==0 || to.name.rfind("weak_ptr<",0)==0 || to.name.rfind("raw_ptr<",0)==0;
-    if (is_nullable_type(to.name) && !is_nullable_type(from.name)) return compatible(from, resolve_type(strip_nullable(to.name)));
-    if (is_nullable_type(from.name) && is_nullable_type(to.name)) return strip_nullable(from.name) == strip_nullable(to.name);
+    const auto to_id=to.id?to.id:intern_type(to.name),from_id=from.id?from.id:intern_type(from.name);
+    const auto to_kind=type_node(to_id).kind,from_kind=type_node(from_id).kind;
+    if (from.kind == TypeKind::null_type) return to.kind == TypeKind::null_type || to_kind==TypeNodeKind::nullable || to_kind==TypeNodeKind::safe_pointer || to_kind==TypeNodeKind::weak_pointer || to_kind==TypeNodeKind::raw_pointer;
+    if(to_kind==TypeNodeKind::nullable&&from_kind!=TypeNodeKind::nullable){auto inner=type_element(to_id);return from_id==inner||compatible(from,resolve_type(type_spelling(inner)));}
+    if(from_kind==TypeNodeKind::nullable&&to_kind==TypeNodeKind::nullable)return type_element(from_id)==type_element(to_id);
+    if(from_id&&to_id&&from_id==to_id)return true;
     if (from.kind == to.kind && from.bits == to.bits) return true;
     if (from.kind == TypeKind::string_type && to.kind == TypeKind::string_type) return true;
     if (from.kind == TypeKind::bool_type && to.kind == TypeKind::bool_type) return true;
@@ -95,25 +100,9 @@ void SemanticAnalyzer::require_module(SemanticResult& result, std::string_view m
 }
 
 void SemanticAnalyzer::require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const {
-    const std::string t(type_name);
-    auto first_arg=[](const std::string& value,std::string_view head){if(value.rfind(std::string(head),0)!=0||value.back()!='>')return std::string();auto inner=value.substr(head.size(),value.size()-head.size()-1);int depth=0;for(std::size_t i=0;i<inner.size();++i){if(inner[i]=='<')++depth;else if(inner[i]=='>')--depth;else if(inner[i]==','&&depth==0)return inner.substr(0,i);}return inner;};
-    auto key_supported=[&](std::string key){if(key.rfind("const ",0)==0)key=key.substr(6);auto b=builtin_type(key);if(b.valid()&&b.kind!=TypeKind::void_type&&b.kind!=TypeKind::json_type)return true;if(enum_members_.find(key)!=enum_members_.end())return true;if(key.rfind("ptr<",0)==0||key.rfind("raw_ptr<",0)==0)return true;return false;};
-    // T[] is the core dynamic vector type. vector<T> remains a compatibility spelling.
-    if (t.find("ordered_map<") != std::string::npos) require_module(result, "ordered_map", span, type_name);
-    else if (t.find("map<") != std::string::npos) require_module(result, "map", span, type_name);
-    if (t.find("ordered_set<") != std::string::npos) require_module(result, "ordered_set", span, type_name);
-    else if (t.find("set<") != std::string::npos) require_module(result, "set", span, type_name);
-    if (t.rfind("queue<",0) == 0 || t.find("<queue<") != std::string::npos || t.find(",queue<") != std::string::npos) require_module(result, "queue", span, type_name);
-    if (t.find("stack<") != std::string::npos) require_module(result, "stack", span, type_name);
-    if (t.find("deque<") != std::string::npos) require_module(result, "deque", span, type_name);
-    if (t.find("list<") != std::string::npos) require_module(result, "list", span, type_name);
-    if (t.find("prique<") != std::string::npos) result.diagnostics.push_back(Diagnostic{span, "'prique' was renamed to 'priority_queue'; use priority_queue<T> or priority_queue<T,min>"});
-    if (t.find("priority_queue<") != std::string::npos) require_module(result, "priority_queue", span, type_name);
-    if (t.find("tuple<") != std::string::npos) require_module(result, "tuple", span, type_name);
-    if(t.rfind("map<",0)==0){auto key=first_arg(t,"map<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"map key type '"+key+"' is not hashable; use a built-in/hashable key or ordered_map"});}
-    if(t.rfind("set<",0)==0){auto key=first_arg(t,"set<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"set element type '"+key+"' is not hashable; use a built-in/hashable element or ordered_set"});}
-    if(t.rfind("ordered_map<",0)==0){auto key=first_arg(t,"ordered_map<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"ordered_map key type '"+key+"' is not orderable by the standard library"});}
-    if(t.rfind("ordered_set<",0)==0){auto key=first_arg(t,"ordered_set<");if(!key_supported(key))result.diagnostics.push_back(Diagnostic{span,"ordered_set element type '"+key+"' is not orderable by the standard library"});}
+    auto key_supported=[&](TypeId key){if(type_is(key,TypeNodeKind::const_type))key=type_element(key);const auto& n=type_node(key);auto b=builtin_type(type_spelling(key));if(b.valid()&&b.kind!=TypeKind::void_type&&b.kind!=TypeKind::json_type)return true;if(n.kind==TypeNodeKind::named&&enum_members_.find(n.name)!=enum_members_.end())return true;return n.kind==TypeNodeKind::safe_pointer||n.kind==TypeNodeKind::raw_pointer;};
+    std::function<void(TypeId)> visit=[&](TypeId id){const auto& n=type_node(id);if(n.kind==TypeNodeKind::tuple)require_module(result,"tuple",span,type_name);if(n.kind==TypeNodeKind::generic){const auto& head=n.name;if(head=="prique")result.diagnostics.push_back(Diagnostic{span,"'prique' was renamed to 'priority_queue'; use priority_queue<T> or priority_queue<T,min>"});if(head=="map"||head=="ordered_map"||head=="set"||head=="ordered_set"||head=="queue"||head=="stack"||head=="deque"||head=="list"||head=="priority_queue")require_module(result,head=="prique"?"priority_queue":head,span,type_name);if(!n.children.empty()&&(head=="map"||head=="set"||head=="ordered_map"||head=="ordered_set")&&!key_supported(n.children.front())){const auto key=type_spelling(n.children.front());if(head=="map")result.diagnostics.push_back(Diagnostic{span,"map key type '"+key+"' is not hashable; use a built-in/hashable key or ordered_map"});else if(head=="set")result.diagnostics.push_back(Diagnostic{span,"set element type '"+key+"' is not hashable; use a built-in/hashable element or ordered_set"});else result.diagnostics.push_back(Diagnostic{span,head+" key/element type '"+key+"' is not orderable by the standard library"});}}for(auto child:n.children)visit(child);};
+    visit(intern_type(type_name));
 }
 
 TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& expr) {
@@ -166,8 +155,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::postfix: {
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
             if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
-            if(expr.text=="await"){auto inner=generic_inner(operand.name,"future<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.span,"await requires a future<T>"});return resolve_type(inner.empty()?"opaque":inner);}
-            if(expr.text=="*"){if(operand.name.rfind("raw_ptr<",0)==0 && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> dereference requires unsafe block"});for(auto head:{std::string_view("ptr<"),std::string_view("raw_ptr<"),std::string_view("ref<")}){auto inner=generic_inner(operand.name,head);if(!inner.empty())return resolve_type(inner);}}
+            if(expr.text=="await"){const auto& node=type_node(operand.id);auto inner=node.kind==TypeNodeKind::generic&&node.name=="future"&&!node.children.empty()?node.children.front():TypeId{};if(!inner)result.diagnostics.push_back(Diagnostic{expr.span,"await requires a future<T>"});return resolve_type(inner?type_spelling(inner):"opaque");}
+            if(expr.text=="*"){const auto kind=type_node(operand.id).kind;if(kind==TypeNodeKind::raw_pointer&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> dereference requires unsafe block"});if(kind==TypeNodeKind::safe_pointer||kind==TypeNodeKind::raw_pointer||kind==TypeNodeKind::reference)return resolve_type(type_spelling(type_element(operand.id)));}
             auto oit=operator_returns_.find("prefix:"+expr.text+"|"+operand.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
             return operand;
         }
@@ -175,8 +164,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             auto left = infer_expression(result, *expr.left);
             auto right = infer_expression(result, *expr.right);
             if (expr.text == "??") {
-                if (!is_nullable_type(left.name)) result.diagnostics.push_back(Diagnostic{expr.left->span, "left operand of ?? must be nullable"});
-                auto inner = resolve_type(strip_nullable(left.name));
+                if (!type_is(left.id,TypeNodeKind::nullable)) result.diagnostics.push_back(Diagnostic{expr.left->span, "left operand of ?? must be nullable"});
+                auto inner = resolve_type(type_spelling(type_element(left.id)));
                 if (right.valid() && inner.valid() && !compatible(right, inner)) result.diagnostics.push_back(Diagnostic{expr.right->span, "fallback value is incompatible with nullable type"});
                 return inner;
             }
@@ -184,7 +173,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 return {TypeKind::bool_type, 0, "bool"};
             }
             if (expr.text == "<<" || expr.text == ">>") return left;
-            if((expr.text=="+"||expr.text=="-") && left.name.rfind("raw_ptr<",0)==0){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw pointer arithmetic requires unsafe block"});return left;}
+            if((expr.text=="+"||expr.text=="-") && type_is(left.id,TypeNodeKind::raw_pointer)){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"raw pointer arithmetic requires unsafe block"});return left;}
             if (left.numeric() && right.numeric()) {
                 if (left.kind == TypeKind::floating || right.kind == TypeKind::floating) return builtin_type((left.bits > 32 || right.bits > 32) ? "double_64" : "double_32");
                 if (left.kind == right.kind) return left.bits >= right.bits ? left : right;
@@ -231,9 +220,9 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
                 if(name=="new"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"new(...) requires exactly one argument"});return {};}auto t=infer_expression(result,*expr.arguments[0]);return {TypeKind::named,0,"ptr<"+t.name+">"};}
-                if(name=="ptr"){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr(...) requires unsafe block"});if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ptr(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"ptr(...) requires a T* safe pointer"});return {TypeKind::named,0,"raw_ptr<"+inner+">"};}
+                if(name=="ptr"){if(unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr(...) requires unsafe block"});if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ptr(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=child_of(t,TypeNodeKind::safe_pointer);if(!inner)result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"ptr(...) requires a T* safe pointer"});return {TypeKind::named,0,"raw_ptr<"+type_spelling(inner)+">"};}
                 if(name=="raw"){result.diagnostics.push_back(Diagnostic{expr.span,"raw(...) has been replaced by ptr(...) for raw pointer conversion"});return {}; }
-                if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=generic_inner(t.name,"ptr<");if(inner.empty())result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires a T* safe pointer"});return {TypeKind::named,0,"weak_ptr<"+inner+">"};}
+                if(name=="weak"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"weak(...) requires exactly one T* safe pointer"});return {};}auto t=infer_expression(result,*expr.arguments[0]);auto inner=child_of(t,TypeNodeKind::safe_pointer);if(!inner)result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"weak(...) requires a T* safe pointer"});return {TypeKind::named,0,"weak_ptr<"+type_spelling(inner)+">"};}
                 if(name=="ref"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"ref(...) requires exactly one argument"});return {};}const auto& a=*expr.arguments[0];const bool lvalue=a.kind==Expr::Kind::identifier||a.kind==Expr::Kind::member||a.kind==Expr::Kind::index||(a.kind==Expr::Kind::unary&&a.text=="*");if(!lvalue)result.diagnostics.push_back(Diagnostic{a.span,"ref(...) requires an lvalue with a lifetime that outlives the reference"});if(a.kind==Expr::Kind::index&&a.left){auto owner=infer_expression(result,*a.left);if(owner.name.size()>2&&owner.name.compare(owner.name.size()-2,2,"[]")==0)result.diagnostics.push_back(Diagnostic{a.span,"T& cannot borrow a dynamic-array element because later mutation could invalidate the reference"});}auto t=infer_expression(result,a);return {TypeKind::named,0,"ref<"+t.name+">"};}
                 if (name == "print") return {TypeKind::void_type, 0, "void"};
                 if (name == "println") return {TypeKind::void_type, 0, "void"};
@@ -260,7 +249,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "embed_dir") return {TypeKind::named,0,"map<string,string>"};
                 if (name == "http_get_json") return builtin_type("json");
                 if (name == "http_get_async" || name == "http_request_async") return {TypeKind::named,0,"future<http_response>"};
-                if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(t.name.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"T& cannot be passed directly across a thread boundary; use T* or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
+                if (name == "thread") { for(std::size_t i=1;i<expr.arguments.size();++i){auto t=infer_expression(result,*expr.arguments[i]);if(type_is(t.id,TypeNodeKind::reference))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"T& cannot be passed directly across a thread boundary; use T* or synchronize owned state"});} return {TypeKind::named,0,"thread"}; }
                 if (name == "now_ms" || name == "unix_ms") return builtin_type("int_64");
                 if (name == "make_dir" || name == "remove" || name == "remove_all" || name == "copy" || name == "move" || name == "touch" || name == "cd" || name == "write_file" || name == "append_file") {
                     require_module(result, "filesystem", expr.span, name);
@@ -289,28 +278,28 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::member: {
             if(expr.text.rfind("::",0)==0 && expr.left && expr.left->kind==Expr::Kind::identifier){auto it=enum_members_.find(expr.left->text);std::string member=expr.text.substr(2);if(it==enum_members_.end()){result.diagnostics.push_back(Diagnostic{expr.span,"unknown enum type '"+expr.left->text+"'"});return {};}if(it->second.find(member)==it->second.end())result.diagnostics.push_back(Diagnostic{expr.span,"unknown enum member '"+member+"' for "+expr.left->text});return {TypeKind::named,0,expr.left->text};}
             auto base=infer_expression(result,*expr.left);
-            if (is_nullable_type(base.name)) { result.diagnostics.push_back(Diagnostic{expr.span,"cannot access member of nullable value without ?. or null check"}); return {}; }
+            if (type_is(base.id,TypeNodeKind::nullable)) { result.diagnostics.push_back(Diagnostic{expr.span,"cannot access member of nullable value without ?. or null check"}); return {}; }
             const bool arrow=expr.text.rfind("->",0)==0;
             const std::string member=arrow?expr.text.substr(2):expr.text;
-            if(arrow){const bool raw=base.name.rfind("raw_ptr<",0)==0;const bool safe=base.name.rfind("ptr<",0)==0;if(!raw&&!safe)result.diagnostics.push_back(Diagnostic{expr.span,"-> member access requires T* or unsafe ptr<T>"});if(raw&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> member access requires unsafe block"});}
-            std::string owner=base.name;for(auto head:{std::string_view("ref<"),std::string_view("ptr<"),std::string_view("raw_ptr<")}){auto inner=generic_inner(owner,head);if(!inner.empty()){owner=inner;break;}}if(owner.rfind("const ",0)==0)owner=owner.substr(6);auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end())return resolve_type(f->second);}
+            const auto base_kind=type_node(base.id).kind;
+            if(arrow){const bool raw=base_kind==TypeNodeKind::raw_pointer;const bool safe=base_kind==TypeNodeKind::safe_pointer;if(!raw&&!safe)result.diagnostics.push_back(Diagnostic{expr.span,"-> member access requires T* or unsafe ptr<T>"});if(raw&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> member access requires unsafe block"});}
+            TypeId owner_id=base.id;if(base_kind==TypeNodeKind::reference||base_kind==TypeNodeKind::safe_pointer||base_kind==TypeNodeKind::raw_pointer)owner_id=type_element(owner_id);if(type_is(owner_id,TypeNodeKind::const_type))owner_id=type_element(owner_id);auto owner=type_spelling(owner_id);auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end())return resolve_type(f->second);}
             return {TypeKind::named,0,"opaque"};
         }
         case Expr::Kind::safe_member: {
             auto base=infer_expression(result,*expr.left);
-            if (!is_nullable_type(base.name)) result.diagnostics.push_back(Diagnostic{expr.span,"?. requires a nullable value"});
-            auto sit=struct_fields_.find(strip_nullable(base.name));if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end()){auto t=resolved_type_name(f->second);return {TypeKind::named,0,is_nullable_type(t)?t:t+"?"};}}
+            if (!type_is(base.id,TypeNodeKind::nullable)) result.diagnostics.push_back(Diagnostic{expr.span,"?. requires a nullable value"});
+            auto sit=struct_fields_.find(type_spelling(type_element(base.id)));if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end()){auto t=resolve_type(f->second);return type_is(t.id,TypeNodeKind::nullable)?t:resolve_type(type_spelling(t.id)+"?");}}
             return {TypeKind::named,0,"opaque?"};
         }
         case Expr::Kind::index: {
             auto base=infer_expression(result,*expr.left);
-            if(base.name.rfind("tuple<",0)==0 && base.name.back()=='>'){
+            if(type_is(base.id,TypeNodeKind::tuple)){
                 if(expr.right->kind!=Expr::Kind::integer_literal){result.diagnostics.push_back(Diagnostic{expr.right->span,"tuple index must be an integer literal"});return {};}
                 std::size_t idx=0;try{idx=static_cast<std::size_t>(std::stoull(expr.right->text));}catch(...){return {};}
-                auto inner=base.name.substr(6,base.name.size()-7);std::vector<std::string> parts;int depth=0;std::size_t start=0;
-                for(std::size_t i=0;i<=inner.size();++i){char c=i<inner.size()?inner[i]:',';if(c=='<')++depth;else if(c=='>')--depth;else if(c==','&&depth==0){parts.push_back(inner.substr(start,i-start));start=i+1;}}
+                const auto& parts=type_arguments(base.id);
                 if(idx>=parts.size()){result.diagnostics.push_back(Diagnostic{expr.right->span,"tuple index out of range"});return {};}
-                return resolve_type(parts[idx]);
+                return resolve_type(type_spelling(parts[idx]));
             }
             return {TypeKind::named, 0, "opaque"};
         }

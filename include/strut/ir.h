@@ -19,6 +19,7 @@ struct IRExpr {
     Kind kind = Kind::identifier;
     std::string text;
     std::string type_name;
+    TypeId type_id;
     SourceSpan span;
     IRExprPtr left;
     IRExprPtr right;
@@ -39,6 +40,7 @@ struct IRStmt {
     std::string name;
     std::string op;
     std::string type_name;
+    TypeId type_id;
     bool is_const = false;
     IRExprPtr value;
     IRExprPtr target;
@@ -56,6 +58,9 @@ struct IRStmt {
     std::vector<std::string> enum_names;
     std::vector<std::string> enum_values;
     std::string return_type;
+    TypeId return_type_id;
+    std::string alias_target;
+    TypeId alias_target_id;
     std::vector<TypeSyntax> error_types;
     std::string owner;
     bool has_body = false;

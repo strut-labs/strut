@@ -19,6 +19,11 @@ struct Symbol {
     SourceSpan span;
     bool is_const = false;
     std::string type_name;
+    TypeId type_id;
+    Symbol() = default;
+    Symbol(std::string symbol_name, SymbolNamespace ns, SourceSpan source_span, bool constant, std::string spelling)
+        : name(std::move(symbol_name)), name_space(ns), span(source_span), is_const(constant),
+          type_name(std::move(spelling)), type_id(intern_type(type_name)) {}
 };
 
 struct SemanticResult {

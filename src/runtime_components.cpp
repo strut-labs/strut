@@ -38,28 +38,33 @@ const std::vector<RuntimeComponent>& registry() {
     };
     return value;
 }
-void request_type(std::vector<Id>& out,const std::string& type) {
+void request_type(std::vector<Id>& out,TypeId type) {
     auto add=[&](Id id){out.push_back(id);};
-    if(type.find("ptr<")!=std::string::npos)add(Id::safe_pointer);
-    if(type.find("weak_ptr<")!=std::string::npos)add(Id::weak_pointer);
-    if(type.find("raw_ptr<")!=std::string::npos)add(Id::raw_pointer);
-    if(type.find("[]")!=std::string::npos||type.find("vector<")!=std::string::npos||type.find("map<")!=std::string::npos||type.find("set<")!=std::string::npos||type.find("list<")!=std::string::npos||type.find("deque<")!=std::string::npos||type.find("queue<")!=std::string::npos||type.find("stack<")!=std::string::npos||type.find("tuple<")!=std::string::npos)add(Id::collections);
-    if(type.find("json")!=std::string::npos)add(Id::json);
-    if(type.find("future<")!=std::string::npos)add(Id::async);
-    if(type.find("channel<")!=std::string::npos)add(Id::channels);
-    if(type.find("http_")!=std::string::npos)add(Id::networking);
-    if(type.find("sqlite_db")!=std::string::npos)add(Id::sqlite);
-    if(type.find("process")!=std::string::npos)add(Id::process);
-    if(type.find("thread")!=std::string::npos)add(Id::threading);
+    if(!type)return;
+    const auto& node=type_node(type);
+    if(node.kind==TypeNodeKind::safe_pointer)add(Id::safe_pointer);
+    if(node.kind==TypeNodeKind::weak_pointer)add(Id::weak_pointer);
+    if(node.kind==TypeNodeKind::raw_pointer)add(Id::raw_pointer);
+    if(node.kind==TypeNodeKind::vector||node.kind==TypeNodeKind::fixed_array||node.kind==TypeNodeKind::tuple)add(Id::collections);
+    if(node.kind==TypeNodeKind::primitive&&node.name=="json")add(Id::json);
+    if(node.kind==TypeNodeKind::generic){
+        static const std::set<std::string> collections={"map","ordered_map","set","ordered_set","list","deque","queue","stack","priority_queue"};
+        if(collections.count(node.name))add(Id::collections);
+        if(node.name=="future")add(Id::async);
+        if(node.name=="channel")add(Id::channels);
+        if(node.name.rfind("http_",0)==0)add(Id::networking);
+    }
+    if(node.kind==TypeNodeKind::named){if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
+    for(auto child:node.children)request_type(out,child);
 }
 void request_expr(std::vector<Id>& out,const IRExpr* e);
 void request_stmt(std::vector<Id>& out,const IRStmt* s) {
     if(!s)return;
-    request_type(out,s->type_name);request_type(out,s->return_type);
+    request_type(out,s->type_id);request_type(out,s->return_type_id);request_type(out,s->alias_target_id);
     if(s->is_async)out.push_back(Id::async);
     if(s->is_extern_c)out.push_back(Id::ffi);
-    for(const auto& p:s->parameters)request_type(out,p.type.name);
-    for(const auto& f:s->fields)request_type(out,f.type.name);
+    for(const auto& p:s->parameters)request_type(out,p.type.type_id?p.type.type_id:intern_type(p.type.name));
+    for(const auto& f:s->fields)request_type(out,f.type.type_id?f.type.type_id:intern_type(f.type.name));
     request_expr(out,s->value.get());request_expr(out,s->target.get());request_expr(out,s->condition.get());request_expr(out,s->increment.get());request_stmt(out,s->initializer.get());
     for(const auto& c:s->body)request_stmt(out,c.get());
     for(const auto& c:s->else_body)request_stmt(out,c.get());
@@ -68,7 +73,7 @@ void request_stmt(std::vector<Id>& out,const IRStmt* s) {
 }
 void request_expr(std::vector<Id>& out,const IRExpr* e) {
     if(!e)return;
-    request_type(out,e->type_name);
+    request_type(out,e->type_id);
     if(e->lambda_async)out.push_back(Id::async);
     if(e->kind==IRExpr::Kind::identifier){
         static const std::unordered_map<std::string,Id> operations={
