@@ -33,7 +33,7 @@ jobs:
             name: linux-x64-clang
             cxx: clang++
           - os: macos-14
-            name: macos-arm64-llvm-libcxx
+            name: macos-arm64-appleclang
             cxx: clang++
           - os: windows-2022
             name: windows-x64-msvc
@@ -45,28 +45,9 @@ jobs:
       - name: Enable MSVC developer environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
-      - name: Install current LLVM/libc++ (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          brew install llvm
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          echo "CXX=$LLVM_PREFIX/bin/clang++" >> "$GITHUB_ENV"
-          echo "STRUT_CXXFLAGS=-nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 -D_LIBCPP_DISABLE_AVAILABILITY" >> "$GITHUB_ENV"
-          echo "STRUT_LDFLAGS=-L$LLVM_PREFIX/lib/c++ -Wl,-rpath,$LLVM_PREFIX/lib/c++" >> "$GITHUB_ENV"
       - name: Configure (POSIX)
-        if: runner.os != 'Windows' && runner.os != 'macOS'
+        if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSTRUT_WARNINGS_AS_ERRORS=ON
-      - name: Configure (macOS with current libc++)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          cmake -S . -B build \
-            -DCMAKE_CXX_COMPILER="$LLVM_PREFIX/bin/clang++" \
-            -DCMAKE_CXX_FLAGS="-nostdinc++ -isystem $LLVM_PREFIX/include/c++/v1 -D_LIBCPP_DISABLE_AVAILABILITY" \
-            -DCMAKE_EXE_LINKER_FLAGS="-L$LLVM_PREFIX/lib/c++ -Wl,-rpath,$LLVM_PREFIX/lib/c++" \
-            -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
