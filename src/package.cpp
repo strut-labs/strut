@@ -120,6 +120,7 @@ bool parse_package_manifest(const std::string& text, PackageManifest& out, std::
         const auto& dependencies = document["dependencies"];
         if (dependencies.type != json::Type::Object) { error = "manifest dependencies must be a JSON object"; return false; }
         for (const auto& item : dependencies.object) {
+            if(!valid_package_name(item.first)){error="invalid dependency package name '"+item.first+"'";return false;}
             if(item.second.type==json::Type::String){if(!valid_version_requirement(item.second.string)){error="invalid dependency requirement for '"+item.first+"'";return false;}parsed.dependencies.emplace(item.first,item.second.string);continue;}
             if(item.second.type!=json::Type::Object||!item.second.has("version")||item.second["version"].type!=json::Type::String||!valid_version_requirement(item.second["version"].string)||!item.second.has("git")||item.second["git"].type!=json::Type::String||!item.second.has("rev")||item.second["rev"].type!=json::Type::String){error="remote dependency '"+item.first+"' requires string fields version, git, and rev";return false;}
             PackageSource source;source.kind="git";source.url=item.second["git"].string;source.revision=item.second["rev"].string;
@@ -289,6 +290,7 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
     for(const auto& source:manifest.dependency_sources)if(!register_source(source.first,source.second,"project '"+manifest.name+"'"))return false;
     std::function<bool(const std::string&,const std::string&,bool,const std::string&)> resolve;
     resolve=[&](const std::string& name,const std::string& requirement,bool direct,const std::string& requester) {
+        if(!valid_package_name(name)){error="invalid dependency package name '"+name+"' requested by "+requester;return false;}
         if(active.count(name)){
             auto begin=std::find(stack.begin(),stack.end(),name);std::ostringstream chain;
             for(auto i=begin;i!=stack.end();++i){if(i!=begin)chain<<" -> ";chain<<*i;}chain<<" -> "<<name;
@@ -343,7 +345,7 @@ bool install_packages(const std::filesystem::path& project_root,bool offline,boo
     for(const auto& package:lock.packages){
         const auto cached=package_cache_root()/package.name/package.version/package.checksum.substr(7);std::string actual,cache_error;
         if(verify_cached_package(cached,actual,cache_error)&&actual==package.checksum)continue;
-        if(offline){error="offline install is missing verified package '"+package.name+"' "+package.version+" ("+package.checksum+")\nhelp: populate the package cache before using --offline";return false;}
+        if(offline){error="offline install is missing verified package '"+package.name+"' "+package.version+" at revision "+package.revision+"\nnote: expected verified cache entry "+cached.string()+" ("+package.checksum+")\nhelp: run `strut install` with network access to restore the locked package";return false;}
         if(package.source_kind!="git"){error="locked local package '"+package.name+"' is missing or corrupt and has no reproducible remote source";return false;}
         PackageSource source{"git",package.source,package.revision};std::filesystem::path acquired;PackageManifest acquired_manifest;
         if(!acquire_git_package(source,acquired,acquired_manifest,error))return false;

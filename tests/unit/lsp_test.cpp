@@ -37,6 +37,8 @@ int main(){
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"textDocument/completion\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":5,\"character\":2}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"textDocument/documentSymbol\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":5,\"character\":5}}}");
+    request(in,"{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":5,\"character\":5}}}");
+    request(in,"{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"textDocument/signatureHelp\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":5,\"character\":20}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"contentChanges\":[{\"text\":\"function main( {\\n  pri\\n\"}]}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"textDocument/completion\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"},\"position\":{\"line\":1,\"character\":5}}}");
     request(in,"{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didClose\",\"params\":{\"textDocument\":{\"uri\":"+quoted(uri)+"}}}");
@@ -51,6 +53,7 @@ int main(){
     require(s.find("helper.p")!=std::string::npos,"project definition",s);
     require(s.find(cached.generic_string()+"/main.p")!=std::string::npos,"package definition",s);
     require(s.find("\"label\": \"package_symbol\"")!=std::string::npos,"package completion",s);
+    require(s.find("function package_symbol(string value) -> int")!=std::string::npos,"package hover and signature",s);
     require(s.find("additionalTextEdits")!=std::string::npos,"module import edit",s);
     require(s.find("\"code\":")!=std::string::npos,"structured diagnostics",s);
     require(s.find("\"label\": \"print\"")!=std::string::npos,"incomplete source recovery",s);

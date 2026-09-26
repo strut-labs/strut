@@ -21,6 +21,8 @@ int main(){
  req(strut::valid_version_requirement("1.2.3")&&strut::valid_version_requirement("^1.2.3")&&!strut::valid_version_requirement("latest"),"versions");
  std::string error;strut::PackageManifest manifest;
  req(strut::parse_package_manifest(R"({"name":"demo","version":"0.1.0","dependencies":{"http":"^0.2.0"}})",manifest,error),error.c_str());
+ req(!strut::parse_package_manifest(R"({"name":"demo","version":"0.1.0","dependencies":{"../escape":"1.0.0"}})",manifest,error)&&error.find("package name")!=std::string::npos,"dependency traversal rejected");
+ req(!strut::parse_package_manifest(R"({"name":"demo","version":"0.1.0","dependencies":{"bad":{"version":"1.0.0","git":"-dangerous","rev":"1111111111111111111111111111111111111111"}}})",manifest,error),"unsafe Git URL rejected");
  TestTempDirectory temp("strut-package-test");const auto root=temp.path(),home=root/"home";
 #ifdef _WIN32
  _putenv_s("STRUT_HOME",home.string().c_str());
@@ -52,5 +54,7 @@ int main(){
  strut::PackageManifest remote_app;remote_app.name="remote-app";remote_app.version="0.1.0";remote_app.dependencies["remote"]="2.0.0";remote_app.dependency_sources["remote"]={"git",remote.string(),revision};req(strut::write_package_manifest_file(root/"strut.json",remote_app,error),error.c_str());req(strut::write_lockfile(root,remote_app,error),error.c_str());strut::PackageLock remote_lock;req(strut::load_package_lock_file(root/"strut.lock.json",remote_lock,error),error.c_str());req(remote_lock.packages[0].source_kind=="git"&&remote_lock.packages[0].revision==revision,"immutable Git lock");
  const auto locked=read(root/"strut.lock.json");const auto remote_cache=home/"cache/packages/remote/2.0.0"/remote_lock.packages[0].checksum.substr(7);std::filesystem::remove_all(remote_cache);strut::PackageLock installed;req(!strut::install_packages(root,true,false,installed,error)&&error.find("offline")!=std::string::npos,"offline missing cache");req(strut::install_packages(root,false,false,installed,error),error.c_str());req(read(root/"strut.lock.json")==locked,"install preserves lock");req(strut::install_packages(root,true,false,installed,error),error.c_str());
  std::filesystem::create_directories(home/"cache/packages/broken/1.0.0");std::ofstream(home/"cache/packages/broken/1.0.0/strut.json")<<R"({"name":"other","version":"1.0.0"})";strut::PackageManifest broken;broken.name="project";broken.version="0.1.0";broken.dependencies["broken"]="1.0.0";req(!strut::write_lockfile(root,broken,error),"broken cache rejected");
+ strut::PackageManifest traversal;traversal.name="project";traversal.version="0.1.0";traversal.dependencies["../escape"]="1.0.0";req(!strut::write_lockfile(root,traversal,error)&&error.find("package name")!=std::string::npos,"programmatic dependency traversal rejected");
+ const auto symlink_package=root/"symlink-package";std::filesystem::create_directories(symlink_package);std::ofstream(symlink_package/"strut.json")<<R"({"name":"symlinked","version":"1.0.0"})";std::error_code symlink_error;std::filesystem::create_symlink(root/"outside",symlink_package/"escape",symlink_error);if(!symlink_error){std::filesystem::path ignored;strut::PackageManifest ignored_manifest;req(!strut::cache_local_package(symlink_package,ignored,ignored_manifest,error)&&error.find("symbolic link")!=std::string::npos,"symlink escape rejected");}
  return 0;
 }
