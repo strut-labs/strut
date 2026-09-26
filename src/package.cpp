@@ -120,11 +120,12 @@ bool parse_package_manifest(const std::string& text, PackageManifest& out, std::
         const auto& dependencies = document["dependencies"];
         if (dependencies.type != json::Type::Object) { error = "manifest dependencies must be a JSON object"; return false; }
         for (const auto& item : dependencies.object) {
-            if (item.second.type != json::Type::String || !valid_version_requirement(item.second.string)) {
-                error = "invalid dependency requirement for '" + item.first + "'";
-                return false;
-            }
-            parsed.dependencies.emplace(item.first, item.second.string);
+            if(item.second.type==json::Type::String){if(!valid_version_requirement(item.second.string)){error="invalid dependency requirement for '"+item.first+"'";return false;}parsed.dependencies.emplace(item.first,item.second.string);continue;}
+            if(item.second.type!=json::Type::Object||!item.second.has("version")||item.second["version"].type!=json::Type::String||!valid_version_requirement(item.second["version"].string)||!item.second.has("git")||item.second["git"].type!=json::Type::String||!item.second.has("rev")||item.second["rev"].type!=json::Type::String){error="remote dependency '"+item.first+"' requires string fields version, git, and rev";return false;}
+            PackageSource source;source.kind="git";source.url=item.second["git"].string;source.revision=item.second["rev"].string;
+            const auto valid_revision=source.revision.size()>=40&&source.revision.size()<=64&&std::all_of(source.revision.begin(),source.revision.end(),[](unsigned char c){return std::isxdigit(c);});
+            if(source.url.empty()||source.url.front()=='-'||source.url.find_first_of("\r\n")!=std::string::npos||!valid_revision){error="remote dependency '"+item.first+"' must use a safe Git URL and exact hexadecimal commit revision";return false;}
+            parsed.dependencies.emplace(item.first,item.second["version"].string);parsed.dependency_sources.emplace(item.first,std::move(source));
         }
     }
     out = std::move(parsed);
@@ -161,7 +162,7 @@ bool load_package_manifest_file(const std::filesystem::path& path, PackageManife
 
 bool write_package_manifest_file(const std::filesystem::path& path, const PackageManifest& manifest, std::string& error) {
     json::Document doc=json::Document::make_object(); doc["name"]=manifest.name; doc["version"]=manifest.version; if(!manifest.entry.empty())doc["entry"]=manifest.entry; if(!manifest.description.empty())doc["description"]=manifest.description; if(!manifest.license.empty())doc["license"]=manifest.license; if(!manifest.repository.empty())doc["repository"]=manifest.repository;
-    json::Document deps=json::Document::make_object(); for(const auto& d:manifest.dependencies)deps[d.first]=d.second; doc["dependencies"]=deps;
+    json::Document deps=json::Document::make_object(); for(const auto& d:manifest.dependencies){auto source=manifest.dependency_sources.find(d.first);if(source==manifest.dependency_sources.end())deps[d.first]=d.second;else{json::Document remote=json::Document::make_object();remote["version"]=d.second;remote["git"]=source->second.url;remote["rev"]=source->second.revision;deps[d.first]=remote;}} doc["dependencies"]=deps;
     std::ofstream output(path); if(!output){error="unable to write " + path.string();return false;} output<<doc.dump(2)<<'\n'; return static_cast<bool>(output);
 }
 
@@ -194,6 +195,16 @@ bool write_lockfile(const std::filesystem::path& project_root,const PackageManif
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
+namespace {
+std::string shell_quote(const std::filesystem::path& value){
+#ifdef _WIN32
+    std::string out="\"";for(char c:value.string()){if(c=='\"')out+='\\';out+=c;}return out+'\"';
+#else
+    std::string out="'";for(char c:value.string()){if(c=='\'')out+="'\\''";else out+=c;}return out+'\'';
+#endif
+}
+}
+
 bool cache_local_package(const std::filesystem::path& source_root,std::filesystem::path& cached_root,PackageManifest& manifest,std::string& error) {
     if(!load_package_manifest_file(source_root/"strut.json",manifest,error))return false;
     std::string checksum;if(!package_content_checksum(source_root,checksum,error))return false;
@@ -231,25 +242,48 @@ bool cache_local_package(const std::filesystem::path& source_root,std::filesyste
     return true;
 }
 
+bool acquire_git_package(const PackageSource& source,std::filesystem::path& cached_root,PackageManifest& manifest,std::string& error){
+    if(source.kind!="git"||source.url.empty()||source.url.front()=='-'||source.url.find_first_of("\r\n")!=std::string::npos){error="invalid Git package source";return false;}
+    if(source.revision.size()<40||source.revision.size()>64||!std::all_of(source.revision.begin(),source.revision.end(),[](unsigned char c){return std::isxdigit(c);})){error="Git package source requires an exact commit revision";return false;}
+    const auto acquisition_root=package_cache_root()/".acquire";std::error_code ec;std::filesystem::create_directories(acquisition_root,ec);if(ec){error="unable to create acquisition directory: "+ec.message();return false;}
+    std::random_device random;std::filesystem::path checkout;for(unsigned attempt=0;attempt<32;++attempt){std::ostringstream id;id<<"git-"<<std::hex<<random()<<random();checkout=acquisition_root/id.str();if(!std::filesystem::exists(checkout,ec))break;checkout.clear();}if(checkout.empty()){error="unable to allocate Git acquisition directory";return false;}
+    const auto hooks=acquisition_root/"disabled-hooks";std::filesystem::create_directories(hooks,ec);
+    const auto git_config="git -c core.hooksPath="+shell_quote(hooks);
+    const auto clone=git_config+" clone --quiet --no-checkout -- "+shell_quote(source.url)+" "+shell_quote(checkout);
+    if(std::system(clone.c_str())!=0){std::filesystem::remove_all(checkout,ec);error="unable to clone Git package source '"+source.url+"'";return false;}
+    const auto checkout_command=git_config+" -C "+shell_quote(checkout)+" checkout --quiet --detach "+source.revision;
+    if(std::system(checkout_command.c_str())!=0){std::filesystem::remove_all(checkout,ec);error="Git package revision '"+source.revision+"' is unavailable from '"+source.url+"'";return false;}
+    const auto revision_file=checkout/".strut-resolved-revision";
+    const auto resolve_command=git_config+" -C "+shell_quote(checkout)+" rev-parse HEAD > "+shell_quote(revision_file);
+    if(std::system(resolve_command.c_str())!=0){std::filesystem::remove_all(checkout,ec);error="unable to verify acquired Git revision";return false;}
+    std::ifstream revision_input(revision_file);std::string resolved;revision_input>>resolved;std::filesystem::remove(revision_file,ec);
+    if(resolved!=source.revision){std::filesystem::remove_all(checkout,ec);error="Git revision mismatch: requested "+source.revision+" but acquired "+resolved;return false;}
+    std::filesystem::remove_all(checkout/".git",ec);if(ec){std::filesystem::remove_all(checkout,ec);error="unable to remove Git metadata from acquired package: "+ec.message();return false;}
+    const bool ok=cache_local_package(checkout,cached_root,manifest,error);std::filesystem::remove_all(checkout,ec);return ok;
+}
+
 bool write_lockfile(const std::filesystem::path& project_root,const PackageManifest& manifest,std::string& error) {
-    PackageLock lock;std::set<std::string> active,complete;
+    PackageLock lock;std::set<std::string> active,complete;std::map<std::string,PackageSource> sources=manifest.dependency_sources;
     std::function<bool(const std::string&,const std::string&,bool)> resolve;
     resolve=[&](const std::string& name,const std::string& requirement,bool direct) {
         if(active.count(name)){error="cyclic package dependency involving '"+name+"'";return false;}
         auto existing=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const auto&p){return p.name==name;});
         if(complete.count(name)){if(existing==lock.packages.end()||!satisfies(existing->version,requirement)){error="incompatible requirements for package '"+name+"'";return false;}existing->direct=existing->direct||direct;return true;}
         std::string cache_error;auto root=resolve_cached_package(name,requirement,&cache_error);
+        if(!root){auto remote=sources.find(name);if(remote!=sources.end()){std::filesystem::path acquired;PackageManifest acquired_manifest;if(!acquire_git_package(remote->second,acquired,acquired_manifest,cache_error)){error=cache_error;return false;}if(acquired_manifest.name!=name||!satisfies(acquired_manifest.version,requirement)){error="acquired Git package metadata does not satisfy dependency '"+name+"' "+requirement;return false;}root=acquired;}}
         if(!root){error=cache_error.empty()?"dependency '"+name+"' is not present in the package cache\nnote: required version '"+requirement+"'; searched "+(package_cache_root()/name).string()+"\nhelp: run `strut add <local-package-path>` to populate the cache":cache_error;return false;}
         PackageManifest package;
         if(!load_package_manifest_file(*root/"strut.json",package,cache_error)||package.name!=name||!satisfies(package.version,requirement)){error="cached package '"+name+"' at "+root->string()+" has stale or invalid metadata"+(cache_error.empty()?std::string{}:": "+cache_error);return false;}
         LockedPackage locked;locked.name=name;locked.requested=requirement;locked.version=package.version;locked.source_kind="local-cache";locked.source="local:"+name;locked.revision=package.version;locked.direct=direct;
-        for(const auto& dependency:package.dependencies){std::string child_error;auto child=resolve_cached_package(dependency.first,dependency.second,&child_error);PackageManifest child_manifest;if(!child||!load_package_manifest_file(*child/"strut.json",child_manifest,child_error)){error="transitive dependency '"+dependency.first+"' required by '"+name+"' is unavailable"+(child_error.empty()?std::string{}:": "+child_error);return false;}locked.dependencies[dependency.first]=child_manifest.version;}
+        for(const auto& source:package.dependency_sources){auto inserted=sources.emplace(source.first,source.second);if(!inserted.second&&(inserted.first->second.url!=source.second.url||inserted.first->second.revision!=source.second.revision)){error="conflicting immutable sources for package '"+source.first+"'";return false;}}
+        for(const auto& dependency:package.dependencies){std::string child_error;auto child=resolve_cached_package(dependency.first,dependency.second,&child_error);if(!child){auto remote=sources.find(dependency.first);if(remote!=sources.end()){std::filesystem::path acquired;PackageManifest acquired_manifest;if(acquire_git_package(remote->second,acquired,acquired_manifest,child_error))child=acquired;}}PackageManifest child_manifest;if(!child||!load_package_manifest_file(*child/"strut.json",child_manifest,child_error)){error="transitive dependency '"+dependency.first+"' required by '"+name+"' is unavailable"+(child_error.empty()?std::string{}:": "+child_error);return false;}locked.dependencies[dependency.first]=child_manifest.version;}
         if(!package_content_checksum(*root,locked.checksum,error))return false;
         lock.packages.push_back(std::move(locked));active.insert(name);
         for(const auto& dependency:package.dependencies)if(!resolve(dependency.first,dependency.second,false))return false;
         active.erase(name);complete.insert(name);return true;
     };
     for(const auto& dependency:manifest.dependencies)if(!resolve(dependency.first,dependency.second,true))return false;
+    for(auto& package:lock.packages){auto source=sources.find(package.name);if(source!=sources.end()){package.source_kind="git";package.source=source->second.url;package.revision=source->second.revision;}}
     if(!validate_package_lock(lock,&manifest,error))return false;
     return write_package_lock_file(project_root/"strut.lock.json",lock,error);
 }

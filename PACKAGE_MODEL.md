@@ -36,6 +36,20 @@ Dependency requirements intentionally start small and deterministic:
 
 No `latest`, git-branch-as-version, or arbitrary executable version scripts are part of the package contract.
 
+An immutable Git dependency uses an object instead of the local/cache string form:
+
+```json
+"dependencies": {
+  "example": {
+    "version": "1.2.3",
+    "git": "https://example.invalid/example.git",
+    "rev": "0123456789abcdef0123456789abcdef01234567"
+  }
+}
+```
+
+`rev` must be an exact hexadecimal commit identity, not a branch or floating tag. Acquisition uses system Git with repository hooks disabled, checks out only that requested revision, verifies `HEAD`, removes Git metadata, validates the package manifest and paths, computes the content digest, and then uses the same staged atomic cache promotion as a local package. Package install scripts are neither recognized nor executed. Local Git repositories are supported as deterministic development and test sources; live hosting is not required by the resolver.
+
 ## Lockfile and reproducibility
 
 Resolution produces `strut.lock.json` schema version 2. The lockfile is committed for applications and records every direct/transitive package as an exact immutable resolution including:
