@@ -47,6 +47,7 @@ void print_help(std::ostream& out) {
         << "  list              List project dependencies\n"
         << "  install           Resolve dependencies from the shared cache\n"
         << "  update            Refresh dependency resolutions and the lockfile\n"
+        << "  packages [--json] Inspect the resolved package graph and cache state\n"
         << "  project [--json]  Inspect project root, manifest and package cache\n"
         << "  api [query]       Browse the authoritative API index (--json supported)\n"
         << "  lsp               Run the Language Server Protocol server on stdio\n"
@@ -91,6 +92,7 @@ void print_command_help(std::string_view command, std::ostream& out) {
     else if (command == "list") out << "Usage: strut list\n";
     else if (command == "install") out << "Usage: strut install [--offline]\nInstalls the exact lockfile graph; without a lockfile, resolves and creates one.\n";
     else if (command == "update") out << "Usage: strut update\nRe-resolves manifest dependencies and rewrites strut.lock.json.\n";
+    else if (command == "packages") out << "Usage: strut packages [--json]\nShows the locked dependency graph, immutable identities, and offline cache availability.\n";
     else if (command == "project") out << "Usage: strut project [--json]\nShows the discovered project root, build configuration, manifest and package cache.\n";
     else if (command == "api") out << "Usage: strut api [--json] [query]\nBrowses built-ins, methods, modules, checked errors and native dependencies. Query by name, module, category, summary, or `checked-errors`.\n";
     else if (command == "lsp") out << "Usage: strut lsp\nRuns the Strut LSP server over stdin/stdout with contextual completion, signature help, hover, diagnostics, symbols, formatting, and go-to-definition.\n";
@@ -118,7 +120,7 @@ json::Document api_index(std::string_view query) {
     }
     root["functions"]=functions;
     root["methods"]=methods;
-    json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","update","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
+    json::Document commands=json::Document::make_array();for(const char* c:{"compile","init","make","test","fmt","add","remove","list","install","update","packages","project","api","lsp"})commands.array.emplace_back(c);root["cli_commands"]=commands;
     json::Document notes=json::Document::make_object();notes["range_loop"]="for (item : items)";notes["core_array"]="T[] (no include required)";notes["custom_checked_errors"]="Custom error declarations are not currently supported; use documented built-in checked error types.";root["language_notes"]=notes;
     return root;
 }
@@ -137,9 +139,55 @@ void print_api_index(std::string_view query,std::ostream& out){
     if(!matches)out<<"No API entries match '"<<query<<"'.\n";
 }
 
+struct PackageInspection {
+    PackageManifest manifest;
+    PackageLock lock;
+    std::string lock_state="missing";
+    std::string detail;
+    bool manifest_valid=false;
+    bool graph_fully_resolved=false;
+    bool all_cached=false;
+    std::size_t direct_count=0;
+    std::size_t transitive_count=0;
+    std::vector<bool> cached;
+};
+
+PackageInspection inspect_packages(const std::filesystem::path& root){
+    PackageInspection result;std::string error;
+    result.manifest_valid=load_package_manifest_file(root/"strut.json",result.manifest,error);
+    if(!result.manifest_valid){result.detail=error;return result;}
+    const auto lock_path=root/"strut.lock.json";
+    if(!std::filesystem::exists(lock_path))return result;
+    if(!load_package_lock_file(lock_path,result.lock,error)){result.lock_state="corrupt";result.detail=error;return result;}
+    if(!validate_package_lock(result.lock,&result.manifest,error)){result.lock_state="stale";result.detail=error;return result;}
+    result.lock_state="locked";result.graph_fully_resolved=true;result.all_cached=true;
+    for(const auto& package:result.lock.packages){
+        if(package.direct)++result.direct_count;else ++result.transitive_count;
+        const auto path=package_cache_root()/package.name/package.version/package.checksum.substr(7);std::string checksum,why;
+        const bool present=verify_cached_package(path,checksum,why)&&checksum==package.checksum;
+        result.cached.push_back(present);result.all_cached=result.all_cached&&present;
+        if(!present&&result.detail.empty())result.detail=why;
+    }
+    return result;
+}
+
+int print_packages(bool as_json,std::ostream& out,std::ostream& err){
+    const auto root=find_project_root(std::filesystem::current_path());const auto state=inspect_packages(root);
+    if(as_json){
+        json::Document d=json::Document::make_object();d["schema_version"]=1;d["command"]="packages";d["lock_state"]=state.lock_state;d["graph_fully_resolved"]=state.graph_fully_resolved;d["offline_available"]=state.graph_fully_resolved&&state.all_cached;
+        if(!state.detail.empty())d["diagnostic"]=state.detail;
+        json::Document packages=json::Document::make_array();
+        for(std::size_t i=0;i<state.lock.packages.size();++i){const auto& package=state.lock.packages[i];const bool cached=i<state.cached.size()&&state.cached[i];json::Document item=json::Document::make_object();item["name"]=package.name;item["direct"]=package.direct;item["requested_constraint"]=package.requested;item["resolved_version"]=package.version;item["revision"]=package.revision;item["checksum"]=package.checksum;item["source_kind"]=package.source_kind;item["source_url"]=package.source;item["lock_state"]="locked";item["cache_state"]=cached?"verified":"missing_or_corrupt";item["cached"]=cached;item["offline_available"]=cached;packages.push_back(item);}d["packages"]=packages;out<<d.dump(2)<<'\n';
+    }else{
+        out<<"lock state: "<<state.lock_state<<'\n';for(std::size_t i=0;i<state.lock.packages.size();++i){const auto& package=state.lock.packages[i];out<<package.name<<' '<<package.version<<" ("<<(package.direct?"direct":"transitive")<<", requested "<<package.requested<<", "<<package.source_kind<<", "<<(i<state.cached.size()&&state.cached[i]?"cached":"missing")<<")\n  revision "<<package.revision<<"\n  checksum "<<package.checksum<<"\n  source "<<package.source<<'\n';}
+        out<<"offline available: "<<(state.graph_fully_resolved&&state.all_cached?"yes":"no")<<'\n';if(!state.detail.empty())err<<"strut: "<<state.detail<<'\n';
+    }
+    return state.lock_state=="locked"?0:1;
+}
+
 int print_project_info(bool as_json,std::ostream& out,std::ostream& err){
-    const auto root=find_project_root(std::filesystem::current_path());const auto config=root/".strut"/"config.json";const auto manifest=root/"strut.json";const auto cache=package_cache_root();
-    if(as_json){json::Document d=json::Document::make_object();d["schema_version"]=1;d["command"]="project";d["project_root"]=root.generic_string();d["build_config"]=config.generic_string();d["build_config_exists"]=std::filesystem::exists(config);d["manifest"]=manifest.generic_string();d["manifest_exists"]=std::filesystem::exists(manifest);d["package_cache"]=cache.generic_string();out<<d.dump(2)<<'\n';return 0;}
+    const auto root=find_project_root(std::filesystem::current_path());const auto config=root/".strut"/"config.json";const auto manifest=root/"strut.json";const auto lock_path=root/"strut.lock.json";const auto cache=package_cache_root();const auto packages=inspect_packages(root);
+    if(as_json){json::Document d=json::Document::make_object();d["schema_version"]=1;d["command"]="project";d["project_root"]=root.generic_string();d["build_config"]=config.generic_string();d["build_config_exists"]=std::filesystem::exists(config);d["manifest"]=manifest.generic_string();d["manifest_exists"]=std::filesystem::exists(manifest);d["package_cache"]=cache.generic_string();d["lockfile"]=lock_path.generic_string();d["lockfile_exists"]=std::filesystem::exists(lock_path);d["lockfile_schema_version"]=packages.lock_state=="missing"||packages.lock_state=="corrupt"?0:static_cast<int>(packages.lock.schema_version);d["lock_state"]=packages.lock_state;d["package_cache_state"]=packages.all_cached?"ready":"missing_or_corrupt";d["dependency_count"]=static_cast<int>(packages.lock.packages.size());d["direct_dependency_count"]=static_cast<int>(packages.direct_count);d["transitive_dependency_count"]=static_cast<int>(packages.transitive_count);d["graph_fully_resolved"]=packages.graph_fully_resolved;d["all_locked_packages_cached"]=packages.all_cached;d["offline_available"]=packages.graph_fully_resolved&&packages.all_cached;if(!packages.detail.empty())d["package_diagnostic"]=packages.detail;out<<d.dump(2)<<'\n';return 0;}
     out<<"project root: "<<root.generic_string()<<'\n'<<"build config: "<<config.generic_string()<<(std::filesystem::exists(config)?"":" (missing)")<<'\n'<<"manifest: "<<manifest.generic_string()<<(std::filesystem::exists(manifest)?"":" (missing)")<<'\n'<<"package cache: "<<cache.generic_string()<<'\n';
     if(!std::filesystem::exists(config)&&!std::filesystem::exists(manifest)) err<<"help: run `strut init` to initialize this directory\n";
     return 0;
@@ -459,6 +507,10 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         if(command=="project"){
             if(argc>3||(argc==3&&std::string_view(argv[2])!="--json")){err<<"strut: project accepts only --json\n";return 2;}
             return print_project_info(argc==3,out,err);
+        }
+        if(command=="packages"){
+            if(argc>3||(argc==3&&std::string_view(argv[2])!="--json")){err<<"strut: packages accepts only --json\n";return 2;}
+            return print_packages(argc==3,out,err);
         }
         if (argc >= 3 && (std::string_view(argv[2]) == "--help" || std::string_view(argv[2]) == "-h") && command != "compile") {
             print_command_help(command, out); return 0;
