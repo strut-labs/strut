@@ -292,7 +292,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
     }}
 }
 bool minimal_type_ok(const std::string& t){
-    return t.find("string")==std::string::npos && t.find("json")==std::string::npos &&
+    return t.find("json")==std::string::npos &&
            t.find("weak_ptr<")==std::string::npos &&
            t.find("raw_ptr<")==std::string::npos && t.find("future<")==std::string::npos &&
            t.find("channel<")==std::string::npos && t!="mutex" && t!="thread" &&
@@ -303,7 +303,7 @@ bool minimal_type_ok(const std::string& t){
 bool minimal_stmt_ok(const IRStmt* s);
 bool minimal_expr_ok(const IRExpr* e){
     if(!e)return true;
-    if(e->kind==IRExpr::Kind::string_literal||e->kind==IRExpr::Kind::json_object||e->kind==IRExpr::Kind::struct_literal||e->kind==IRExpr::Kind::safe_member)return false;
+    if(e->kind==IRExpr::Kind::json_object||e->kind==IRExpr::Kind::struct_literal||e->kind==IRExpr::Kind::safe_member)return false;
     if(!minimal_type_ok(e->type_name))return false;
     if(e->lambda_async)return false;
     if(e->kind==IRExpr::Kind::member){
@@ -329,7 +329,42 @@ bool minimal_stmt_ok(const IRStmt* s){
 }
 bool program_uses_minimal_runtime(const IRProgram& p){for(const auto& s:p.statements)if(!minimal_stmt_ok(s.get()))return false;return true;}
 
+bool light_thread_type_ok(const std::string& t){return t=="thread"||minimal_type_ok(t);}
+bool light_thread_stmt_ok(const IRStmt* s);
+bool light_thread_expr_ok(const IRExpr* e){
+    if(!e)return true;
+    if(e->kind==IRExpr::Kind::json_object||e->kind==IRExpr::Kind::struct_literal||e->kind==IRExpr::Kind::safe_member||!light_thread_type_ok(e->type_name))return false;
+    if(e->lambda_async)return false;
+    if(e->kind==IRExpr::Kind::member){
+        const auto& m=e->text;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="join"&&m!="joinable")return false;
+    }
+    if(!light_thread_expr_ok(e->left.get())||!light_thread_expr_ok(e->right.get())||!light_thread_expr_ok(e->lambda_expression.get()))return false;
+    for(const auto& a:e->arguments)if(!light_thread_expr_ok(a.get()))return false;
+    for(const auto& st:e->lambda_body)if(!light_thread_stmt_ok(st.get()))return false;
+    return true;
+}
+bool light_thread_stmt_ok(const IRStmt* s){
+    if(!s)return true;
+    if(s->kind==IRStmt::Kind::throw_stmt||s->kind==IRStmt::Kind::try_stmt||s->kind==IRStmt::Kind::struct_decl||s->kind==IRStmt::Kind::operator_decl||s->kind==IRStmt::Kind::unsafe_stmt)return false;
+    if(s->is_async||s->is_extern_c||!light_thread_type_ok(s->type_name)||!light_thread_type_ok(s->return_type))return false;
+    for(const auto& p:s->parameters)if(!light_thread_type_ok(p.type.name))return false;
+    if(!light_thread_expr_ok(s->value.get())||!light_thread_expr_ok(s->target.get())||!light_thread_expr_ok(s->condition.get())||!light_thread_expr_ok(s->increment.get()))return false;
+    if(s->initializer&&!light_thread_stmt_ok(s->initializer.get()))return false;
+    for(const auto& c:s->body)if(!light_thread_stmt_ok(c.get()))return false;
+    for(const auto& c:s->else_body)if(!light_thread_stmt_ok(c.get()))return false;
+    for(const auto& c:s->switch_cases){if(!light_thread_expr_ok(c.value.get()))return false;for(const auto& st:c.body)if(!light_thread_stmt_ok(st.get()))return false;}
+    return true;
+}
+bool program_uses_light_thread_runtime(const IRProgram& p){
+    const auto components=analyze_runtime_components(p);
+    if(!components.contains(RuntimeComponentId::threading)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::atomics)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
+    for(const auto& s:p.statements)if(!light_thread_stmt_ok(s.get()))return false;
+    return true;
+}
+
 struct MinimalRuntimeFeatures {
+    bool strings=false;
     bool pointers=false;
     bool nullable=false;
     bool function=false;
@@ -358,6 +393,7 @@ struct MinimalRuntimeFeatures {
     bool map_insert=false;
 };
 void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& f){
+    if(t.find("string")!=std::string::npos)f.strings=true;
     if(t.find("ptr<")!=std::string::npos||t.find("ref<")!=std::string::npos)f.pointers=true;
     if(t.find("function<")!=std::string::npos)f.function=true;
     if(t.find("[]")!=std::string::npos||t.find("vector<")!=std::string::npos)f.vector=true;
@@ -372,9 +408,11 @@ void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& 
     if(array_extent(t).has_value())f.array=true;
     if(!t.empty()&&t.back()=='?')f.nullable=true;
 }
+void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f);
 void collect_minimal_expr_features(const IRExpr* e,MinimalRuntimeFeatures& f){
     if(!e) return;
     collect_minimal_type_features(e->type_name,f);
+    if(e->kind==IRExpr::Kind::string_literal)f.strings=true;
     if(e->kind==IRExpr::Kind::null_literal)f.nullable=true;
     if(e->kind==IRExpr::Kind::array_literal)f.vector=true;
     if(e->kind==IRExpr::Kind::map_literal)f.hash_map=true;
@@ -387,6 +425,7 @@ void collect_minimal_expr_features(const IRExpr* e,MinimalRuntimeFeatures& f){
     }
     collect_minimal_expr_features(e->left.get(),f);collect_minimal_expr_features(e->right.get(),f);collect_minimal_expr_features(e->lambda_expression.get(),f);
     for(const auto& a:e->arguments)collect_minimal_expr_features(a.get(),f);
+    for(const auto& statement:e->lambda_body)collect_minimal_stmt_features(statement.get(),f);
 }
 void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
     if(!s) return;
@@ -397,6 +436,7 @@ void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
     if(s->initializer) collect_minimal_stmt_features(s->initializer.get(),f);
     for(const auto& c:s->body) collect_minimal_stmt_features(c.get(),f);
     for(const auto& c:s->else_body) collect_minimal_stmt_features(c.get(),f);
+    for(const auto& c:s->switch_cases){collect_minimal_expr_features(c.value.get(),f);for(const auto& statement:c.body)collect_minimal_stmt_features(statement.get(),f);}
 }
 MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);return f;}
 void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
@@ -416,7 +456,7 @@ void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f)
     if(f.function)o << "#include <functional>\n";
     if(f.nullable||f.find)o << "#include <optional>\n";
     if(f.map||f.nullable||f.pointers)o << "#include <type_traits>\n";
-    if(f.nullable||f.pointers||f.map_insert)o << "#include <utility>\n";
+    if(f.strings||f.nullable||f.pointers||f.map_insert)o << "#include <utility>\n";
     if(f.sort)o << "#include <algorithm>\n";
     if(f.reduce||f.pointers)o << "#include <stdexcept>\n";
     if(f.pointers)o << "#include <memory>\n#include <cstdlib>\n#ifdef _WIN32\n#ifndef WIN32_LEAN_AND_MEAN\n#define WIN32_LEAN_AND_MEAN\n#endif\n#ifndef NOMINMAX\n#define NOMINMAX\n#endif\n#include <windows.h>\n#else\n#include <execinfo.h>\n#endif\n";
@@ -441,8 +481,26 @@ inline void strut_print_stack_trace(){
     void* frames[48];const int n=backtrace(frames,48);std::cerr<<"stack trace:\n";char** symbols=backtrace_symbols(frames,n);if(symbols){for(int i=0;i<n;++i)std::cerr<<"  "<<symbols[i]<<"\n";std::free(symbols);}
 #endif
 }
+
 [[noreturn]] inline void strut_panic(const char* message){std::cerr<<"Strut panic: "<<message<<"\n";strut_print_stack_trace();throw std::runtime_error(message);}
 template<class T> T& strut_deref(const std::shared_ptr<T>& value,const char* file,std::size_t line){if(!value) [[unlikely]] {std::cerr<<"at "<<file<<":"<<line<<"\n";strut_panic("null safe-pointer dereference");}return *value;}
+)CPP";}
+    if(f.strings){o << R"CPP(
+struct strut_string {
+    std::string v;
+    strut_string()=default;
+    strut_string(const char* s):v(s){}
+    strut_string(std::string s):v(std::move(s)){}
+    std::size_t size() const{return v.size();}
+    bool empty() const{return v.empty();}
+    char at(std::size_t i) const{return v.at(i);}
+};
+inline std::ostream& operator<<(std::ostream& o,const strut_string& s){return o<<s.v;}
+inline strut_string operator+(const strut_string& a,const strut_string& b){return a.v+b.v;}
+inline bool operator==(const strut_string& a,const strut_string& b){return a.v==b.v;}
+inline bool operator!=(const strut_string& a,const strut_string& b){return !(a==b);}
+inline bool operator<(const strut_string& a,const strut_string& b){return a.v<b.v;}
+namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )CPP";}
     if(f.nullable){o << R"CPP(
 struct strut_null_t {
@@ -479,6 +537,28 @@ template<class C,class A,class F> A strut_reduce(const C& xs,A acc,F f){for(cons
 
 
 
+
+void emit_light_thread_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
+    emit_minimal_runtime(o,f);
+    o << "#include <thread>\n#include <tuple>\n#include <exception>\n#include <functional>\n#include <memory>\n#include <utility>\n";
+    o << R"STRUT_THREAD(
+struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
+class strut_thread {
+public:
+    strut_thread()=default;
+    template<class F,class... A> explicit strut_thread(F&& f,A&&... a){
+        error_=std::make_shared<std::exception_ptr>();auto err=error_;
+        thread_=std::thread([err,fn=std::forward<F>(f),args=std::make_tuple(std::forward<A>(a)...)]() mutable {try{std::apply(fn,std::move(args));}catch(...){*err=std::current_exception();}});
+    }
+    strut_thread(const strut_thread&)=delete;strut_thread& operator=(const strut_thread&)=delete;
+    strut_thread(strut_thread&&)=default;strut_thread& operator=(strut_thread&&)=default;
+    bool joinable() const{return thread_.joinable();}
+    void join(){if(!thread_.joinable())throw strut_checked_error("ThreadError","join on non-joinable thread");thread_.join();if(error_&&*error_)std::rethrow_exception(*error_);}
+    ~strut_thread(){if(thread_.joinable())thread_.join();}
+private:std::thread thread_;std::shared_ptr<std::exception_ptr> error_;
+};
+)STRUT_THREAD";
+}
 
 void emit_light_json_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f);
 bool light_sqlite_expr_ok(const IRExpr* e){
@@ -581,7 +661,7 @@ bool program_uses_light_json_runtime(const IRProgram& p){
     bool found=false;for(const auto& st:p.statements)if(!light_json_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_json_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
-    emit_minimal_runtime(o,f);
+    auto base=f;base.strings=false;emit_minimal_runtime(o,base);
     o << "#include \"json.h\"\n#include <string>\n#include <vector>\n#include <stdexcept>\n#include <charconv>\n#include <cctype>\n#include <utility>\n#include <functional>\n";
     o << R"STRUT_JSON_BASE(
 struct strut_string {
@@ -857,7 +937,7 @@ bool program_uses_light_http_runtime(const IRProgram& p){
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
-    emit_minimal_runtime(o,f);
+    auto base=f;base.strings=false;emit_minimal_runtime(o,base);
     o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n#include <algorithm>\n#include <cctype>\n#include <atomic>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <chrono>\n";
     o << "#ifdef _WIN32\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n#endif\n";
     o << R"STRUT_HTTP(
@@ -1003,7 +1083,7 @@ void collect_filesystem_stmt_features(const IRStmt* st,FilesystemRuntimeFeatures
 }
 FilesystemRuntimeFeatures filesystem_features(const IRProgram& p){FilesystemRuntimeFeatures f;for(const auto& st:p.statements)collect_filesystem_stmt_features(st.get(),f);return f;}
 void emit_light_filesystem_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f,const FilesystemRuntimeFeatures& fs){
-    emit_minimal_runtime(o,f);
+    auto base=f;base.strings=false;emit_minimal_runtime(o,base);
     o << "#include <string>\n#include <filesystem>\n#include <stdexcept>\n#include <utility>\n";
     if(fs.metadata)o << "#include <chrono>\n";
     if(fs.mutate||fs.list)o << "#include <algorithm>\n#include <vector>\n";
@@ -1088,7 +1168,7 @@ inline std::string strut_native_arg(const char* value){return value?value:"";}
 #endif
 )CPP";}
 
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::threading)&&program_uses_light_thread_runtime(p)){emit_light_thread_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:
