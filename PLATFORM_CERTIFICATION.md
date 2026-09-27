@@ -2,10 +2,10 @@
 
 ## Local Linux development host
 
-The current source has been built/tested locally with warnings-as-errors using both GCC and Clang. Final local audit after CP114:
+The `v0.0.3` source has been built/tested locally with warnings-as-errors using both GCC and Clang:
 
-- GCC internal CTest: 13/13 passing;
-- Clang internal CTest: 13/13 passing;
+- GCC internal CTest: 16/16 passing;
+- Clang internal CTest: 16/16 passing;
 - deterministic frontend fuzz test included in those runs;
 - sanitizer-backed ptr/weak_ptr/thread stress: passing;
 - concurrency stress: 20/20 passing;
@@ -30,6 +30,6 @@ The independent regression repository has its own manually-triggered cross-platf
 - CP98: Linux x64 GCC/Clang and Linux ARM64 GCC compiler certification is green.
 - CP99: macOS ARM64 AppleClang compiler and regression certification is green.
 - CP100: Windows x64 MSVC compiler and regression certification is green.
-- CP115: the complete release-candidate regression, package, generated-code, dogfood, and documentation gates are green.
+- CP115: the complete 155-case regression, package, generated-code, dogfood, documentation, sanitizer, and performance gates are green.
 - The published `v0.0.2` tag remains immutable at `ed7c5a7cb9227c37cd737dbaedcfaa3624fbdf11`.
-- The next explicit release action is the `v0.0.3` tag after all release gates pass.
+- `v0.0.3` is published and immutable at `cf75cd6389373f727c628b85afdf978a0afd3af5`; its four package jobs and publish job passed, and all archives match the published `SHA256SUMS`.

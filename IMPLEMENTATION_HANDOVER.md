@@ -963,21 +963,21 @@ Server-side/Nift-style templating is deliberately out of the active implementati
 - [x] parser/input hardening review.
 
 ### CP115 — Release candidate certification
-- [ ] compiler unit/integration tests green.
-- [ ] full independent regression suite green.
-- [ ] supported OS matrix green.
-- [ ] examples compile.
-- [ ] website builds cleanly with Nift.
-- [ ] website docs match compiler.
-- [ ] official packages green.
-- [ ] benchmark/regression gates green.
+- [x] compiler unit/integration tests green.
+- [x] full independent regression suite green.
+- [x] supported OS matrix green.
+- [x] examples compile.
+- [x] website builds cleanly with Nift.
+- [x] website docs match compiler.
+- [x] official packages green.
+- [x] benchmark/regression gates green.
 
 ### CP116 — First serious public release
-- [ ] tag/release compiler.
-- [ ] publish install artifacts/instructions.
-- [ ] publish/verify official packages.
-- [ ] publish docs/changelog.
-- [ ] preserve regression baseline for the released version.
+- [x] tag/release compiler (`v0.0.1`, followed by certified `v0.0.2` and `v0.0.3` checkpoints).
+- [x] publish install artifacts/instructions.
+- [x] publish/verify official packages.
+- [x] publish docs/changelog.
+- [x] preserve regression baselines for released versions.
 
 ## Ongoing rule after every checkpoint
 

@@ -44,7 +44,52 @@ When a design decision changes, update these documents before or alongside imple
 
 ## Current status
 
-Local implementation and the CP98–CP100 supported-platform checkpoints are complete. CP115 release-candidate certification is green across the compiler and independent regression matrices; CP116 remains the explicit `v0.0.1` tag and release action. Strut now includes the compiler/type/memory model, native code generation, concurrency/async, packages, networking/HTTP, external/system SQLite, embedding, incremental object builds, project tooling, LSP, hardening/fuzzing, dogfood programs/packages, compatibility/security policies, and cross-compilation architecture.
+Strut `v0.0.3` is published from immutable compiler commit `cf75cd6389373f727c628b85afdf978a0afd3af5`. Supported-platform compiler and regression matrices, release packaging, checksums, installed-layout smoke tests, lifecycle scripts, and official SQLite installation are green.
+
+The authoritative architecture now includes dependency-driven runtime components, structured `TypeId`, a canonical API registry shared by semantic analysis/code generation/editor tooling, LSP integration, reproducible Git packages with immutable locks and verified offline caches, official package shorthand, custom checked errors, atomics, distinct prefix/postfix operator identities, HTTP/TLS lifecycle handling, executable documentation, controlled AI-DX benchmarks, and focused string/thread/atomic runtime slicing. These are implemented foundations, not roadmap items.
+
+## Post-0.0.3 performance baseline
+
+The reproducible evidence and raw-artifact routing are documented in the sibling `strut-benchmarks/PERFORMANCE_0.0.2.md`; despite the filename, it records both the immutable `0.0.2` comparison baseline and the final `0.0.3` candidate results.
+
+- direct A/B Hello World compile: about 315 ms (`1,659 -> 315 ms`);
+- direct A/B plain-thread compile: about 795 ms (`2,112 -> 795 ms`);
+- focused atomic fixture compile: about 656 ms (`1,824 -> 656 ms`);
+- frontend phases: sub-millisecond for the measured tiny programs; native C++ compilation dominates their build time;
+- sustained reference-count workload: about `1.21x` equivalent C++ (`52.20 ms` versus `43.08 ms`). Assembly review found the same `std::shared_ptr` ownership sequence plus Strut's required null-safe dereference path, so no safety-preserving micro-fix was justified for `0.0.3`.
+
+## Post-0.0.3 certification baseline
+
+- 155/155 independent black-box regressions;
+- 16/16 GCC and 16/16 Clang unit/integration suites;
+- ASan/UBSan 16/16 with leak detection disabled only where the sandbox prevents LeakSanitizer ptrace operation;
+- Linux x64/ARM64, macOS ARM64, and Windows x64 hosted compiler certification, plus synchronized regression matrices;
+- structural code-generation budgets for 13 representative configurations;
+- reproducible package graphs, immutable locks, checksum verification, offline cache, repair, concurrency, and update tests;
+- HTTP/TLS lifecycle, generated-code/dogfood, LSP stdio, executable-docs, AI-DX, and cross-language performance comparisons.
+
+ThreadSanitizer remains environment-dependent: the local Swift-Clang runtime is unusable because of its libdispatch linkage, so TSAN is used only where the host toolchain provides a working runtime.
+
+## Known limitations after 0.0.3
+
+- package discovery is Git-backed official shorthand plus explicit Git sources; there is no centralized searchable registry;
+- the website provides POSIX lifecycle scripts, but no first-party Windows PowerShell installer/update automation;
+- HTTP/2, WebSockets, and ACME/certificate automation are not implemented;
+- ownership-heavy sustained workloads retain the measured reference-count overhead above;
+- conservative generic/type inference still intentionally rejects unresolved or unsafe edge cases rather than guessing;
+- editor integration is an LSP server and protocol surface, not yet polished native packaging for major editors;
+- native debugging/profiling maps generated C++ well enough for current use, but richer Strut-frame metadata and source-level debugger integration remain open;
+- GitHub Actions currently emits upstream Node-runtime and runner-image migration warnings; they do not fail certification but should be cleared as action releases permit.
+
+## Ranked next-phase candidates
+
+1. **Editor/LSP packaging and debugging workflow** — highest near-term adoption and AI-DX leverage, moderate risk; turn the existing protocol foundation into an easy, observable daily experience.
+2. **Package ecosystem and registry UX** — high user/adoption leverage, moderate architectural and supply-chain risk; add discovery and publishing ergonomics without weakening immutable Git locks.
+3. **Runtime/reference-count profiling and optimization** — focused performance value and architectural leverage, medium-high risk because ownership semantics and safety must remain unchanged.
+4. **Backend/server capability** — HTTP/2, WebSockets, operational TLS tooling, and deployment polish offer high backend value but carry substantial protocol/security risk.
+5. **Native application/GUI feasibility** — potentially differentiating and high adoption upside, but highest scope and platform risk; begin with a narrow evidence/prototype phase rather than framework implementation.
+
+The recommended next development phase is **editor/LSP packaging plus debugging/profiling integration**. It builds on already-authoritative metadata and LSP architecture, improves human and agent feedback loops, and makes the existing broad language surface easier to adopt without adding another major semantic subsystem. Package UX should follow closely. Do not begin either phase without a separately approved implementation brief.
 
 ## Major acceptance target
 

@@ -23,14 +23,14 @@ JSON parsing uses JSONIC. Network/database/file data remains untrusted input and
 - package paths are validated against escaping package roots;
 - lockfiles record immutable revision/content information for reproducibility;
 - build caches are invalidated by dependency/build fingerprints;
-- current package dogfood is local/cache based rather than silently fetching arbitrary remote code;
-- future registry/network fetching must authenticate transport, verify selected content against lock metadata, and avoid implicit build-script execution unless such a mechanism is explicitly designed and reviewed.
+- official shorthand resolves only through the `strut-packages` organization; explicit third-party Git dependencies remain opt-in;
+- fetched packages use authenticated HTTPS, immutable Git revisions, lock metadata, SHA-256 content verification, verified caches, and no implicit package build-script execution.
 
 ## HTTP and TLS
 
 libcurl client TLS keeps certificate and hostname verification enabled by default. Disabling verification must never be an accidental default.
 
-The built-in server is currently plain HTTP. OpenSSL is approved for future server-side TLS, but HTTPS server support must not be documented or implied until implemented and tested. When added, TLS 1.2/1.3 configuration, certificate/key handling, ALPN, shutdown/error paths, and secure defaults require dedicated certification.
+The built-in server supports HTTP and OpenSSL-backed HTTPS. TLS 1.2 is the minimum, certificate/key material is validated before listening, failures never fall back to plaintext, and client/server lifecycle paths are release-certified. HTTP/2, ALPN-driven protocol upgrades, certificate issuance/rotation, and ACME remain outside the implemented surface.
 
 ## Concurrency
 
