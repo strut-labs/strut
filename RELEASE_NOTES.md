@@ -1,3 +1,27 @@
+# Strut 0.0.3
+
+Strut 0.0.3 is a focused compiler and generated-code performance release. It
+does not change the language contract established by 0.0.2.
+
+## Highlights
+
+- String-only programs now use a focused string runtime instead of compiling
+  the complete generated runtime.
+- Plain threads use a focused thread runtime, and compatible atomic programs
+  use the same small concurrency foundation rather than the full runtime.
+- Runtime-feature discovery now traverses nested lambda bodies and switch cases,
+  preserving required helpers while keeping generated programs small.
+- On the documented Intel i7-12700H/GCC 15.2 certification host, Hello World
+  compilation improved from approximately 2,070 ms to 306 ms (about 85%) and
+  the representative plain-thread fixture improved from approximately 2,618 ms
+  to 729 ms (about 72%). These are environment-specific benchmark results, not
+  universal latency guarantees.
+- Structural code-size guards prevent the focused string, thread, and atomic
+  paths from silently regressing to the complete runtime.
+- Compiler, generated C++, package, HTTP/TLS, sanitizer, regression, and
+  cross-platform certification continue to cover GCC, Clang/AppleClang, and
+  MSVC targets.
+
 # Strut 0.0.2
 
 Strut 0.0.2 consolidates the language, tooling, package ecosystem, and native

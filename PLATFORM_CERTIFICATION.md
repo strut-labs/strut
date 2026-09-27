@@ -31,4 +31,5 @@ The independent regression repository has its own manually-triggered cross-platf
 - CP99: macOS ARM64 AppleClang compiler and regression certification is green.
 - CP100: Windows x64 MSVC compiler and regression certification is green.
 - CP115: the complete release-candidate regression, package, generated-code, dogfood, and documentation gates are green.
-- The next explicit release action is the `v0.0.2` tag after all release gates pass.
+- The published `v0.0.2` tag remains immutable at `ed7c5a7cb9227c37cd737dbaedcfaa3624fbdf11`.
+- The next explicit release action is the `v0.0.3` tag after all release gates pass.

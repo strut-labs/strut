@@ -4,7 +4,7 @@ import re
 import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
-expected = sys.argv[1].removeprefix("v") if len(sys.argv) > 1 else "0.0.2"
+expected = sys.argv[1].removeprefix("v") if len(sys.argv) > 1 else "0.0.3"
 
 cmake = (root / "CMakeLists.txt").read_text()
 header = (root / "include/strut/version.h").read_text()
@@ -21,7 +21,7 @@ failed = [name for (name, pattern), text in zip(checks.items(), texts)
 if failed:
     print("release version mismatch: " + ", ".join(failed), file=sys.stderr)
     raise SystemExit(1)
-if expected != "0.0.2":
-    print(f"release version mismatch: current release line is 0.0.2, not {expected}", file=sys.stderr)
+if expected != "0.0.3":
+    print(f"release version mismatch: current release line is 0.0.3, not {expected}", file=sys.stderr)
     raise SystemExit(1)
 print(f"release metadata is consistent for {expected}")

@@ -329,7 +329,7 @@ bool minimal_stmt_ok(const IRStmt* s){
 }
 bool program_uses_minimal_runtime(const IRProgram& p){for(const auto& s:p.statements)if(!minimal_stmt_ok(s.get()))return false;return true;}
 
-bool light_thread_type_ok(const std::string& t){return t=="thread"||minimal_type_ok(t);}
+bool light_thread_type_ok(const std::string& t){return t=="thread"||t.rfind("atomic<",0)==0||minimal_type_ok(t);}
 bool light_thread_stmt_ok(const IRStmt* s);
 bool light_thread_expr_ok(const IRExpr* e){
     if(!e)return true;
@@ -337,7 +337,7 @@ bool light_thread_expr_ok(const IRExpr* e){
     if(e->lambda_async)return false;
     if(e->kind==IRExpr::Kind::member){
         const auto& m=e->text;
-        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="join"&&m!="joinable")return false;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="join"&&m!="joinable"&&m!="load"&&m!="store"&&m!="exchange"&&m!="compare_exchange"&&m!="fetch_add"&&m!="fetch_sub")return false;
     }
     if(!light_thread_expr_ok(e->left.get())||!light_thread_expr_ok(e->right.get())||!light_thread_expr_ok(e->lambda_expression.get()))return false;
     for(const auto& a:e->arguments)if(!light_thread_expr_ok(a.get()))return false;
@@ -358,13 +358,14 @@ bool light_thread_stmt_ok(const IRStmt* s){
 }
 bool program_uses_light_thread_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::threading)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::atomics)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
+    if(!components.contains(RuntimeComponentId::threading)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
     for(const auto& s:p.statements)if(!light_thread_stmt_ok(s.get()))return false;
     return true;
 }
 
 struct MinimalRuntimeFeatures {
     bool strings=false;
+    bool atomics=false;
     bool pointers=false;
     bool nullable=false;
     bool function=false;
@@ -394,6 +395,7 @@ struct MinimalRuntimeFeatures {
 };
 void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& f){
     if(t.find("string")!=std::string::npos)f.strings=true;
+    if(t.rfind("atomic<",0)==0)f.atomics=true;
     if(t.find("ptr<")!=std::string::npos||t.find("ref<")!=std::string::npos)f.pointers=true;
     if(t.find("function<")!=std::string::npos)f.function=true;
     if(t.find("[]")!=std::string::npos||t.find("vector<")!=std::string::npos)f.vector=true;
@@ -541,6 +543,7 @@ template<class C,class A,class F> A strut_reduce(const C& xs,A acc,F f){for(cons
 void emit_light_thread_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
     emit_minimal_runtime(o,f);
     o << "#include <thread>\n#include <tuple>\n#include <exception>\n#include <functional>\n#include <memory>\n#include <utility>\n";
+    if(f.atomics)o << "#include <atomic>\n#include <type_traits>\n";
     o << R"STRUT_THREAD(
 struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 class strut_thread {
@@ -558,6 +561,20 @@ public:
 private:std::thread thread_;std::shared_ptr<std::exception_ptr> error_;
 };
 )STRUT_THREAD";
+    if(f.atomics)o << R"STRUT_ATOMIC(
+template<class T> class strut_atomic {
+    static_assert(std::is_integral_v<T>,"atomic<T> supports integer and bool scalar types");
+public:
+    strut_atomic() noexcept=default;strut_atomic(T value) noexcept:value_(value){}
+    strut_atomic(const strut_atomic&)=delete;strut_atomic& operator=(const strut_atomic&)=delete;
+    T load() const noexcept{return value_.load();}void store(T value) noexcept{value_.store(value);}
+    T exchange(T value) noexcept{return value_.exchange(value);}
+    bool compare_exchange(T expected,T desired) noexcept{return value_.compare_exchange_strong(expected,desired);}
+    template<class U=T> std::enable_if_t<!std::is_same_v<U,bool>,U> fetch_add(U value) noexcept{return value_.fetch_add(value);}
+    template<class U=T> std::enable_if_t<!std::is_same_v<U,bool>,U> fetch_sub(U value) noexcept{return value_.fetch_sub(value);}
+private:std::atomic<T> value_{};
+};
+)STRUT_ATOMIC";
 }
 
 void emit_light_json_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f);
