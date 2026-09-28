@@ -106,7 +106,7 @@ cancellation contracts must not prevent a future event-driven backend.
 ## Checkpoint status
 
 - CP1: baseline and scope freeze complete.
-- CP2: canonical builtin API schema pending.
+- CP2: canonical builtin API schema complete.
 - CP3: generated runtime implementation boundaries pending.
 - Review Gate 1 follows CP3. Do not begin bytes or stream implementation before approval.
 
@@ -118,3 +118,14 @@ cancellation contracts must not prevent a future event-driven backend.
 - Backend baseline certification: passed; 40 sequential loopback requests completed in 0.018 seconds and 10 start/stop cycles completed.
 - Native static/dynamic FFI linkage: passed.
 - Independent regression suite: 155/155 passed.
+
+## CP2 schema result
+
+- The builtin registry now describes existing backend-relevant fields and methods for HTTP servers, streams, processes, sockets/listeners, threads, channels, mutexes, futures and SQLite.
+- Source-level API names remain canonical. In particular, `http_server.static` remains the language member while code generation translates it to the native helper name `serve_static`.
+- Semantic analysis uses registry signatures for builtin member return types, practical argument count/type checks and method checked errors. Existing container-specific and ownership-specific semantic rules remain local where they encode language behavior rather than API identity.
+- LSP member completion and builtin field discovery consume the same registry metadata.
+- Runtime component graph traversal now sizes state from the supplied graph rather than a fixed enum-sized array.
+- CP2 adds no runtime capabilities and does not move generated runtime implementation boundaries; that remains CP3 work.
+- Compiler-visible correction: registered builtin methods now reject wrong argument counts/types and require their declared checked errors. Specialized free functions retain their existing semantic rules.
+- Validation: CMake build passed, CTest 16/16 passed, both HTTP certifications passed, native FFI linkage passed, and the independent regression suite passed 155/155.

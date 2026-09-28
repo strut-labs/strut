@@ -26,6 +26,16 @@ int main(){
     require(api_callable("stop","http_server")!=nullptr,"HTTP stop method lookup");
     require(api_callable("running","http_server")!=nullptr,"HTTP running method lookup");
     require(api_callable("listen_tls","http_server")!=nullptr,"HTTPS listen method lookup");
+    require(api_callable("get_async","http_server")!=nullptr&&api_callable("post_async","http_server")!=nullptr,"async HTTP routes are registered");
+    require(type_spelling(api_callable("get_async","http_server")->overloads[0].parameters[1].type)=="function<(http_request)->future<http_server_response>>","async HTTP handler signature");
+    require(api_callable("static","http_server")!=nullptr,"source-level HTTP static method is registered");
+    require(api_callable("receive","channel<int>")!=nullptr&&type_spelling(api_callable("receive","channel<int>")->overloads[0].return_type)=="T?","generic method lookup");
+    require(api_callable("accept_async","tcp_listener")!=nullptr&&api_callable("transaction","sqlite_db")!=nullptr,"backend methods are registered");
+    require(!api_callable("read","process_out")->overloads[0].parameters[0].optional&&type_spelling(api_callable("read","process_out")->overloads[0].parameters[0].type)=="int_32","process read matches the generated runtime");
+    require(api_callable("listen","http_server")->overloads[0].parameters.back().optional,"HTTP max_requests is optional");
+    require(api_callable("listen_tls","http_server")->overloads[0].parameters.back().optional,"HTTPS max_requests is optional");
+    require(api_field("status","http_response")&&type_spelling(api_field("status","http_response")->type)=="int_32","HTTP fields are registered");
+    require(api_field("out","process")&&type_spelling(api_field("out","process")->type)=="process_out","process fields are registered");
     require(api_callable("limits","http_server")->checked_errors==std::vector<std::string>{"NetworkError"},"HTTP limits checked error metadata");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");

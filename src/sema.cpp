@@ -231,29 +231,23 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             for(std::size_t i=0;i<argument_types.size();++i)if(argument_types[i].name=="opaque[]")
                 result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"cannot infer element type of empty array literal\nhelp: add an explicit type, for example `string[] values := []`, before passing it"});
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function\nhelp: handle "+e+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
-            if (expr.left && expr.left->kind == Expr::Kind::member && expr.left->left && expr.left->left->kind == Expr::Kind::identifier && expr.left->left->text == "json") {
-                if (expr.left->text == "parse" || expr.left->text == "encode") return builtin_type("json");
-                if (expr.left->text == "stringify" || expr.left->text == "pretty") return builtin_type("string");
+            if(expr.left&&expr.left->kind==Expr::Kind::member&&expr.left->left&&expr.left->left->kind==Expr::Kind::identifier&&expr.left->left->text=="json"){
+                if(expr.left->text=="parse"||expr.left->text=="encode")return builtin_type("json");
+                if(expr.left->text=="stringify"||expr.left->text=="pretty")return builtin_type("string");
             }
-            if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;if((base.name=="ifstream"||base.name=="sstream")&&(m=="read_all"||m=="str"))return builtin_type("string");if((base.name=="ifstream"||base.name=="ofstream"||base.name=="sstream")&&m=="is_open")return builtin_type("bool");if((base.name=="ifstream"||base.name=="ofstream"||base.name=="sstream")&&(m=="open"||m=="close"||m=="write"))return {TypeKind::void_type,0,"void"};
-                if(base.name=="process_out"&&(m=="read"||m=="read_line"||m=="read_all"))return builtin_type("string");
-                if(base.name=="process_out"&&m=="eof")return builtin_type("bool");
-                if(base.name=="process_in"&&(m=="write"||m=="write_line"||m=="close"))return {TypeKind::void_type,0,"void"};
-                if(base.name=="process"&&(m=="wait"||m=="exit_code"))return builtin_type("int");
-                if(base.name=="process"&&m=="running")return builtin_type("bool");
-                if(base.name=="process"&&(m=="terminate"||m=="close_input"))return {TypeKind::void_type,0,"void"};
-                if(base.name=="thread"&&m=="join")return {TypeKind::void_type,0,"void"};
-                if(base.name=="thread"&&m=="joinable")return builtin_type("bool");
-                if(base.name=="tcp_socket"){if(m=="read")return builtin_type("string");if(m=="is_open")return builtin_type("bool");if(m=="write"||m=="close")return {TypeKind::void_type,0,"void"};}
-                if(base.name=="tcp_listener"){if(m=="accept")return {TypeKind::named,0,"tcp_socket"};if(m=="accept_async")return {TypeKind::named,0,"future<tcp_socket>"};if(m=="is_open")return builtin_type("bool");if(m=="close")return {TypeKind::void_type,0,"void"};}
-                if(base.name=="tls_stream"){if(m=="read")return builtin_type("string");if(m=="is_open")return builtin_type("bool");if(m=="write"||m=="close")return {TypeKind::void_type,0,"void"};}
-                if(base.name=="http_response"&&m=="json")return builtin_type("json");
-                if(base.name=="http_request"&&m=="json")return builtin_type("json");
-                if(base.name=="http_server"&&m=="running")return builtin_type("bool");
-                if(base.name=="http_server"&&(m=="get"||m=="post"||m=="get_async"||m=="post_async"||m=="listen"||m=="listen_tls"||m=="stop"||m=="timeouts"||m=="limits"||m=="static"))return {TypeKind::void_type,0,"void"};
-                if(base.name=="sqlite_db"){if(m=="query")return builtin_type("json");if(m=="exec"||m=="close"||m=="transaction")return {TypeKind::void_type,0,"void"};}
-                if(base.name=="mutex"&&(m=="lock"||m=="unlock"))return {TypeKind::void_type,0,"void"};
-                if(base.name.rfind("channel<",0)==0){auto elem=generic_inner(base.name,"channel<");if(m=="send"||m=="close")return {TypeKind::void_type,0,"void"};if(m=="receive")return {TypeKind::named,0,elem+"?"};if(m=="closed")return builtin_type("bool");}
+            const ApiCallable* builtin=nullptr;std::string builtin_owner;TypeBindings builtin_bindings;
+            if(expr.left&&expr.left->kind==Expr::Kind::identifier)builtin=api_callable(expr.left->text);
+            if(expr.left&&expr.left->kind==Expr::Kind::member&&expr.left->left){auto base=infer_expression(result,*expr.left->left);builtin_owner=base.name;builtin=api_callable(expr.left->text,builtin_owner);if(builtin){const auto& schema=type_node(intern_type(builtin->owner));const auto& actual=type_node(base.id);if(schema.kind==TypeNodeKind::generic&&actual.kind==TypeNodeKind::generic&&!schema.children.empty()&&!actual.children.empty())builtin_bindings[type_node(schema.children.front()).name]=actual.children.front();}}
+            if(builtin_owner=="atomic<bool>"&&expr.left&&(expr.left->text=="fetch_add"||expr.left->text=="fetch_sub"))result.diagnostics.push_back(Diagnostic{expr.span,expr.left->text+" is only available on integer atomic values"});
+            if(builtin&&!builtin->owner.empty()&&builtin->generic_parameters.empty()){
+                const ApiOverload* signature=nullptr;for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()){signature=&candidate;break;}}
+                const auto leaf=builtin->owner.empty()?builtin->name:builtin->name.substr(builtin->name.find('.')+1);
+                if(!signature){std::size_t least=builtin->overloads.front().parameters.size(),most=0;for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;least=std::min(least,required);most=std::max(most,candidate.parameters.size());}result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+leaf+"' expects "+(least==most?std::to_string(least):std::to_string(least)+" to "+std::to_string(most))+" argument(s), found "+std::to_string(expr.arguments.size())});}
+                else for(std::size_t i=0;i<argument_types.size();++i){auto expected_type=substitute_type(signature->parameters[i].type,{"T"},builtin_bindings);const auto expected_name=type_spelling(expected_type);if(type_is(expected_type,TypeNodeKind::function)&&(argument_types[i].name=="function"||argument_types[i].name=="async_function"))continue;auto destination=resolve_type(expected_name);if(argument_types[i].valid()&&destination.valid()&&!compatible(argument_types[i],destination))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"argument "+std::to_string(i+1)+" to '"+leaf+"' expects "+expected_name+", found "+argument_types[i].name});}
+                if(!builtin->owner.empty())for(const auto& error:builtin->checked_errors)if(current_function_errors_.find(error)==current_function_errors_.end()&&catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+leaf+"' may throw checked error "+error+" not declared by current function\nhelp: handle "+error+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});
+                if(signature)return resolve_type(type_spelling(substitute_type(signature->return_type,{"T"},builtin_bindings)));
+            }
+            if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;
                 if(base.name.rfind("atomic<",0)==0){auto elem=generic_inner(base.name,"atomic<");if((m=="fetch_add"||m=="fetch_sub")&&elem=="bool")result.diagnostics.push_back(Diagnostic{expr.span,m+" is only available on integer atomic values"});if(m=="load"||m=="exchange"||m=="fetch_add"||m=="fetch_sub")return resolve_type(elem);if(m=="store")return {TypeKind::void_type,0,"void"};if(m=="compare_exchange")return builtin_type("bool");}
                 auto container_elem=[&](std::string_view head){return generic_inner(base.name,head);};
                 if(base.name.rfind("set<",0)==0||base.name.rfind("ordered_set<",0)==0){auto elem=base.name.rfind("ordered_set<",0)==0?container_elem("ordered_set<"):container_elem("set<");if(m=="add"||m=="remove")return {TypeKind::void_type,0,"void"};if(m=="contains")return builtin_type("bool");if(m=="length")return builtin_type("int");}
@@ -317,7 +311,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             const std::string member=arrow?expr.text.substr(2):expr.text;
             const auto base_kind=type_node(base.id).kind;
             if(arrow){const bool raw=base_kind==TypeNodeKind::raw_pointer;const bool safe=base_kind==TypeNodeKind::safe_pointer;if(!raw&&!safe)result.diagnostics.push_back(Diagnostic{expr.span,"-> member access requires T* or unsafe ptr<T>"});if(raw&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> member access requires unsafe block"});}
-            TypeId owner_id=base.id;if(base_kind==TypeNodeKind::reference||base_kind==TypeNodeKind::safe_pointer||base_kind==TypeNodeKind::raw_pointer)owner_id=type_element(owner_id);if(type_is(owner_id,TypeNodeKind::const_type))owner_id=type_element(owner_id);auto owner=type_spelling(owner_id);auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end())return resolve_type(f->second);}
+            TypeId owner_id=base.id;if(base_kind==TypeNodeKind::reference||base_kind==TypeNodeKind::safe_pointer||base_kind==TypeNodeKind::raw_pointer)owner_id=type_element(owner_id);if(type_is(owner_id,TypeNodeKind::const_type))owner_id=type_element(owner_id);auto owner=type_spelling(owner_id);if(const auto* field=api_field(member,owner))return resolve_type(type_spelling(field->type));auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end())return resolve_type(f->second);}
             return {TypeKind::named,0,"opaque"};
         }
         case Expr::Kind::safe_member: {
@@ -551,11 +545,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); checked_error_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); function_candidates_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
     named_types_.insert(api_named_types().begin(),api_named_types().end());
-    struct_fields_["exec_result"]={{"exit_code","int"},{"stdout","string"},{"stderr","string"}};
-    struct_fields_["http_response"]={{"status","int"},{"body","string"},{"headers","map<string,string>"}};
-    struct_fields_["http_request"]={{"method","string"},{"path","string"},{"body","string"},{"headers","map<string,string>"},{"query","map<string,string>"},{"params","map<string,string>"}};
-    struct_fields_["http_server_response"]={{"status","int"},{"body","string"},{"content_type","string"},{"headers","map<string,string>"}};
-    struct_fields_["process"]={{"in","process_in"},{"out","process_out"},{"err","process_out"}};
+    for(const auto& field:api_fields())struct_fields_[field.owner][field.name]=type_spelling(field.type);
     checked_error_types_.insert("Error");
     checked_error_types_.insert("IOError");
     checked_error_types_.insert("ParseError");

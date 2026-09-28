@@ -2,7 +2,6 @@
 #include "strut/api_registry.h"
 
 #include <algorithm>
-#include <array>
 #include <functional>
 #include <set>
 #include <sstream>
@@ -97,8 +96,8 @@ bool RuntimeResolution::contains(RuntimeComponentId id) const{return std::find(o
 std::vector<std::string> RuntimeResolution::link_libraries() const{std::vector<std::string> out;for(auto id:ordered)if(auto c=runtime_component(id))for(auto lib:c->link_libraries)if(std::find(out.begin(),out.end(),lib)==out.end())out.emplace_back(lib);return out;}
 std::string RuntimeResolution::describe() const{std::ostringstream o;for(std::size_t i=0;i<ordered.size();++i){if(i)o<<',';if(auto c=runtime_component(ordered[i]))o<<c->name;}return o.str();}
 RuntimeResolution resolve_runtime_component_graph(const std::vector<RuntimeComponent>& graph,const std::vector<RuntimeComponentId>& requested){
-    RuntimeResolution r;std::array<unsigned,25> state{};auto find=[&](Id id)->const RuntimeComponent*{for(const auto& c:graph)if(c.id==id)return &c;return nullptr;};
-    std::function<bool(Id)> visit=[&](Id id){auto n=static_cast<std::size_t>(id);auto component=n<state.size()?find(id):nullptr;if(!component){r.error="unknown runtime component";return false;}if(state[n]==2)return true;if(state[n]==1){r.error="runtime component dependency cycle";return false;}state[n]=1;for(auto dep:component->dependencies)if(!visit(dep))return false;state[n]=2;r.ordered.push_back(id);return true;};
+    RuntimeResolution r;std::unordered_map<Id,unsigned> state;state.reserve(graph.size());auto find=[&](Id id)->const RuntimeComponent*{for(const auto& c:graph)if(c.id==id)return &c;return nullptr;};
+    std::function<bool(Id)> visit=[&](Id id){auto component=find(id);if(!component){r.error="unknown runtime component";return false;}auto& mark=state[id];if(mark==2)return true;if(mark==1){r.error="runtime component dependency cycle";return false;}mark=1;for(auto dep:component->dependencies)if(!visit(dep))return false;mark=2;r.ordered.push_back(id);return true;};
     auto roots=requested;std::sort(roots.begin(),roots.end(),[](Id a,Id b){return static_cast<int>(a)<static_cast<int>(b);});roots.erase(std::unique(roots.begin(),roots.end()),roots.end());for(auto id:roots)if(!visit(id))break;r.fallback=r.contains(Id::full_fallback);return r;
 }
 RuntimeResolution resolve_runtime_components(const std::vector<RuntimeComponentId>& requested){return resolve_runtime_component_graph(registry(),requested);}

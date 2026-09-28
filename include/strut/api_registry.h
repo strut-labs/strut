@@ -26,8 +26,18 @@ struct ApiCallable {
     std::string reference_url;
 };
 
+struct ApiField {
+    std::string name;
+    std::string owner;
+    TypeId type{};
+    std::string summary;
+};
+
 const std::vector<ApiCallable>& api_callables();
 const ApiCallable* api_callable(std::string_view name, std::string_view owner = {});
+const std::vector<ApiField>& api_fields();
+const ApiField* api_field(std::string_view name, std::string_view owner);
+bool api_owner_matches(std::string_view schema_owner, std::string_view owner);
 const std::vector<std::string>& standard_modules();
 const std::vector<std::string>& api_named_types();
 std::string api_signature(const ApiCallable& callable, const ApiOverload& overload);
