@@ -35,6 +35,8 @@ int main(){
     require(api_callable("post_request_stream","http_server")&&api_callable("read_bytes","http_request_body"),"HTTP request streaming contract is registered");
     require(api_callable("post_request_stream","http_server")->overloads[0].parameters[1].type==intern_type("function<(http_request,http_request_body,http_response_writer)->void>"),"request streaming handler signature");
     require(api_callable("read_all_bytes","http_request_body")->overloads[0].parameters[0].optional,"request body read-all limit is optional");
+    require(api_field("cancellation","http_request")&&api_field("cancellation","http_request")->type==intern_type("cancellation_token"),"HTTP request cancellation token is registered");
+    require(!api_field("cancellation","http_request")->writable,"HTTP request cancellation token is read-only");
     require(api_callable("static","http_server")!=nullptr,"source-level HTTP static method is registered");
     require(api_callable("receive","channel<int>")!=nullptr&&type_spelling(api_callable("receive","channel<int>")->overloads[0].return_type)=="T?","generic method lookup");
     require(api_callable("accept_async","tcp_listener")!=nullptr&&api_callable("transaction","sqlite_db")!=nullptr,"backend methods are registered");

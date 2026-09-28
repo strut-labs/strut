@@ -31,6 +31,7 @@ struct ApiField {
     std::string owner;
     TypeId type{};
     std::string summary;
+    bool writable = true;
 };
 
 const std::vector<ApiCallable>& api_callables();

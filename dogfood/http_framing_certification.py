@@ -135,7 +135,7 @@ def main():
         ("host-ipv6", b"GET /get HTTP/1.1\r\nHost: [::1]:80\r\n\r\n", 200, b"get"),
         ("duplicate-generic-header", b"GET /get HTTP/1.1\r\nHost: localhost\r\nX-Test: one\r\nx-test: two\r\n\r\n", 400, None),
         ("premature-eof", b"POST /post HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nabc", 400, None),
-        ("trailing-request", b"GET /get HTTP/1.1\r\nHost: localhost\r\n\r\nGET /get HTTP/1.1\r\nHost: localhost\r\n\r\n", 200, b"get"),
+        ("trailing-request", b"GET /get HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\nGET /get HTTP/1.1\r\nHost: localhost\r\n\r\n", 200, b"get"),
         ("fragment-target", b"GET /get#fragment HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
         ("bad-percent-target", b"GET /bad%2 HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
         ("backslash-target", b"GET /bad\\path HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),

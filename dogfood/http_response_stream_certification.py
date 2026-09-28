@@ -42,7 +42,7 @@ def wait_until_listening(port, process):
 
 def request_bytes(port, path, version="HTTP/1.1"):
     with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
-        connection.sendall(f"GET {path} {version}\r\nHost: localhost\r\n\r\n".encode())
+        connection.sendall(f"GET {path} {version}\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode())
         response = bytearray()
         while True:
             chunk = connection.recv(65536)
@@ -292,7 +292,7 @@ def main():
                 raise RuntimeError("write-after-finish changed the completed response")
 
             with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
-                connection.sendall(b"GET /flush HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                connection.sendall(b"GET /flush HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
                 connection.settimeout(0.2)
                 first = connection.recv(4096)
                 if b"\r\n\r\n" not in first or b"later" in first:
@@ -418,7 +418,7 @@ def main():
             context = ssl.create_default_context(cafile=str(certificate))
             with socket.create_connection(("127.0.0.1", tls_port), timeout=5) as raw:
                 with context.wrap_socket(raw, server_hostname="localhost") as secure:
-                    secure.sendall(b"GET /tls HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    secure.sendall(b"GET /tls HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
                     response = bytearray()
                     while True:
                         chunk = secure.recv(4096)

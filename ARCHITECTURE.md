@@ -123,6 +123,23 @@ operations before final close so a descriptor cannot be reused underneath them.
 TLS handshakes use nonblocking OpenSSL progress with platform polling against an
 absolute deadline before entering the shared HTTP parser.
 
+Each admitted HTTP connection runs one sequential request loop. The body reader
+returns only validated post-body carry bytes, which become the next head parser's
+input; there is no second persistence parser. HTTP/1.1 persists by default and
+HTTP/1.0 only by explicit keep-alive. Reuse requires both body EOF and a finished,
+self-delimited response. Pipelined requests therefore preserve wire order without
+concurrent handlers. Idle publication and shutdown are linearized under the
+listener-generation lock, and upgrade detection is an explicit future ownership
+seam that currently rejects the request.
+
+Every dispatch owns one internal cancellation source and publishes only its token
+through `http_request`. Normal completion and every terminal request path cancel
+that source before release. Active sources are also registered with the listener
+generation so shutdown can wake cooperative work. Generated Strut threads inherit
+the execution context used to identify handler-initiated stop, preventing joined
+child work from waiting on its own request. Peer-disconnect observation remains
+transport-driven rather than a background monitor for CPU-only handlers.
+
 Buffered, static, error and streaming handler output passes through one validated
 response-head serializer and one uncommitted/committed/finished state machine.
 The transport exclusively owns Content-Type, Content-Length, Transfer-Encoding

@@ -33,7 +33,7 @@ def wait_until_listening(port, process):
 
 def raw_request(port, path, body=b""):
     payload = (
-        f"POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {len(body)}\r\n\r\n".encode()
+        f"POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
         + body
     )
     with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:

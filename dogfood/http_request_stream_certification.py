@@ -21,6 +21,12 @@ from http_response_stream_certification import (
 
 
 def raw_request(port, pieces, *, shutdown=False):
+    pieces = list(pieces)
+    for index, piece in enumerate(pieces):
+        marker = piece.find(b"\r\n\r\n")
+        if marker != -1 and b"\r\nConnection:" not in piece[:marker]:
+            pieces[index] = piece[:marker] + b"\r\nConnection: close" + piece[marker:]
+            break
     with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
         for piece in pieces:
             connection.sendall(piece)
@@ -352,7 +358,7 @@ function main(string command, string[] args) -> int : (NetworkError, TlsError, T
             with socket.create_connection(("127.0.0.1", tls_port), timeout=5) as raw:
                 with context.wrap_socket(raw, server_hostname="localhost") as secure:
                     secure.sendall(
-                        b"POST /echo HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n3\r\ntls\r\n0\r\n\r\n"
+                        b"POST /echo HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\ntls\r\n0\r\n\r\n"
                     )
                     response = bytearray()
                     while True:

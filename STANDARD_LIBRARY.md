@@ -38,13 +38,15 @@ The existing `istream` and `ostream` types are the generic input and output cont
 
 `cancellation_source` owns the authority to request cancellation. `source.token()` returns a cheap copyable `cancellation_token` that observes the same shared state. Sources are also copyable; all copies retain cancellation authority over that state. Destroying a source does not cancel, tokens remain valid after every source is destroyed, and `cancel()` is one-way, thread-safe, and idempotent.
 
-`token.cancelled()` performs non-blocking observation. `token.wait()` sleeps without busy-spinning until cancellation is requested. `token.throw_if_cancelled()` raises the checked `CancellationError`. Tokens cannot reset or request cancellation. CP6 represents only explicit cancellation; the internal terminal-state representation can gain timeout, disconnect, or shutdown reasons compatibly when those producers are introduced.
+`token.cancelled()` performs non-blocking observation. `token.wait()` sleeps without busy-spinning until cancellation is requested. `token.throw_if_cancelled()` raises the checked `CancellationError`. Tokens cannot reset or request cancellation. The same terminal state supports explicit sources and runtime-owned lifetime producers without exposing subsystem-specific token types.
 
 Native runtime facilities may subscribe to a token to wake blocking operations. Subscription is intentionally not public: registration cannot miss concurrent cancellation, removal waits for an in-flight callback, and callbacks run without the cancellation-state lock held.
 
 `process(program, args, token)` binds a copied token to the new process's `in`, `out`, and `err` handles. The two-argument form remains available and uses an independent token that is never cancelled. Existing stream methods do not take token parameters. Cancelling the bound token wakes blocked process-pipe reads and writes and raises `ExecError("process I/O cancelled", 125)`; it does not terminate or wait for the child.
 
 Native completion, including EOF, wins when it is observed in the same wake cycle as cancellation. A token already cancelled when an operation starts fails before I/O. If close and cancellation are both pending when a blocked operation resumes, cancellation wins; a blocked operation interrupted only by close raises `ExecError`. The existing text `read()` compatibility behavior still returns an empty string when invoked after close, while `read_bytes()` raises `ExecError`. Process pipes do not currently expose a timeout, and cancellation is not reported as timeout, EOF, peer close, or another I/O failure.
+
+Each dispatched `http_request` has a read-only `cancellation_token cancellation`. It is fresh for that request, including consecutive requests on one persistent connection, and is cancelled when the request lifetime ends normally or through handler, framing, transport, response, timeout, abort or shutdown failure. Peer disconnect notification is cooperative and may be delayed for CPU-only handlers that perform no transport operation. Binding this token to `process` cancels process-pipe I/O but does not terminate the child.
 
 ## HTTP request body
 
@@ -56,7 +58,7 @@ Fixed-length reads expose exactly the declared payload. HTTP/1.1 chunked reads e
 
 `http_response_writer` is the request-scoped binary-capable output handle used by `http_server.get_stream` and `post_stream`. It follows the stream vocabulary with `write`, `write_bytes`, `flush` and `finish`, while adding precommit `status`, `header`, `content_type` and transport-owned `content_length` configuration. Operations that can fail raise `NetworkError`.
 
-The first write or flush commits metadata. Metadata cannot change afterward, writes after finish fail, and finish is idempotent. Known-length writes must exactly match the declaration. Unknown-length HTTP/1.1 output is chunked internally; HTTP/1.0 output is close-delimited. The handle becomes inactive when its handler returns and never exposes raw HTTP chunk framing.
+The first write or flush commits metadata. Metadata cannot change afterward, writes after finish fail, and finish is idempotent. Known-length writes must exactly match the declaration. Unknown-length HTTP/1.1 output is chunked internally; HTTP/1.0 output is close-delimited. The handle becomes inactive when its handler returns and never exposes raw HTTP chunk framing. A persistent connection is reusable only after the request body reaches validated EOF and the writer finishes a self-delimited response.
 
 ## Filesystem
 

@@ -578,6 +578,10 @@ void emit_light_thread_runtime(std::ostringstream& o,const MinimalRuntimeFeature
     if(f.atomics)o << "#include <atomic>\n#include <type_traits>\n";
     o << R"STRUT_THREAD(
 struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
+#ifndef STRUT_EXECUTION_CONTEXT_DEFINED
+#define STRUT_EXECUTION_CONTEXT_DEFINED
+inline thread_local const void* strut_execution_context=nullptr;
+#endif
 class strut_thread {
 public:
     strut_thread()=default;
@@ -838,7 +842,7 @@ bool light_http_expr_ok(const IRExpr* e,bool& found){
     if(e->lambda_async||t.find("json")!=std::string::npos||t.find("sqlite_db")!=std::string::npos||t.find("process")!=std::string::npos||t.find("tls_")!=std::string::npos)return false;
     if(e->kind==IRExpr::Kind::identifier){
         if(e->text=="http_server"||e->text=="http_text"||e->text=="http_html")found=true;
-        static const char* heavy[]={"http_json_response","http_get","http_request","http_get_json","http_get_async","http_request_async","sqlite_open","exec","exec_shell","process","pipe_exec","embed_file","embed_dir"};
+        static const char* heavy[]={"http_json_response","http_get","http_request","http_get_json","http_get_async","http_request_async","sqlite_open","exec","exec_shell","process","pipe_exec","thread","embed_file","embed_dir"};
         for(const char* h:heavy)if(e->text==h)return false;
     }
     if(e->kind==IRExpr::Kind::member&&(e->text=="get_async"||e->text=="post_async"||e->text=="listen_tls"||e->text=="json"))return false;
@@ -864,15 +868,16 @@ bool light_http_stmt_ok(const IRStmt* st,bool& found){
 }
 bool program_uses_light_http_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
-    auto base=f;base.strings=false;base.bytes=false;emit_minimal_runtime(o,base);
+    auto base=f;base.strings=false;base.bytes=false;base.cancellation=false;emit_minimal_runtime(o,base);
     o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n#include <algorithm>\n#include <cctype>\n#include <limits>\n#include <atomic>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <chrono>\n";
     o << "#ifdef _WIN32\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/socket.h>\n#include <arpa/inet.h>\n#include <netdb.h>\n#include <unistd.h>\n#endif\n";
     o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";
+    generated_runtime::emit_cancellation(o);
     o << R"STRUT_HTTP(
 struct strut_string {
     std::string v;
@@ -1325,9 +1330,11 @@ public:
     strut_thread()=default;
     template<class F,class... A> explicit strut_thread(F&& f,A&&... a){
         error_=std::make_shared<std::exception_ptr>();
-        auto err=error_;
-        thread_=std::thread([err,fn=std::forward<F>(f),args=std::make_tuple(std::forward<A>(a)...)]() mutable {
+        auto err=error_;const void* context=strut_execution_context;
+        thread_=std::thread([err,context,fn=std::forward<F>(f),args=std::make_tuple(std::forward<A>(a)...)]() mutable {
+            const void* previous=strut_execution_context;strut_execution_context=context;
             try { std::apply(fn,std::move(args)); } catch(...) { *err=std::current_exception(); }
+            strut_execution_context=previous;
         });
     }
     strut_thread(const strut_thread&)=delete;strut_thread& operator=(const strut_thread&)=delete;

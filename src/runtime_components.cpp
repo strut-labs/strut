@@ -33,7 +33,7 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::async,"async",{Id::threading,Id::channels},{"future"},{}},
         {Id::networking,"networking",{Id::strings,Id::safe_pointer},{},{}},
         {Id::http_client,"http_client",{Id::networking,Id::json},{"curl/curl.h"},{"curl"}},
-        {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io,Id::threading,Id::mutex},{},{}},
+        {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io,Id::threading,Id::mutex,Id::cancellation},{},{}},
         {Id::http_server_tls,"http_server_tls",{Id::http_server},{"openssl/ssl.h","openssl/err.h"},{"ssl","crypto"}},
         {Id::sqlite,"sqlite",{Id::json,Id::safe_pointer},{"sqlite3.h"},{"sqlite3"}},
         {Id::embedded_assets,"embedded_assets",{Id::filesystem,Id::collections},{},{}},
@@ -59,7 +59,7 @@ void request_type(std::vector<Id>& out,TypeId type) {
         if(node.name=="atomic")add(Id::atomics);
         if(node.name.rfind("http_",0)==0)add(Id::networking);
     }
-    if(node.kind==TypeNodeKind::named){if(node.name=="bytes")add(Id::bytes);if(node.name=="cancellation_source"||node.name=="cancellation_token")add(Id::cancellation);if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
+    if(node.kind==TypeNodeKind::named){if(node.name=="bytes")add(Id::bytes);if(node.name=="cancellation_source"||node.name=="cancellation_token")add(Id::cancellation);if(node.name=="http_request"||node.name=="http_request_body"||node.name=="http_server_response"||node.name=="http_response_writer"||node.name=="http_server")add(Id::http_server);if(node.name=="http_response")add(Id::http_client);if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
     for(auto child:node.children)request_type(out,child);
 }
 void request_expr(std::vector<Id>& out,const IRExpr* e);
