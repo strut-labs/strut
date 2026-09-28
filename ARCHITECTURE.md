@@ -90,11 +90,15 @@ deduplicates IDs, emits dependencies before consumers in stable order, and rejec
 unknown IDs or dependency cycles. Component metadata owns external link libraries;
 the same resolved result now drives both source selection and native linking.
 
-Runtime source bodies are still physically grouped into proven slices and a full
-compatibility body. Component requirements choose among those bodies; legacy slice
-eligibility predicates remain only as safety assertions while bodies are separated
-further. Mixed component sets conservatively use the full body, preventing helper
-under-generation. This fallback is migration debt, not the feature-selection API.
+Runtime source bodies are physically grouped into proven slices and a full
+compatibility body. Shared component emitters in `generated_runtime.cpp` provide
+the executor, TCP, HTTP client, HTTP request/response helpers and active HTTP
+server to both paths, so those facilities have one maintained implementation.
+Component requirements choose among the bodies; remaining slice eligibility
+predicates are safety assertions while core, JSON, SQLite, filesystem and thread
+helpers are separated further. Mixed component sets conservatively use the full
+body, preventing helper under-generation. This fallback is migration debt, not
+the feature-selection API.
 
 Initialization and teardown are component-owned RAII declarations. Platform
 implementations share one component ID and select their body at emission time, so

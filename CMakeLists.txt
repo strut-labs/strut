@@ -29,6 +29,7 @@ add_library(strut_compiler STATIC
     src/operator.cpp
     src/ir.cpp
     src/codegen.cpp
+    src/generated_runtime.cpp
     src/runtime_components.cpp
     src/api_registry.cpp
     src/package.cpp

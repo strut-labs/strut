@@ -90,7 +90,7 @@ These are accepted baseline facts, not certified desirable behavior:
 - no streaming request-body or response-writer abstraction exists;
 - one native thread is created per accepted connection;
 - completed server workers and socket records are retained until listener shutdown;
-- light and full generated runtimes duplicate networking, HTTP and executor implementations;
+- remaining light/full duplication is limited to foundational core/string/JSON/SQLite and unrelated filesystem/thread helpers; executor, TCP, HTTP client/helpers and the active HTTP server have one implementation owner;
 - API knowledge is split among the registry, semantic analysis and code generation;
 - libcurl responses are unbounded buffered strings and transfers cannot be cancelled;
 - SQLite rows pass through JSON, lose exact large-integer semantics and do not expose BLOB values;
@@ -107,7 +107,7 @@ cancellation contracts must not prevent a future event-driven backend.
 
 - CP1: baseline and scope freeze complete.
 - CP2: canonical builtin API schema complete.
-- CP3: generated runtime implementation boundaries pending.
+- CP3: generated runtime implementation boundaries complete.
 - Review Gate 1 follows CP3. Do not begin bytes or stream implementation before approval.
 
 ## CP1 validation result
@@ -129,3 +129,13 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP2 adds no runtime capabilities and does not move generated runtime implementation boundaries; that remains CP3 work.
 - Compiler-visible correction: registered builtin methods now reject wrong argument counts/types and require their declared checked errors. Specialized free functions retain their existing semantic rules.
 - Validation: CMake build passed, CTest 16/16 passed, both HTTP certifications passed, native FFI linkage passed, and the independent regression suite passed 155/155.
+
+## CP3 generated-runtime result
+
+- `src/generated_runtime.cpp` and its private header now own component-specific emitted implementations for the executor, TCP socket/listener, HTTP client, HTTP request/response/query helpers and the active HTTP server lifecycle. `src/codegen.cpp` retains runtime selection and language lowering.
+- Light and fallback generation compose those same emitters. Generated programs remain self-contained C++; the new files are compiler implementation files and are not headers consumed by generated programs.
+- The obsolete `strut_http_server_legacy` implementation is no longer emitted. Only the lifecycle-aware server is present in generated server programs.
+- Component slicing is preserved: hello programs omit networking, curl, OpenSSL, SQLite and process runtime; HTTP clients use curl without server or direct OpenSSL server TLS; plain servers omit curl and OpenSSL; TLS servers include OpenSSL without curl; SQLite-only programs omit HTTP.
+- CP3 intentionally does not change bytes, streams, cancellation, HTTP semantics, WebSockets, PTYs, process behavior, SQLite behavior, crypto or archives.
+- Code generation tests now check single emitted implementations and slicing, and compile representative hello, HTTP client, plain HTTP server, TLS HTTP server and SQLite programs.
+- Validation: CMake build passed, CTest passed 16/16 including native compilation of the new representative fixtures, both HTTP certifications passed, native FFI linkage passed, and the independent regression suite passed 155/155.
