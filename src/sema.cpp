@@ -142,8 +142,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::boolean_literal: return {TypeKind::bool_type, 0, "bool"};
         case Expr::Kind::null_literal: return {TypeKind::null_type, 0, "null"};
         case Expr::Kind::array_literal: {
-            TypeId element;const auto& expected_node=type_node(expected);if(expected_node.kind==TypeNodeKind::vector||expected_node.kind==TypeNodeKind::fixed_array)element=type_element(expected);
+            const bool byte_literal=type_spelling(expected)=="bytes";
+            TypeId element;const auto& expected_node=type_node(expected);if(expected_node.kind==TypeNodeKind::vector||expected_node.kind==TypeNodeKind::fixed_array)element=type_element(expected);else if(byte_literal)element=intern_type("uint_8");
             if (expr.arguments.empty()) {if(element)expr.inferred_type=expected;return element?resolve_type(type_spelling(expected)) : TypeInfo{TypeKind::named,0,"opaque[]"};}
+            if(byte_literal){const auto byte_type=builtin_type("uint_8");for(const auto& argument:expr.arguments){auto value=infer_expression(result,*argument,element);const bool literal_ok=argument->kind==Expr::Kind::integer_literal&&integer_literal_fits(argument->text,byte_type);if(!literal_ok&&!compatible(value,byte_type))result.diagnostics.push_back(Diagnostic{argument->span,"byte literal element must fit uint_8"});}expr.inferred_type=expected;return {TypeKind::named,0,"bytes",expected};}
             auto first=infer_expression(result,*expr.arguments.front(),element);
             for(std::size_t i=1;i<expr.arguments.size();++i){auto next=infer_expression(result,*expr.arguments[i],element);if(first.valid()&&next.valid()&&!compatible(next,first))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"array literal element type mismatch at index "+std::to_string(i)+": expected "+first.name+", found "+next.name+"\nhelp: use one compatible element type or declare and populate separate typed arrays"});}
             TypeInfo inferred{TypeKind::named,0,(first.name.empty()?std::string("opaque"):first.name)+"[]"};expr.inferred_type=inferred.id;return inferred;
@@ -202,6 +204,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 return inner;
             }
             if (expr.text == "==" || expr.text == "!=" || expr.text == "<" || expr.text == "<=" || expr.text == ">" || expr.text == ">=" || expr.text == "&&" || expr.text == "||") {
+                if((left.name=="bytes"||right.name=="bytes")&&left.name!=right.name)result.diagnostics.push_back(Diagnostic{expr.span,"bytes equality requires two bytes values"});
                 return {TypeKind::bool_type, 0, "bool"};
             }
             if (expr.text == "<<" || expr.text == ">>") return left;
@@ -237,7 +240,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             }
             const ApiCallable* builtin=nullptr;std::string builtin_owner;TypeBindings builtin_bindings;
             if(expr.left&&expr.left->kind==Expr::Kind::identifier)builtin=api_callable(expr.left->text);
-            if(expr.left&&expr.left->kind==Expr::Kind::member&&expr.left->left){auto base=infer_expression(result,*expr.left->left);builtin_owner=base.name;builtin=api_callable(expr.left->text,builtin_owner);if(builtin){const auto& schema=type_node(intern_type(builtin->owner));const auto& actual=type_node(base.id);if(schema.kind==TypeNodeKind::generic&&actual.kind==TypeNodeKind::generic&&!schema.children.empty()&&!actual.children.empty())builtin_bindings[type_node(schema.children.front()).name]=actual.children.front();}}
+            if(expr.left&&expr.left->kind==Expr::Kind::member&&expr.left->left){TypeInfo base;if(expr.left->left->kind==Expr::Kind::identifier&&expr.left->left->text=="bytes")base={TypeKind::named,0,"bytes",intern_type("bytes")};else base=infer_expression(result,*expr.left->left);builtin_owner=base.name;builtin=api_callable(expr.left->text,builtin_owner);if(builtin){const auto& schema=type_node(intern_type(builtin->owner));const auto& actual=type_node(base.id);if(schema.kind==TypeNodeKind::generic&&actual.kind==TypeNodeKind::generic&&!schema.children.empty()&&!actual.children.empty())builtin_bindings[type_node(schema.children.front()).name]=actual.children.front();}}
             if(builtin_owner=="atomic<bool>"&&expr.left&&(expr.left->text=="fetch_add"||expr.left->text=="fetch_sub"))result.diagnostics.push_back(Diagnostic{expr.span,expr.left->text+" is only available on integer atomic values"});
             if(builtin&&!builtin->owner.empty()&&builtin->generic_parameters.empty()){
                 const ApiOverload* signature=nullptr;for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()){signature=&candidate;break;}}
@@ -268,6 +271,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "print") return {TypeKind::void_type, 0, "void"};
                 if (name == "println") return {TypeKind::void_type, 0, "void"};
                 if (name == "input") return expr.arguments.empty()?builtin_type("string"):TypeInfo{TypeKind::void_type,0,"void"};
+                if(name=="bytes"){if(expr.arguments.size()>1)result.diagnostics.push_back(Diagnostic{expr.span,"bytes(...) expects zero or one size argument"});if(!argument_types.empty()){const auto size_type=builtin_type("int_64");const bool literal_ok=expr.arguments.front()->kind==Expr::Kind::integer_literal&&integer_literal_fits(expr.arguments.front()->text,size_type);if(!literal_ok&&!compatible(argument_types.front(),size_type))result.diagnostics.push_back(Diagnostic{expr.arguments.front()->span,"bytes size must fit int_64"});}return {TypeKind::named,0,"bytes",intern_type("bytes")};}
                 if (name == "istream" || name == "ostream" || name == "sstream" || name == "ifstream" || name == "ofstream") return {TypeKind::named,0,name};
                 if (name == "exists" || name == "is_file" || name == "is_dir") { require_module(result, "filesystem", expr.span, name); return builtin_type("bool"); }
                 if (name == "ls" || name == "walk") { require_module(result, "filesystem", expr.span, name); return {TypeKind::named,0,"string[]"}; }
@@ -322,6 +326,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         }
         case Expr::Kind::index: {
             auto base=infer_expression(result,*expr.left);
+            if(base.name=="bytes"){
+                auto index=infer_expression(result,*expr.right);if(index.kind!=TypeKind::signed_int&&index.kind!=TypeKind::unsigned_int)result.diagnostics.push_back(Diagnostic{expr.right->span,"bytes index must be an integer"});
+                expr.inferred_type=intern_type("uint_8");return builtin_type("uint_8");
+            }
             if(type_is(base.id,TypeNodeKind::tuple)){
                 if(expr.right->kind!=Expr::Kind::integer_literal){result.diagnostics.push_back(Diagnostic{expr.right->span,"tuple index must be an integer literal"});return {};}
                 std::size_t idx=0;try{idx=static_cast<std::size_t>(std::stoull(expr.right->text));}catch(...){return {};}
@@ -403,7 +411,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                     auto inner=generic_inner(owner.name,"ptr<"); if(inner.empty())inner=generic_inner(owner.name,"raw_ptr<");
                     if(inner.rfind("const ",0)==0){result.diagnostics.push_back(Diagnostic{st.target->span,"cannot modify through pointer to const value"});inner=inner.substr(6);}
                     lhs=resolve_type(inner);
-                } else lhs=infer_expression(result,*st.target);
+                } else {if(st.target->kind==Expr::Kind::index&&st.target->left&&st.target->left->kind==Expr::Kind::identifier){auto* owner=lookup(st.target->left->text,SymbolNamespace::value);if(owner&&owner->is_const)result.diagnostics.push_back(Diagnostic{st.target->span,"cannot modify const value '"+st.target->left->text+"'"});}lhs=infer_expression(result,*st.target);}
             } else {
                 auto* target = lookup(st.name, SymbolNamespace::value);
                 if (!target) { result.diagnostics.push_back(Diagnostic{st.span, "assignment to unknown value '" + st.name + "'"}); break; }
@@ -411,7 +419,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 if (target->type_name.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"T& bindings cannot be reassigned"});
                 lhs=resolve_type(target->type_name);
             }
-            if (st.value) { auto rhs=infer_expression(result,*st.value,lhs.id);if(type_node(lhs.id).kind==TypeNodeKind::generic&&type_node(lhs.id).name=="atomic"&&rhs.id==lhs.id)result.diagnostics.push_back(Diagnostic{st.value->span,"atomic values cannot be assigned; use store(value.load()) explicitly"});else if(rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key="infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
+            if (st.value) { auto rhs=infer_expression(result,*st.value,lhs.id);const bool fitting_integer=st.value->kind==Expr::Kind::integer_literal&&(lhs.kind==TypeKind::signed_int||lhs.kind==TypeKind::unsigned_int)&&integer_literal_fits(st.value->text,lhs);if(type_node(lhs.id).kind==TypeNodeKind::generic&&type_node(lhs.id).name=="atomic"&&rhs.id==lhs.id)result.diagnostics.push_back(Diagnostic{st.value->span,"atomic values cannot be assigned; use store(value.load()) explicitly"});else if(!fitting_integer&&rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key="infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
             break;
         }
         case Stmt::Kind::type_alias:

@@ -15,6 +15,7 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::core,"core",{}, {"cstdint","iostream","stdexcept"},{}},
         {Id::strings,"strings",{Id::core},{"string","charconv","algorithm","cctype"},{}},
         {Id::collections,"collections",{Id::core},{"vector","array","map","unordered_map","set","unordered_set","queue","stack","deque","list","tuple"},{}},
+        {Id::bytes,"bytes",{Id::strings,Id::collections},{},{}},
         {Id::io,"io",{Id::strings},{"fstream","sstream"},{}},
         {Id::json,"json",{Id::strings,Id::collections},{"json.h"},{}},
         {Id::filesystem,"filesystem",{Id::strings,Id::collections,Id::io},{"filesystem"},{}},
@@ -57,7 +58,7 @@ void request_type(std::vector<Id>& out,TypeId type) {
         if(node.name=="atomic")add(Id::atomics);
         if(node.name.rfind("http_",0)==0)add(Id::networking);
     }
-    if(node.kind==TypeNodeKind::named){if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
+    if(node.kind==TypeNodeKind::named){if(node.name=="bytes")add(Id::bytes);if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
     for(auto child:node.children)request_type(out,child);
 }
 void request_expr(std::vector<Id>& out,const IRExpr* e);

@@ -20,13 +20,19 @@ Standard-library facilities are explicitly enabled with Strut module includes su
 
 Modules are named after the Strut surface type: `vector`, `deque`, `list`, `map`, `set`, `ordered_map`, `ordered_set`, `queue`, `stack`, `priority_queue`, and `tuple`.
 
+## Bytes
+
+`bytes` is the core owned binary value. `bytes()` creates an empty value and `bytes(size)` creates a zero-filled value. A contextually typed literal such as `bytes packet := [0, 127, 255];` accepts `uint_8` elements. Values deep-copy on assignment, compare by contents, and support mutable integer indexing, `length()`, `empty()`, and the half-open copying operation `slice(begin, end)`.
+
+Index and slice bounds are checked at runtime. Lengths and indexes use `int_64`; the addressable limit is the smaller of the platform container limit and `int_64` maximum. `bytes.from_string(text)` and `value.to_string()` are explicit, lossless copies of string code units. They do not validate, decode, or imply UTF-8, and there is no implicit string/bytes conversion.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.
 
 `remove` removes one file or an empty directory. `remove_all` recursively removes a tree. Both accept a scalar path or a vector/array of paths. `copy([a,b], dest)` and `move([a,b], dest)` place each source under the existing destination directory using its basename.
 
-`read_file` performs a size-aware single-allocation bulk read. `read_bytes` returns `bytes` (`uint_8` storage). `write_file` and `append_file` accept either text or bytes. Stream APIs remain available for incremental I/O.
+`read_file` performs a size-aware single-allocation bulk read. `read_bytes` returns `bytes`. `write_file` and `append_file` accept either text or bytes. Stream APIs remain available for incremental I/O.
 
 Filesystem failures use the checked `FilesystemError` type.
 

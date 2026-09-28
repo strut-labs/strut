@@ -4,6 +4,33 @@
 
 namespace strut::generated_runtime {
 
+void emit_bytes(std::ostream& out) {
+    out << R"STRUT_BYTES(
+class strut_bytes {
+public:
+    strut_bytes()=default;
+    explicit strut_bytes(std::int64_t size):value_(checked_size(size)){}
+    strut_bytes(std::initializer_list<std::uint8_t> value):value_(value){}
+    static strut_bytes from_string(const strut_string& value){strut_bytes out;out.value_.assign(value.v.begin(),value.v.end());return out;}
+    strut_string to_string() const{return value_.empty()?strut_string():strut_string(std::string(reinterpret_cast<const char*>(value_.data()),value_.size()));}
+    std::int64_t size() const{if(value_.size()>static_cast<std::size_t>(INT64_MAX))throw std::length_error("bytes length exceeds int_64");return static_cast<std::int64_t>(value_.size());}
+    bool empty() const noexcept{return value_.empty();}
+    std::uint8_t& at(std::int64_t index){return value_.at(checked_index(index));}
+    const std::uint8_t& at(std::int64_t index) const{return value_.at(checked_index(index));}
+    strut_bytes slice(std::int64_t begin,std::int64_t end) const{if(begin<0||end<begin||static_cast<std::uint64_t>(end)>value_.size())throw std::out_of_range("bytes slice out of range");strut_bytes out;out.value_.assign(value_.begin()+begin,value_.begin()+end);return out;}
+    std::uint8_t* data() noexcept{return value_.data();}
+    const std::uint8_t* data() const noexcept{return value_.data();}
+    std::size_t native_size() const noexcept{return value_.size();}
+    friend bool operator==(const strut_bytes& a,const strut_bytes& b){return a.value_==b.value_;}
+    friend bool operator!=(const strut_bytes& a,const strut_bytes& b){return !(a==b);}
+private:
+    static std::size_t checked_size(std::int64_t size){if(size<0)throw std::length_error("bytes size cannot be negative");return static_cast<std::size_t>(size);}
+    std::size_t checked_index(std::int64_t index) const{if(index<0||static_cast<std::uint64_t>(index)>=value_.size())throw std::out_of_range("bytes index out of range");return static_cast<std::size_t>(index);}
+    std::vector<std::uint8_t> value_;
+};
+)STRUT_BYTES";
+}
+
 void emit_executor(std::ostream& out) {
     out << R"STRUT_ASYNC(
 class strut_executor {

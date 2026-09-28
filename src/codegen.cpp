@@ -96,7 +96,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="bool") return "bool";
     if(t=="string") return "strut_string";
     if(t=="json") return "json::Document";
-    if(t=="bytes") return "std::vector<std::uint8_t>";
+    if(t=="bytes") return "strut_bytes";
     if(t=="istream") return "strut_istream";
     if(t=="ostream") return "strut_ostream";
     if(t=="sstream") return "strut_sstream";
@@ -197,6 +197,7 @@ std::string json_expr(const IRExpr& e){
     }
 }
 std::string expr(const IRExpr& e){
+    if(e.kind==IRExpr::Kind::member&&e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="bytes"&&e.text=="from_string")return "strut_bytes::from_string";
     switch(e.kind){
         case IRExpr::Kind::identifier: if(e.text=="this") return "(*this)"; return e.text;
         case IRExpr::Kind::integer_literal: case IRExpr::Kind::floating_literal: case IRExpr::Kind::boolean_literal: return e.text;
@@ -237,6 +238,7 @@ std::string expr(const IRExpr& e){
                 if(m=="merge_deep"&&e.arguments.size()==1)return "strut_json_merge_deep("+base+","+expr(*e.arguments[0])+")";
             }
             if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.arguments.size()==1&&e.arguments[0]->kind==IRExpr::Kind::string_literal){if(e.left->text=="embed_file")return compile_embed_file(e.arguments[0]->text);if(e.left->text=="embed_dir")return compile_embed_dir(e.arguments[0]->text);}
+            if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="bytes"){std::string out="strut_bytes(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             std::string name=expr(*e.left); if(name=="new"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ptr"&&e.arguments.size()==1)return "strut_raw("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="weak"&&e.arguments.size()==1)return "strut_weak("+expr(*e.arguments[0])+")"; if(name=="print"||name=="println"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="is_file") name="strut_fs_is_file"; else if(name=="is_dir") name="strut_fs_is_dir"; else if(name=="file_size") name="strut_fs_file_size"; else if(name=="modified") name="strut_fs_modified"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="remove_all") name="strut_fs_remove_all"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="walk") name="strut_fs_walk"; else if(name=="cwd") name="strut_fs_cwd"; else if(name=="cd") name="strut_fs_cd"; else if(name=="absolute") name="strut_fs_absolute"; else if(name=="canonical") name="strut_fs_canonical"; else if(name=="parent") name="strut_fs_parent"; else if(name=="filename") name="strut_fs_filename"; else if(name=="extension") name="strut_fs_extension"; else if(name=="stem") name="strut_fs_stem"; else if(name=="join_path") name="strut_fs_join_path"; else if(name=="read_file") name="strut_fs_read_file"; else if(name=="read_bytes") name="strut_fs_read_bytes"; else if(name=="write_file") name="strut_fs_write_file"; else if(name=="append_file") name="strut_fs_append_file"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=call_argument(*e.arguments[i]);}return out+")";
@@ -309,7 +311,7 @@ bool minimal_expr_ok(const IRExpr* e){
     if(e->lambda_async)return false;
     if(e->kind==IRExpr::Kind::member){
         const auto& m=e->text;
-        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve")return false;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="slice"&&m!="from_string"&&m!="to_string")return false;
     }
     if(!minimal_expr_ok(e->left.get())||!minimal_expr_ok(e->right.get())||!minimal_expr_ok(e->lambda_expression.get()))return false;
     for(const auto& a:e->arguments)if(!minimal_expr_ok(a.get()))return false;
@@ -338,7 +340,7 @@ bool light_thread_expr_ok(const IRExpr* e){
     if(e->lambda_async)return false;
     if(e->kind==IRExpr::Kind::member){
         const auto& m=e->text;
-        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="join"&&m!="joinable"&&m!="load"&&m!="store"&&m!="exchange"&&m!="compare_exchange"&&m!="fetch_add"&&m!="fetch_sub")return false;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="slice"&&m!="from_string"&&m!="to_string"&&m!="join"&&m!="joinable"&&m!="load"&&m!="store"&&m!="exchange"&&m!="compare_exchange"&&m!="fetch_add"&&m!="fetch_sub")return false;
     }
     if(!light_thread_expr_ok(e->left.get())||!light_thread_expr_ok(e->right.get())||!light_thread_expr_ok(e->lambda_expression.get()))return false;
     for(const auto& a:e->arguments)if(!light_thread_expr_ok(a.get()))return false;
@@ -366,6 +368,7 @@ bool program_uses_light_thread_runtime(const IRProgram& p){
 
 struct MinimalRuntimeFeatures {
     bool strings=false;
+    bool bytes=false;
     bool atomics=false;
     bool pointers=false;
     bool nullable=false;
@@ -396,6 +399,7 @@ struct MinimalRuntimeFeatures {
 };
 void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& f){
     if(t.find("string")!=std::string::npos)f.strings=true;
+    if(t=="bytes"){f.bytes=true;f.strings=true;f.vector=true;}
     if(t.rfind("atomic<",0)==0)f.atomics=true;
     if(t.find("ptr<")!=std::string::npos||t.find("ref<")!=std::string::npos)f.pointers=true;
     if(t.find("function<")!=std::string::npos)f.function=true;
@@ -461,7 +465,7 @@ void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f)
     if(f.map||f.nullable||f.pointers)o << "#include <type_traits>\n";
     if(f.strings||f.nullable||f.pointers||f.map_insert)o << "#include <utility>\n";
     if(f.sort)o << "#include <algorithm>\n";
-    if(f.reduce||f.pointers)o << "#include <stdexcept>\n";
+    if(f.reduce||f.pointers||f.bytes)o << "#include <stdexcept>\n";
     if(f.pointers)o << "#include <memory>\n#include <cstdlib>\n#ifdef _WIN32\n#ifndef WIN32_LEAN_AND_MEAN\n#define WIN32_LEAN_AND_MEAN\n#endif\n#ifndef NOMINMAX\n#define NOMINMAX\n#endif\n#include <windows.h>\n#else\n#include <execinfo.h>\n#endif\n";
     if(f.pointers){o << R"CPP(
 template<class T> class strut_ref {
@@ -505,6 +509,7 @@ inline bool operator!=(const strut_string& a,const strut_string& b){return !(a==
 inline bool operator<(const strut_string& a,const strut_string& b){return a.v<b.v;}
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )CPP";}
+    if(f.bytes)generated_runtime::emit_bytes(o);
     if(f.nullable){o << R"CPP(
 struct strut_null_t {
     template<class T> operator std::optional<T>() const{return std::nullopt;}
@@ -679,7 +684,7 @@ bool program_uses_light_json_runtime(const IRProgram& p){
     bool found=false;for(const auto& st:p.statements)if(!light_json_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_json_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
-    auto base=f;base.strings=false;emit_minimal_runtime(o,base);
+    auto base=f;base.strings=false;base.bytes=false;emit_minimal_runtime(o,base);
     o << "#include \"json.h\"\n#include <string>\n#include <vector>\n#include <stdexcept>\n#include <charconv>\n#include <cctype>\n#include <utility>\n#include <functional>\n";
     o << R"STRUT_JSON_BASE(
 struct strut_string {
@@ -702,6 +707,7 @@ namespace std { template<> struct hash<strut_string> { size_t operator()(const s
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
 inline bool strut_contains(const strut_string& s,const strut_string& x){return s.contains(x);}
 )STRUT_JSON_BASE";
+    if(f.bytes)generated_runtime::emit_bytes(o);
     o << R"STRUT_JSON(
 inline json::Document strut_json_value(const json::Document& d){return d;}
 inline json::Document strut_json_value(const strut_string& s){return json::Document(s.v);}
@@ -834,7 +840,7 @@ bool program_uses_light_http_runtime(const IRProgram& p){
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
-    auto base=f;base.strings=false;emit_minimal_runtime(o,base);
+    auto base=f;base.strings=false;base.bytes=false;emit_minimal_runtime(o,base);
     o << "#include <string>\n#include <vector>\n#include <unordered_map>\n#include <functional>\n#include <memory>\n#include <sstream>\n#include <stdexcept>\n#include <utility>\n#include <cstdlib>\n#include <algorithm>\n#include <cctype>\n#include <atomic>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <chrono>\n";
     o << "#ifdef _WIN32\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n#endif\n";
     o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";
@@ -850,6 +856,7 @@ inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b)
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )STRUT_HTTP";
+    if(f.bytes)generated_runtime::emit_bytes(o);
     generated_runtime::emit_tcp(o,false,false);
     generated_runtime::emit_http_server_types(o,false);
     generated_runtime::emit_http_server(o,false,false);
@@ -923,7 +930,7 @@ void collect_filesystem_stmt_features(const IRStmt* st,FilesystemRuntimeFeatures
 }
 FilesystemRuntimeFeatures filesystem_features(const IRProgram& p){FilesystemRuntimeFeatures f;for(const auto& st:p.statements)collect_filesystem_stmt_features(st.get(),f);return f;}
 void emit_light_filesystem_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f,const FilesystemRuntimeFeatures& fs){
-    auto base=f;base.strings=false;emit_minimal_runtime(o,base);
+    auto base=f;base.strings=false;base.bytes=false;emit_minimal_runtime(o,base);
     o << "#include <string>\n#include <filesystem>\n#include <stdexcept>\n#include <utility>\n";
     if(fs.metadata)o << "#include <chrono>\n";
     if(fs.mutate||fs.list)o << "#include <algorithm>\n#include <vector>\n";
@@ -948,6 +955,7 @@ namespace std { template<> struct hash<strut_string>{size_t operator()(const str
 inline std::filesystem::path strut_fs_path(const strut_string& s){return std::filesystem::path(s.v);}
 inline void strut_fs_fail(const char* op,const std::error_code& ec){if(ec)throw strut_checked_error("FilesystemError",std::string(op)+": "+ec.message());}
 )STRUT_FS_BASE";
+    if(fs.io||f.bytes)generated_runtime::emit_bytes(o);
     if(fs.metadata)o << R"STRUT_FS_META(
 inline bool strut_fs_exists(const strut_string& p){std::error_code ec;bool v=std::filesystem::exists(strut_fs_path(p),ec);strut_fs_fail("exists",ec);return v;}
 inline bool strut_fs_is_file(const strut_string& p){std::error_code ec;bool v=std::filesystem::is_regular_file(strut_fs_path(p),ec);strut_fs_fail("is_file",ec);return v;}
@@ -972,11 +980,11 @@ inline std::vector<strut_string> strut_fs_walk(const strut_string& p){std::error
 )STRUT_FS_LIST";
     if(fs.io)o << R"STRUT_FS_IO(
 inline strut_string strut_fs_read_file(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_file: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_file: unable to determine file size");std::string out(static_cast<std::size_t>(end),'\0');f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(out.data(),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_file: short read");return strut_string(std::move(out));}
-inline std::vector<std::uint8_t> strut_fs_read_bytes(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_bytes: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_bytes: unable to determine file size");std::vector<std::uint8_t> out(static_cast<std::size_t>(end));f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_bytes: short read");return out;}
+inline strut_bytes strut_fs_read_bytes(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_bytes: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_bytes: unable to determine file size");strut_bytes out(static_cast<std::int64_t>(end));f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.native_size())))throw strut_checked_error("FilesystemError","read_bytes: short read");return out;}
 inline void strut_fs_write_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
-inline void strut_fs_write_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
+inline void strut_fs_write_file(const strut_string& p,const strut_bytes& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.native_size()))))throw strut_checked_error("FilesystemError","write_file failed");}
 inline void strut_fs_append_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
-inline void strut_fs_append_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
+inline void strut_fs_append_file(const strut_string& p,const strut_bytes& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.native_size()))))throw strut_checked_error("FilesystemError","append_file failed");}
 )STRUT_FS_IO";
     if(fs.mutate)o << R"STRUT_FS_MUT(
 inline void strut_fs_make_dir(const strut_string& p){std::error_code ec;std::filesystem::create_directories(strut_fs_path(p),ec);strut_fs_fail("make_dir",ec);}
@@ -1073,7 +1081,7 @@ inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.
 inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
 namespace std { template<> struct hash<strut_string> { size_t operator()(const strut_string& s) const noexcept { return std::hash<std::string>{}(s.v); } }; }
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
-
+)CPP";generated_runtime::emit_bytes(o);o<<R"CPP(
 class strut_ostream {
 public:
     strut_ostream()=default; explicit strut_ostream(std::ostream& s):p_(&s){}
@@ -1211,11 +1219,11 @@ inline strut_string strut_fs_extension(const strut_string& p){return strut_fs_pa
 inline strut_string strut_fs_stem(const strut_string& p){return strut_fs_path(p).stem().string();}
 template<class... Rest> inline strut_string strut_fs_join_path(const strut_string& a,const Rest&... rest){std::filesystem::path p=strut_fs_path(a);((p/=strut_fs_path(rest)),...);return p.lexically_normal().string();}
 inline strut_string strut_fs_read_file(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_file: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_file: unable to determine file size");std::string out(static_cast<std::size_t>(end),'\0');f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(out.data(),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_file: short read");return strut_string(std::move(out));}
-inline std::vector<std::uint8_t> strut_fs_read_bytes(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_bytes: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_bytes: unable to determine file size");std::vector<std::uint8_t> out(static_cast<std::size_t>(end));f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.size())))throw strut_checked_error("FilesystemError","read_bytes: short read");return out;}
+inline strut_bytes strut_fs_read_bytes(const strut_string& p){std::ifstream f(strut_fs_path(p),std::ios::binary|std::ios::ate);if(!f)throw strut_checked_error("FilesystemError","read_bytes: unable to open path");auto end=f.tellg();if(end<0)throw strut_checked_error("FilesystemError","read_bytes: unable to determine file size");strut_bytes out(static_cast<std::int64_t>(end));f.seekg(0,std::ios::beg);if(!out.empty()&&!f.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.native_size())))throw strut_checked_error("FilesystemError","read_bytes: short read");return out;}
 inline void strut_fs_write_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
-inline void strut_fs_write_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","write_file failed");}
+inline void strut_fs_write_file(const strut_string& p,const strut_bytes& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.native_size()))))throw strut_checked_error("FilesystemError","write_file failed");}
 inline void strut_fs_append_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
-inline void strut_fs_append_file(const strut_string& p,const std::vector<std::uint8_t>& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
+inline void strut_fs_append_file(const strut_string& p,const strut_bytes& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.native_size()))))throw strut_checked_error("FilesystemError","append_file failed");}
 inline std::optional<strut_string> strut_env(const strut_string& name){const char* v=std::getenv(name.v.c_str());if(!v)return std::nullopt;return strut_string(v);}
 inline void strut_set_env(const strut_string& name,const strut_string& value){
 #ifdef _WIN32

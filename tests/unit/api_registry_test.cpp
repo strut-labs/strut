@@ -37,6 +37,10 @@ int main(){
     require(api_field("status","http_response")&&type_spelling(api_field("status","http_response")->type)=="int_32","HTTP fields are registered");
     require(api_field("out","process")&&type_spelling(api_field("out","process")->type)=="process_out","process fields are registered");
     require(api_callable("limits","http_server")->checked_errors==std::vector<std::string>{"NetworkError"},"HTTP limits checked error metadata");
+    require(api_callable("slice","bytes")&&type_spelling(api_callable("slice","bytes")->overloads[0].return_type)=="bytes","bytes slice is registered");
+    require(api_callable("from_string","bytes")&&api_callable("to_string","bytes"),"explicit bytes string conversions are registered");
+    require(api_callable("bytes")&&api_callable("bytes")->overloads.size()==2,"bytes constructors are registered");
+    require(api_callable("write_file")->overloads.size()==2&&type_spelling(api_callable("write_file")->overloads[1].parameters[1].type)=="bytes","filesystem bytes overload is registered");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
     require(overloadable_operator("++",OperatorFixity::prefix),"prefix increment metadata");

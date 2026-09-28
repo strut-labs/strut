@@ -12,6 +12,7 @@ enum class RuntimeComponentId {
     core,
     strings,
     collections,
+    bytes,
     io,
     json,
     filesystem,

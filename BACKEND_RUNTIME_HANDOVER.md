@@ -108,7 +108,9 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP1: baseline and scope freeze complete.
 - CP2: canonical builtin API schema complete.
 - CP3: generated runtime implementation boundaries complete.
-- Review Gate 1 follows CP3. Do not begin bytes or stream implementation before approval.
+- CP4: first-class owned bytes values complete.
+- CP5: generic binary stream contracts pending.
+- Review Gate 2 follows CP5. Do not begin cancellation before approval.
 
 ## CP1 validation result
 
@@ -139,3 +141,14 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP3 intentionally does not change bytes, streams, cancellation, HTTP semantics, WebSockets, PTYs, process behavior, SQLite behavior, crypto or archives.
 - Code generation tests now check single emitted implementations and slicing, and compile representative hello, HTTP client, plain HTTP server, TLS HTTP server and SQLite programs.
 - Validation: CMake build passed, CTest passed 16/16 including native compilation of the new representative fixtures, both HTTP certifications passed, native FFI linkage passed, and the independent regression suite passed 155/155.
+
+## CP4 bytes result
+
+- `bytes` is one owned, mutable binary value backed by contiguous `uint_8` storage. Assignment and parameter passing copy the value; equality compares contents.
+- `bytes()` creates an empty value, `bytes(size)` creates a zero-filled value, and contextually typed literals accept values from 0 through 255.
+- Integer indexing returns `uint_8` and supports mutation. Indexes and half-open `slice(begin, end)` ranges are runtime-bounds-checked; slices own a copy.
+- `length()` returns `int_64`, `empty()` distinguishes zero length, and the addressable limit is the smaller of the native container limit and `int_64` maximum.
+- `bytes.from_string` and `to_string` explicitly copy code units without UTF-8 validation. No implicit text/binary conversion exists.
+- Filesystem `read_bytes`, `write_file` and `append_file` use the same bytes representation directly. The API registry owns bytes methods and filesystem overload metadata; sema retains contextual literal and indexed-mutation language rules.
+- The bytes runtime component and implementation emitter add no native link dependency. Focused generated-code checks keep ordinary bytes programs free of networking, curl, OpenSSL, SQLite and process runtime.
+- Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes certification passed, native FFI linkage passed, and the independent regression suite passed 157/157.
