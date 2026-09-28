@@ -106,6 +106,11 @@ copied token context. That ownership is explicit at process construction; pipe
 read/write signatures remain transport-neutral. Native wake objects and handle
 lifetime synchronization stay inside the generated process implementation.
 
+HTTP request intake separates transport acquisition from a pure validated
+request-head/framing result and exact body acquisition. Routing still receives a
+buffered request, but later body streaming can replace the body sink without
+redefining request-line, header, Host, Content-Length or Transfer-Encoding rules.
+
 Initialization and teardown are component-owned RAII declarations. Platform
 implementations share one component ID and select their body at emission time, so
 platform selection does not create a second dependency graph.

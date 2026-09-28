@@ -30,7 +30,7 @@ JSON parsing uses JSONIC. Network/database/file data remains untrusted input and
 
 libcurl client TLS keeps certificate and hostname verification enabled by default. Disabling verification must never be an accidental default.
 
-The built-in server supports HTTP and OpenSSL-backed HTTPS. TLS 1.2 is the minimum, certificate/key material is validated before listening, failures never fall back to plaintext, and client/server lifecycle paths are release-certified. HTTP/2, ALPN-driven protocol upgrades, certificate issuance/rotation, and ACME remain outside the implemented surface.
+The built-in server supports strict HTTP/1.0 and HTTP/1.1 plus OpenSSL-backed HTTPS. Request lines, field syntax, Host, Content-Length and Transfer-Encoding are validated before dispatch. Duplicate Content-Length, TE/CL combinations, unsupported transfer framing, controls, folded fields and ambiguous line endings fail closed. TLS 1.2 is the minimum, certificate/key material is validated before listening, failures never fall back to plaintext, and client/server lifecycle paths are release-certified. HTTP/2, chunked request decoding, ALPN-driven protocol upgrades, certificate issuance/rotation, and ACME remain outside the implemented surface.
 
 ## Concurrency
 

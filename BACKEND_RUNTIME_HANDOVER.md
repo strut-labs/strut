@@ -64,6 +64,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 python3 dogfood/http_lifecycle_certification.py build/strut
 python3 dogfood/backend_baseline_certification.py build/strut
+python3 dogfood/http_framing_certification.py build/strut
 python3 tests/ffi/run_native_link_tests.py build/strut
 python3 ../strut-regression-suite/runner.py --compiler build/strut
 ```
@@ -77,14 +78,15 @@ rejection, a trusted private CA, and the libcurl client/server path.
 
 ## Known baseline limitations
 
-These are accepted baseline facts, not certified desirable behavior:
+These are the remaining accepted baseline facts after CP8:
 
 - server request bodies are completely buffered before dispatch;
 - server responses are completely buffered before writing;
 - successful and error responses use `Connection: close`;
-- only exact-case `Content-Length` controls request framing;
-- `Transfer-Encoding` and chunked request bodies are unsupported;
-- request headers are case-sensitive and duplicate values are overwritten;
+- strict HTTP/1.0 and HTTP/1.1 request heads are supported; HTTP/2 is rejected;
+- one case-insensitive `Content-Length` controls request framing; every duplicate is rejected;
+- `Transfer-Encoding` is recognized and rejected because chunked request bodies remain unsupported;
+- repeated fields are detected case-insensitively and rejected while the public request header map remains single-valued; accepted keys are lowercase;
 - no protocol-upgrade or WebSocket path exists;
 - handlers receive no request cancellation or disconnect signal;
 - no streaming request-body or response-writer abstraction exists;
@@ -113,6 +115,8 @@ cancellation contracts must not prevent a future event-driven backend.
 - Review Gate 2 approved.
 - CP6: unified cancellation primitives complete.
 - CP7: cancellable blocking process handles complete.
+- Review Gate 3 approved.
+- CP8: strict HTTP/1 request parsing and framing complete.
 
 ## CP1 validation result
 
@@ -184,3 +188,11 @@ cancellation contracts must not prevent a future event-driven backend.
 - Linux and macOS use nonblocking process descriptors with `poll` and an operation-local wake pipe. Existing thread-local SIGPIPE handling remains intact without holding the signal coordination mutex across blocking progress. Windows uses overlapped named pipes and operation-local events with `CancelIoEx`.
 - Linux certification exercises 10 runs of 10 consecutive in-process cancellation cycles, plus pipe-capacity-blocked writes, independent tokens, close, EOF, normal completion and pre-cancellation. macOS and Windows paths are implemented but await their hosted CI runs.
 - Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes, stream, CP6 cancellation and CP7 process-cancellation certifications passed, native FFI linkage passed, and the independent regression suite passed 161/161.
+
+## CP8 strict HTTP framing result
+
+- HTTP and HTTPS share one request-head parser for strict HTTP/1.0 and HTTP/1.1 request lines, origin-form targets, Host authority, field syntax and body framing. Public accepted header keys are lowercase and every repeated field is rejected while the public map remains single-valued.
+- One unsigned decimal `Content-Length` is supported and bounded before allocation or body reads. Transfer-Encoding syntax is validated, every TE/CL combination fails with 400, malformed or non-final-chunked lists fail with 400, and valid unsupported chunked-final lists fail with 501.
+- Request-head validation produces a framing result before exact bounded body acquisition. Premature EOF fails closed, bytes after the validated body cannot become another request, and malformed requests do not reach handlers. Buffered handlers and `Connection: close` remain unchanged.
+- The black-box framing certification covers 51 plaintext syntax, limit and smuggling cases, HTTPS parser parity, and TLS head/body truncation. Abrupt TLS truncation may close without an HTTP response because the record channel is already broken. Cross-platform compiler CI runs the certification; no duplicate declarative regression fixture was added because that runner does not orchestrate raw sockets.
+- Validation: CMake build passed, CTest passed 16/16, HTTP framing, lifecycle and backend baseline certifications passed, bytes, stream, CP6 cancellation and CP7 process-cancellation certifications passed, native FFI linkage passed, and the independent regression suite passed 161/161. The final adversarial security and portability review found no blocking defects; macOS, Windows and ARM64 execution remains delegated to hosted CI.

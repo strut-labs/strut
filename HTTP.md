@@ -27,6 +27,12 @@ app.get("/health", (http_request request) => { return http_text("ok"); });
 app.listen("127.0.0.1", 8080);
 ```
 
-The timeout arguments are read, write, idle and graceful-shutdown milliseconds. The limit arguments are maximum body bytes, header bytes, header count and active connections. Defaults match the values above. Malformed requests and operational limits produce controlled 400, 405, 413, 431, 500 or 503 responses; handler failures do not expose native C++ details.
+The timeout arguments are read, write, idle and graceful-shutdown milliseconds. The limit arguments are maximum body bytes, header bytes, header count and active connections. Defaults match the values above. Malformed requests and operational limits produce controlled 400, 405, 413, 414, 431, 500, 501, 503 or 505 responses; handler failures do not expose native C++ details.
+
+The server accepts strict HTTP/1.0 and HTTP/1.1 request heads. Request lines require exact space separators and origin-form targets. HTTP/1.1 requires exactly one valid `Host`; HTTP/1.0 permits zero or one. Header names use case-insensitive protocol matching, field syntax and control bytes are validated, and obsolete folded fields are rejected. Parsed occurrences are retained internally; because the current public request header type is single-valued, every repeated field name is conservatively rejected and accepted map keys are normalized to lowercase.
+
+Request bodies remain buffered. One valid `Content-Length` is accepted case-insensitively; duplicate, signed, comma-separated, malformed, overflowing or conflicting lengths are rejected. Length is bounded before allocation or body reads. `Transfer-Encoding` is recognized but unsupported: malformed or non-chunked-final coding lists and every TE/CL combination receive 400, while a syntactically valid list ending in `chunked` receives 501 because decoding is not implemented. The server reads exactly the validated fixed body length and closes after one response, so trailing bytes cannot become another request.
+
+Plaintext premature EOF receives 400. A TLS connection truncated below the HTTP layer always fails closed without handler dispatch; when the TLS record channel is already broken, the server may close without attempting an HTTP error response.
 
 For signal-driven services, start `listen` on a Strut thread, call `wait_for_shutdown_signal()`, then `stop()` and join the listener thread. The runtime signal handler only records the event; ordinary Strut code runs outside raw OS signal context.
