@@ -28,6 +28,10 @@ int main(){
     require(api_callable("listen_tls","http_server")!=nullptr,"HTTPS listen method lookup");
     require(api_callable("get_async","http_server")!=nullptr&&api_callable("post_async","http_server")!=nullptr,"async HTTP routes are registered");
     require(type_spelling(api_callable("get_async","http_server")->overloads[0].parameters[1].type)=="function<(http_request)->future<http_server_response>>","async HTTP handler signature");
+    require(api_callable("get_stream","http_server")&&api_callable("post_stream","http_server"),"streaming HTTP routes are registered");
+    require(api_callable("get_stream","http_server")->overloads[0].parameters[1].type==intern_type("function<(http_request,http_response_writer)->void>"),"streaming HTTP handler signature");
+    require(api_callable("write_bytes","http_response_writer")&&api_callable("finish","http_response_writer"),"HTTP response writer contract is registered");
+    require(api_callable("write_bytes","http_response_writer")->checked_errors==std::vector<std::string>{"NetworkError"},"HTTP response writer uses the network checked error");
     require(api_callable("static","http_server")!=nullptr,"source-level HTTP static method is registered");
     require(api_callable("receive","channel<int>")!=nullptr&&type_spelling(api_callable("receive","channel<int>")->overloads[0].return_type)=="T?","generic method lookup");
     require(api_callable("accept_async","tcp_listener")!=nullptr&&api_callable("transaction","sqlite_db")!=nullptr,"backend methods are registered");

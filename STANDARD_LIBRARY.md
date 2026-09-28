@@ -46,6 +46,12 @@ Native runtime facilities may subscribe to a token to wake blocking operations. 
 
 Native completion, including EOF, wins when it is observed in the same wake cycle as cancellation. A token already cancelled when an operation starts fails before I/O. If close and cancellation are both pending when a blocked operation resumes, cancellation wins; a blocked operation interrupted only by close raises `ExecError`. The existing text `read()` compatibility behavior still returns an empty string when invoked after close, while `read_bytes()` raises `ExecError`. Process pipes do not currently expose a timeout, and cancellation is not reported as timeout, EOF, peer close, or another I/O failure.
 
+## HTTP response writer
+
+`http_response_writer` is the request-scoped binary-capable output handle used by `http_server.get_stream` and `post_stream`. It follows the stream vocabulary with `write`, `write_bytes`, `flush` and `finish`, while adding precommit `status`, `header`, `content_type` and transport-owned `content_length` configuration. Operations that can fail raise `NetworkError`.
+
+The first write or flush commits metadata. Metadata cannot change afterward, writes after finish fail, and finish is idempotent. Known-length writes must exactly match the declaration. Unknown-length HTTP/1.1 output is chunked internally; HTTP/1.0 output is close-delimited. The handle becomes inactive when its handler returns and never exposes raw HTTP chunk framing.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.

@@ -37,6 +37,26 @@ Request bodies remain buffered. One valid `Content-Length` is accepted case-inse
 
 Plaintext premature EOF receives 400. A TLS connection truncated below the HTTP layer always fails closed without handler dispatch; when the TLS record channel is already broken, the server may close without attempting an HTTP error response.
 
-Buffered responses pass through one response-head validator before any bytes are written. Handler header names must be non-empty HTTP tokens; values reject CR, LF, NUL, DEL and controls other than horizontal tab. `content_type` additionally requires media-type `type/subtype` syntax with valid token or quoted parameters. Header names are compared case-insensitively, duplicates are rejected, and handlers cannot supply `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Connection`. Those fields belong to the transport and are emitted exactly once, with the body length computed by the server and `Connection: close`. Handler statuses must be final response codes from 200 through 599; 204, 205 and 304 reject non-empty bodies, and 204/304 omit Content-Length as required. Invalid metadata produces a safe 500 without reflecting the invalid value. The serializer accepts explicit status, metadata and body length rather than body storage, forming the response-head boundary for later buffered and streaming producers.
+Buffered, static, error and streaming responses pass through one response-head validator and state machine. Handler header names must be non-empty HTTP tokens; values reject CR, LF, NUL, DEL and controls other than horizontal tab. Content types additionally require media-type `type/subtype` syntax with valid token or quoted parameters. Header names are compared case-insensitively, duplicates are rejected, and handlers cannot supply `Content-Type`, `Content-Length`, `Transfer-Encoding` or `Connection`. Those fields belong to the transport and are emitted exactly once. Handler statuses must be final response codes from 200 through 599; 204, 205 and 304 reject non-empty bodies, and 204/304 omit Content-Length as required. Invalid metadata produces a safe 500 without reflecting the invalid value.
+
+## Streaming responses
+
+`get_stream` and `post_stream` retain the existing buffered request while supplying an `http_response_writer` for incremental output:
+
+```strut
+app.get_stream("/events", (http_request request, http_response_writer response) => {
+    response.status(200);
+    response.content_type("application/octet-stream");
+    response.header("X-Source", "live");
+    response.write_bytes(first);
+    response.flush();
+    response.write_bytes(second);
+    response.finish();
+});
+```
+
+The writer moves from uncommitted to committed to finished, with an internal aborted state for transport or handler failure. `status`, `header`, `content_type` and `content_length` are available only before commitment. The first write or flush commits metadata. `finish` is idempotent, flush after finish is a no-op, and writes or metadata mutation after finish/commit raise `NetworkError`. Writer copies share one request-scoped state and become unusable when the handler returns.
+
+`content_length` declares an exact transport-owned length and finish fails if the number of bytes differs. Without a declared length, HTTP/1.1 uses transport-generated chunked coding and HTTP/1.0 uses connection-close delimitation. Chunk sizes and the single terminal chunk are never application-controlled. Writes are synchronous and apply socket backpressure without an unbounded response buffer. A handler failure before commitment produces the fixed safe 500; after commitment the connection closes without attempting a second response. Plaintext and TLS writers use the same framing state machine, while TLS retains bounded native write sizing and socket-operation pinning. Connections still close after one response until CP12 introduces deliberate persistence.
 
 For signal-driven services, start `listen` on a Strut thread, call `wait_for_shutdown_signal()`, then `stop()` and join the listener thread. The runtime signal handler only records the event; ordinary Strut code runs outside raw OS signal context.

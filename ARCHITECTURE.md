@@ -118,11 +118,15 @@ operations before final close so a descriptor cannot be reused underneath them.
 TLS handshakes use nonblocking OpenSSL progress with platform polling against an
 absolute deadline before entering the shared HTTP parser.
 
-Buffered handler output passes through one validated response-head serializer.
+Buffered, static, error and streaming handler output passes through one validated
+response-head serializer and one uncommitted/committed/finished state machine.
 The transport exclusively owns Content-Type, Content-Length, Transfer-Encoding
 and Connection semantics; malformed or conflicting application metadata becomes
-a safe 500 before commitment. This serializer is the boundary future streaming
-and file response producers must reuse rather than creating parallel header rules.
+a safe 500 before commitment. Known-length output is written directly, unknown
+HTTP/1.1 output receives transport-generated chunk framing, and unknown HTTP/1.0
+output is close-delimited. Streaming writes are synchronous socket writes with
+bounded native call sizes rather than an intermediate whole-response buffer.
+Future file, NDJSON and upgrade producers must reuse this state machine.
 Server lifecycle transitions are explicit and the pending generation is published
 before resolve/bind, so stop linearizes against both startup and active admission.
 

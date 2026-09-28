@@ -119,6 +119,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP8: strict HTTP/1 request parsing and framing complete.
 - CP9: bounded HTTP worker and connection ownership complete.
 - CP9A: HTTP foundation corrections complete.
+- CP10: streaming response writer complete.
 
 ## CP1 validation result
 
@@ -217,3 +218,11 @@ cancellation contracts must not prevent a future event-driven backend.
 - Response certification covers valid custom metadata and 21 rejection cases with a healthy follow-up request after each rejection. Worker certification adds startup/stop races, concurrent stop callers, bounded shutdown timing, 600 sustained requests, native thread bounds, handler self-stop and TLS handshake expiry. The backend baseline covers 500 sequential requests and 20 start/stop generations that each serve a real request.
 - Cross-platform compiler CI runs response and backend baseline certification in addition to the existing HTTP gates. Release packaging is gated per platform by CTest and the HTTP framing, response, worker, lifecycle, backend baseline, bytes, stream, cancellation and process-cancellation suites; POSIX packages additionally run native FFI linkage. Windows PowerShell steps fail immediately on native command errors.
 - Validation: warning-clean GCC and Clang builds passed CTest 16/16, the ASan/UBSan build passed CTest 16/16 and pointer/thread stress, all HTTP and non-HTTP runtime certifications passed, package and dogfood checks passed, native FFI linkage passed, and the independent regression suite passed 161/161. Repeated adversarial response-security, lifecycle, resource and release-gate reviews found no blocking defects; hosted CI remains the execution gate for macOS, Windows and ARM64-specific paths.
+
+## CP10 streaming response result
+
+- `http_response_writer` provides precommit status, content type, custom header and exact-length configuration plus incremental text/bytes writes, flush and idempotent finish. `get_stream` and `post_stream` add synchronous writer handlers without changing buffered handler signatures.
+- Buffered, static, error and streaming responses share one uncommitted/committed/finished state machine and the CP9A metadata validator. Invalid precommit state can produce the fixed safe 500; committed failures close without a second response. Escaped writer copies are invalidated when their handler returns.
+- Known-length output uses transport-owned Content-Length. Unknown-length HTTP/1.1 output uses internally generated chunk sizes and one terminal chunk; HTTP/1.0 output is close-delimited. Writes apply blocking socket backpressure without retaining the whole response, and plaintext/TLS use the same framing path.
+- Response-stream certification covers many small writes, a 64 KiB NUL-bearing binary write, prompt flush, known/unknown lengths, HTTP/1.0, empty and forbidden bodies, invalid metadata, pre/postcommit failures, terminal-state operations, disconnect recovery, blocked-write shutdown and TLS parity. Cross-platform and release workflows run the certification.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16, the ASan/UBSan build passed CTest 16/16 and pointer/thread stress, all HTTP and non-HTTP runtime certifications passed, native FFI and package certification passed, and the independent regression suite passed 161/161. Repeated response-security and resource/lifecycle review found no remaining blocking CP10 defect; hosted CI remains the execution gate for macOS, Windows and ARM64-specific paths.

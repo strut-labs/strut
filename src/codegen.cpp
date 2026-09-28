@@ -115,6 +115,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="http_response") return "strut_http_response";
     if(t=="http_request") return "strut_server_request";
     if(t=="http_server_response") return "strut_server_response";
+    if(t=="http_response_writer") return "strut_http_response_writer";
     if(t=="http_server") return "strut_http_server";
     if(t=="sqlite_db") return "strut_sqlite_db";
     if(t=="mutex") return "strut_mutex";
@@ -883,7 +884,7 @@ inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b)
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )STRUT_HTTP";
-    if(f.bytes)generated_runtime::emit_bytes(o);
+    generated_runtime::emit_bytes(o);
     generated_runtime::emit_tcp(o,false,false);
     generated_runtime::emit_http_server_types(o,false);
     generated_runtime::emit_http_server(o,false,false);
