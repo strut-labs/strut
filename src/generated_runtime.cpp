@@ -21,14 +21,92 @@ public:
     std::uint8_t* data() noexcept{return value_.data();}
     const std::uint8_t* data() const noexcept{return value_.data();}
     std::size_t native_size() const noexcept{return value_.size();}
+    void resize_native(std::size_t size){value_.resize(size);}
+    void append_native(const char* data,std::size_t size){value_.insert(value_.end(),reinterpret_cast<const std::uint8_t*>(data),reinterpret_cast<const std::uint8_t*>(data)+size);}
     friend bool operator==(const strut_bytes& a,const strut_bytes& b){return a.value_==b.value_;}
     friend bool operator!=(const strut_bytes& a,const strut_bytes& b){return !(a==b);}
 private:
-    static std::size_t checked_size(std::int64_t size){if(size<0)throw std::length_error("bytes size cannot be negative");return static_cast<std::size_t>(size);}
+    static std::size_t checked_size(std::int64_t size){if(size<0)throw std::length_error("bytes size cannot be negative");if(static_cast<std::uint64_t>(size)>SIZE_MAX)throw std::length_error("bytes size exceeds native address space");return static_cast<std::size_t>(size);}
     std::size_t checked_index(std::int64_t index) const{if(index<0||static_cast<std::uint64_t>(index)>=value_.size())throw std::out_of_range("bytes index out of range");return static_cast<std::size_t>(index);}
     std::vector<std::uint8_t> value_;
 };
 )STRUT_BYTES";
+}
+
+void emit_streams(std::ostream& out) {
+    out << R"STRUT_STREAMS(
+#include <algorithm>
+#include <limits>
+class strut_ostream {
+public:
+    strut_ostream()=default;explicit strut_ostream(std::ostream& stream):p_(&stream){}
+    template<class T> strut_ostream& write_value(const T& value){require_open();(*p_)<<value;if(!*p_)throw strut_checked_error("StreamError","output stream write failed");return *this;}
+    strut_ostream& write_value(std::int8_t value){return write_value(static_cast<std::int32_t>(value));}
+    strut_ostream& write_value(std::uint8_t value){return write_value(static_cast<std::uint32_t>(value));}
+    void write(const strut_string& value){write_value(value);}
+    void write_bytes(const strut_bytes& value){require_open();std::size_t offset=0;const auto maximum=static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max());while(offset<value.native_size()){const auto count=std::min(maximum,value.native_size()-offset);p_->write(reinterpret_cast<const char*>(value.data()+offset),static_cast<std::streamsize>(count));if(!*p_)throw strut_checked_error("StreamError","output stream byte write failed");offset+=count;}}
+    void flush(){if(!p_)return;p_->flush();if(!*p_)throw strut_checked_error("StreamError","output stream flush failed");}
+    void close() noexcept{p_=nullptr;}
+protected:
+    void attach(std::ostream& stream) noexcept{p_=&stream;}
+    void require_open() const{if(!p_)throw strut_checked_error("StreamError","output stream is not open");}
+    std::ostream* p_=nullptr;
+};
+class strut_istream {
+public:
+    strut_istream()=default;explicit strut_istream(std::istream& stream):p_(&stream){}
+    template<class T> strut_istream& read_value(T& value){require_open();(*p_)>>value;if(p_->eof())eof_=true;return *this;}
+    strut_bytes read_bytes(std::int64_t max_bytes){require_open();if(max_bytes<0)throw strut_checked_error("StreamError","read size cannot be negative");if(max_bytes==0||eof_)return {};if(static_cast<std::uint64_t>(max_bytes)>static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max()))throw strut_checked_error("StreamError","read size exceeds native stream limit");strut_bytes out(max_bytes);p_->read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(max_bytes));const auto count=p_->gcount();if(p_->bad())throw strut_checked_error("StreamError","input stream byte read failed");if(p_->eof())eof_=true;else if(p_->fail())throw strut_checked_error("StreamError","input stream byte read failed");out.resize_native(static_cast<std::size_t>(count));return out;}
+    strut_bytes read_all_bytes(std::int64_t limit=INT64_MAX){require_open();if(limit<0)throw strut_checked_error("StreamError","read limit cannot be negative");strut_bytes out;char buffer[8192];while(!eof_){p_->read(buffer,sizeof(buffer));const auto count=p_->gcount();if(p_->bad())throw strut_checked_error("StreamError","input stream byte read failed");if(count>0){if(static_cast<std::uint64_t>(count)>static_cast<std::uint64_t>(limit)-out.native_size())throw strut_checked_error("StreamError","input stream byte limit exceeded");out.append_native(buffer,static_cast<std::size_t>(count));}if(p_->eof())eof_=true;else if(p_->fail())throw strut_checked_error("StreamError","input stream byte read failed");}return out;}
+    bool eof() const noexcept{return eof_;}
+    void close() noexcept{p_=nullptr;}
+protected:
+    void attach(std::istream& stream) noexcept{p_=&stream;eof_=false;}
+    void require_open() const{if(!p_)throw strut_checked_error("StreamError","input stream is not open");}
+    std::istream* p_=nullptr;bool eof_=false;
+};
+class strut_ofstream : public strut_ostream {
+public:
+    strut_ofstream()=default;explicit strut_ofstream(const strut_string& path){open(path);}strut_ofstream(const strut_string& path,bool binary){open(path,binary);}
+    void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::out|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ofstream.open failed");attach(file_);}
+    void close(){if(file_.is_open()){file_.close();if(file_.fail())throw strut_checked_error("StreamError","ofstream.close failed");}strut_ostream::close();}
+    bool is_open() const{return file_.is_open();}
+    ~strut_ofstream(){if(file_.is_open())file_.close();}
+private:std::ofstream file_;
+};
+class strut_ifstream : public strut_istream {
+public:
+    strut_ifstream()=default;explicit strut_ifstream(const strut_string& path){open(path);}strut_ifstream(const strut_string& path,bool binary){open(path,binary);}
+    void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::in|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ifstream.open failed");attach(file_);}
+    void close(){if(file_.is_open())file_.close();strut_istream::close();}
+    bool is_open() const{return file_.is_open();}
+    strut_string read_all(){if(!file_.is_open())throw strut_checked_error("StreamError","ifstream.read_all on closed stream");std::ostringstream out;out<<file_.rdbuf();if(file_.bad())throw strut_checked_error("StreamError","ifstream.read_all failed");eof_=true;return strut_string(out.str());}
+    ~strut_ifstream(){if(file_.is_open())file_.close();}
+private:std::ifstream file_;
+};
+class strut_sstream : public strut_ostream {
+public:
+    strut_sstream(){attach(stream_);}
+    void write(const strut_string& value){write_value(value);}
+    strut_string str() const{return stream_.str();}
+    strut_string read_all() const{return stream_.str();}
+    bool is_open() const{return p_!=nullptr;}
+    void close() noexcept{strut_ostream::close();}
+private:std::stringstream stream_;
+};
+struct strut_endl_t{};
+[[maybe_unused]] static strut_endl_t endl{};
+template<class T> strut_ostream& operator<<(strut_ostream& stream,const T& value){return stream.write_value(value);}
+inline strut_ostream& operator<<(strut_ostream& stream,strut_endl_t){stream.write_value('\n');stream.flush();return stream;}
+template<class T> strut_istream& operator>>(strut_istream& stream,T& value){return stream.read_value(value);}
+inline strut_istream& operator>>(strut_istream& stream,strut_string& value){std::string temporary;stream.read_value(temporary);value=strut_string(temporary);return stream;}
+static strut_istream in{std::cin};
+static strut_ostream out{std::cout};
+static strut_ostream err{std::cerr};
+inline strut_string strut_input(){std::string value;std::getline(std::cin,value);return value;}
+template<class T> void strut_input(T& value){std::cin>>value;}
+inline void strut_input(strut_string& value){std::string temporary;std::cin>>temporary;value=strut_string(temporary);}
+)STRUT_STREAMS";
 }
 
 void emit_executor(std::ostream& out) {
@@ -158,6 +236,12 @@ void emit_http_server(std::ostream& out, bool async_handlers, bool tls) {
     out << R"STRUT_SERVER(
 #include <atomic>
 #include <csignal>
+#ifndef _WIN32
+#ifndef STRUT_SIGPIPE_MUTEX_DEFINED
+#define STRUT_SIGPIPE_MUTEX_DEFINED
+inline std::mutex strut_sigpipe_mutex;
+#endif
+#endif
 class strut_http_server {
 public:
     using handler=std::function<strut_server_response(strut_server_request)>;
@@ -177,7 +261,7 @@ public:
     void stop() const{auto s=s_;if(!s->running.load())return;s->stopping.store(true);s->listener.close();std::unique_lock<std::mutex> lock(s->mutex);if(!s->cv.wait_for(lock,std::chrono::milliseconds(s->shutdown_timeout_ms),[&]{return s->active==0;})){for(auto& socket:s->active_sockets)socket.close();}}
     void listen(const strut_string& host,std::int32_t port,std::int32_t max_requests=0) const{
 #ifndef _WIN32
-        std::signal(SIGPIPE,SIG_IGN);
+        {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
         auto s=s_;bool expected=false;if(!s->running.compare_exchange_strong(expected,true))throw strut_checked_error("NetworkError","HTTP server is already running");
         {std::lock_guard<std::mutex> lock(s->mutex);if(s->active!=0){s->running.store(false);throw strut_checked_error("NetworkError","HTTP server shutdown is still in progress");}}
@@ -198,7 +282,7 @@ private:
 public:
     void listen_tls(const strut_string& host,std::int32_t port,const strut_string& certificate,const strut_string& private_key,std::int32_t max_requests=0) const{
 #ifndef _WIN32
-        std::signal(SIGPIPE,SIG_IGN);
+        {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
         SSL_CTX* raw=SSL_CTX_new(TLS_server_method());if(!raw)throw strut_checked_error("TlsError","unable to initialize the TLS server context");std::shared_ptr<SSL_CTX> context(raw,SSL_CTX_free);SSL_CTX_set_min_proto_version(raw,TLS1_2_VERSION);
         if(SSL_CTX_use_certificate_chain_file(raw,certificate.v.c_str())!=1)throw strut_checked_error("TlsError","unable to load TLS certificate chain from '"+certificate.v+"'");

@@ -26,6 +26,14 @@ Modules are named after the Strut surface type: `vector`, `deque`, `list`, `map`
 
 Index and slice bounds are checked at runtime. Lengths and indexes use `int_64`; the addressable limit is the smaller of the platform container limit and `int_64` maximum. `bytes.from_string(text)` and `value.to_string()` are explicit, lossless copies of string code units. They do not validate, decode, or imply UTF-8, and there is no implicit string/bytes conversion.
 
+## Binary streams
+
+The existing `istream` and `ostream` types are the generic input and output contracts; there is no second reader/writer type family. `ifstream` and `ofstream` implement those contracts, while retaining their existing text and formatted operations. Process `in`, `out`, and `err` pipes expose the same binary method semantics structurally without becoming nominal file/console stream subtypes.
+
+`read_bytes(max_bytes)` returns at most the requested bytes. A zero-size read returns empty bytes without changing EOF. An empty result denotes EOF only when `eof()` is also true; repeated reads after observed EOF remain empty. `read_all_bytes(limit?)` reads to EOF and treats its optional non-negative limit as a hard maximum. Reads after close raise `StreamError`, or `ExecError` for process pipes.
+
+`write_bytes(value)` has complete-write-or-error semantics, including internal retries for partial native writes. It does not flush implicitly. `flush()` reports native flush failures, while flushing after close is a defined no-op. `close()` is idempotent; later writes fail. File streams must be opened with `binary=true` when byte-exact behavior is required on platforms with text-mode translation.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.

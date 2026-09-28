@@ -163,6 +163,7 @@ std::string expr(const IRExpr& e);
 void stmt(std::ostringstream& o,const IRStmt& s,int n);
 
 std::string call_argument(const IRExpr& e) {
+    if (e.kind == IRExpr::Kind::array_literal && e.type_name == "bytes") return "strut_bytes" + expr(e);
     if (e.kind == IRExpr::Kind::array_literal && e.type_name != "opaque[]" && e.type_name.size() > 2 && e.type_name.compare(e.type_name.size() - 2, 2, "[]") == 0) {
         return cpp_type(e.type_name) + expr(e);
     }
@@ -299,7 +300,6 @@ bool minimal_type_ok(const std::string& t){
            t.find("weak_ptr<")==std::string::npos &&
            t.find("raw_ptr<")==std::string::npos && t.find("future<")==std::string::npos &&
            t.find("channel<")==std::string::npos && t!="mutex" && t!="thread" &&
-           t!="istream" && t!="ostream" && t!="sstream" && t!="ifstream" && t!="ofstream" &&
            t!="process" && t!="tcp_socket" && t!="tcp_listener" && t!="tls_stream" &&
            t!="http_response" && t!="http_request" && t!="http_server_response" && t!="http_server" && t!="sqlite_db";
 }
@@ -311,7 +311,7 @@ bool minimal_expr_ok(const IRExpr* e){
     if(e->lambda_async)return false;
     if(e->kind==IRExpr::Kind::member){
         const auto& m=e->text;
-        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="slice"&&m!="from_string"&&m!="to_string")return false;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="slice"&&m!="from_string"&&m!="to_string"&&m!="read_bytes"&&m!="read_all_bytes"&&m!="write_bytes"&&m!="write"&&m!="read_all"&&m!="eof"&&m!="flush"&&m!="close"&&m!="open"&&m!="is_open"&&m!="str")return false;
     }
     if(!minimal_expr_ok(e->left.get())||!minimal_expr_ok(e->right.get())||!minimal_expr_ok(e->lambda_expression.get()))return false;
     for(const auto& a:e->arguments)if(!minimal_expr_ok(a.get()))return false;
@@ -331,6 +331,20 @@ bool minimal_stmt_ok(const IRStmt* s){
     return true;
 }
 bool program_uses_minimal_runtime(const IRProgram& p){for(const auto& s:p.statements)if(!minimal_stmt_ok(s.get()))return false;return true;}
+
+bool stmt_uses_stream_runtime(const IRStmt* s);
+bool stream_runtime_type(const std::string& type){return type.find("istream")!=std::string::npos||type.find("ostream")!=std::string::npos||type.find("sstream")!=std::string::npos||type.find("ifstream")!=std::string::npos||type.find("ofstream")!=std::string::npos;}
+bool expr_uses_stream_runtime(const IRExpr* e){
+    if(!e)return false;
+    if(stream_runtime_type(e->type_name))return true;
+    if(e->kind==IRExpr::Kind::identifier){static const char* names[]={"in","out","err","endl","input","istream","ostream","sstream","ifstream","ofstream"};for(const char* name:names)if(e->text==name)return true;}
+    if(expr_uses_stream_runtime(e->left.get())||expr_uses_stream_runtime(e->right.get())||expr_uses_stream_runtime(e->lambda_expression.get()))return true;
+    for(const auto& argument:e->arguments)if(expr_uses_stream_runtime(argument.get()))return true;
+    for(const auto& statement:e->lambda_body)if(stmt_uses_stream_runtime(statement.get()))return true;
+    return false;
+}
+bool stmt_uses_stream_runtime(const IRStmt* s){if(!s)return false;if(stream_runtime_type(s->type_name)||stream_runtime_type(s->return_type))return true;for(const auto& parameter:s->parameters)if(stream_runtime_type(parameter.type.name))return true;if(expr_uses_stream_runtime(s->value.get())||expr_uses_stream_runtime(s->target.get())||expr_uses_stream_runtime(s->condition.get())||expr_uses_stream_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_stream_runtime(s->initializer.get()))return true;for(const auto& statement:s->body)if(stmt_uses_stream_runtime(statement.get()))return true;for(const auto& statement:s->else_body)if(stmt_uses_stream_runtime(statement.get()))return true;for(const auto& item:s->switch_cases){if(expr_uses_stream_runtime(item.value.get()))return true;for(const auto& statement:item.body)if(stmt_uses_stream_runtime(statement.get()))return true;}for(const auto& item:s->catches)for(const auto& statement:item.body)if(stmt_uses_stream_runtime(statement.get()))return true;return false;}
+bool program_uses_stream_runtime(const IRProgram& p){for(const auto& statement:p.statements)if(stmt_uses_stream_runtime(statement.get()))return true;return false;}
 
 bool light_thread_type_ok(const std::string& t){return t=="thread"||t.rfind("atomic<",0)==0||minimal_type_ok(t);}
 bool light_thread_stmt_ok(const IRStmt* s);
@@ -361,7 +375,7 @@ bool light_thread_stmt_ok(const IRStmt* s){
 }
 bool program_uses_light_thread_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::threading)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
+    if(!components.contains(RuntimeComponentId::threading)||program_uses_stream_runtime(p)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
     for(const auto& s:p.statements)if(!light_thread_stmt_ok(s.get()))return false;
     return true;
 }
@@ -369,6 +383,7 @@ bool program_uses_light_thread_runtime(const IRProgram& p){
 struct MinimalRuntimeFeatures {
     bool strings=false;
     bool bytes=false;
+    bool streams=false;
     bool atomics=false;
     bool pointers=false;
     bool nullable=false;
@@ -400,6 +415,7 @@ struct MinimalRuntimeFeatures {
 void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& f){
     if(t.find("string")!=std::string::npos)f.strings=true;
     if(t=="bytes"){f.bytes=true;f.strings=true;f.vector=true;}
+    if(stream_runtime_type(t)){f.streams=true;f.bytes=true;f.strings=true;f.vector=true;}
     if(t.rfind("atomic<",0)==0)f.atomics=true;
     if(t.find("ptr<")!=std::string::npos||t.find("ref<")!=std::string::npos)f.pointers=true;
     if(t.find("function<")!=std::string::npos)f.function=true;
@@ -420,6 +436,7 @@ void collect_minimal_expr_features(const IRExpr* e,MinimalRuntimeFeatures& f){
     if(!e) return;
     collect_minimal_type_features(e->type_name,f);
     if(e->kind==IRExpr::Kind::string_literal)f.strings=true;
+    if(e->kind==IRExpr::Kind::identifier&&(e->text=="in"||e->text=="out"||e->text=="err"||e->text=="endl"||e->text=="input"||e->text=="istream"||e->text=="ostream"||e->text=="sstream"||e->text=="ifstream"||e->text=="ofstream")){f.streams=true;f.bytes=true;f.strings=true;f.vector=true;}
     if(e->kind==IRExpr::Kind::null_literal)f.nullable=true;
     if(e->kind==IRExpr::Kind::array_literal)f.vector=true;
     if(e->kind==IRExpr::Kind::map_literal)f.hash_map=true;
@@ -510,6 +527,7 @@ inline bool operator<(const strut_string& a,const strut_string& b){return a.v<b.
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )CPP";}
     if(f.bytes)generated_runtime::emit_bytes(o);
+    if(f.streams){o << "#include <fstream>\n#include <sstream>\n";o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";generated_runtime::emit_streams(o);}
     if(f.nullable){o << R"CPP(
 struct strut_null_t {
     template<class T> operator std::optional<T>() const{return std::nullopt;}
@@ -608,7 +626,8 @@ bool light_sqlite_stmt_ok(const IRStmt* st){
     return true;
 }
 bool program_uses_light_sqlite_runtime(const IRProgram& p){
-    if(!analyze_runtime_components(p).contains(RuntimeComponentId::sqlite)||analyze_runtime_components(p).contains(RuntimeComponentId::http_client))return false;
+    const auto components=analyze_runtime_components(p);
+    if(!components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(!light_sqlite_stmt_ok(st.get()))return false;
     return true;
@@ -679,7 +698,8 @@ bool light_json_stmt_ok(const IRStmt* st,bool& found){
     return true;
 }
 bool program_uses_light_json_runtime(const IRProgram& p){
-    if(analyze_runtime_components(p).contains(RuntimeComponentId::sqlite)||analyze_runtime_components(p).contains(RuntimeComponentId::http_client))return false;
+    const auto components=analyze_runtime_components(p);
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_json_stmt_ok(st.get(),found))return false;return found;
 }
@@ -790,7 +810,8 @@ bool expr_uses_non_http_client_runtime(const IRExpr* e){
 }
 bool stmt_uses_non_http_client_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_non_http_client_runtime(s->value.get())||expr_uses_non_http_client_runtime(s->target.get())||expr_uses_non_http_client_runtime(s->condition.get())||expr_uses_non_http_client_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_non_http_client_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_non_http_client_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;return false;}
 bool program_uses_light_http_client_runtime(const IRProgram& p){
-    if(!analyze_runtime_components(p).contains(RuntimeComponentId::http_client)||analyze_runtime_components(p).contains(RuntimeComponentId::sqlite))return false;
+    const auto components=analyze_runtime_components(p);
+    if(!components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_non_http_client_runtime(st.get()))return false;
     return true;
@@ -835,7 +856,7 @@ bool light_http_stmt_ok(const IRStmt* st,bool& found){
 }
 bool program_uses_light_http_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async))return false;
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
@@ -899,7 +920,8 @@ bool program_uses_light_filesystem_runtime(const IRProgram& p){
         if(m=="filesystem")filesystem=true;
         else if(m!="vector"&&m!="deque"&&m!="list"&&m!="map"&&m!="set"&&m!="ordered_map"&&m!="ordered_set"&&m!="queue"&&m!="stack"&&m!="priority_queue"&&m!="tuple")return false;
     }
-    if(!filesystem||analyze_runtime_components(p).contains(RuntimeComponentId::http_client)||analyze_runtime_components(p).contains(RuntimeComponentId::sqlite))return false;
+    const auto components=analyze_runtime_components(p);
+    if(!filesystem||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||program_uses_stream_runtime(p))return false;
     for(const auto& st:p.statements)if(!light_filesystem_stmt_ok(st.get()))return false;
     return true;
 }
@@ -1033,6 +1055,12 @@ private:
 };
 template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
 struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
+#ifndef _WIN32
+#ifndef STRUT_SIGPIPE_MUTEX_DEFINED
+#define STRUT_SIGPIPE_MUTEX_DEFINED
+inline std::mutex strut_sigpipe_mutex;
+#endif
+#endif
 struct strut_null_t {
     template<class T> operator std::optional<T>() const { return std::nullopt; }
     template<class T> operator std::shared_ptr<T>() const { return {}; }
@@ -1081,65 +1109,7 @@ inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.
 inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
 namespace std { template<> struct hash<strut_string> { size_t operator()(const strut_string& s) const noexcept { return std::hash<std::string>{}(s.v); } }; }
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
-)CPP";generated_runtime::emit_bytes(o);o<<R"CPP(
-class strut_ostream {
-public:
-    strut_ostream()=default; explicit strut_ostream(std::ostream& s):p_(&s){}
-    template<class T> strut_ostream& write_value(const T& v){if(!p_)throw strut_checked_error("StreamError","output stream is not open");(*p_)<<v;return *this;}
-    strut_ostream& write_value(std::int8_t v){return write_value(static_cast<std::int32_t>(v));}
-    strut_ostream& write_value(std::uint8_t v){return write_value(static_cast<std::uint32_t>(v));}
-    void write(const strut_string& s){write_value(s);}
-    void flush(){if(p_)p_->flush();}
-protected: std::ostream* p_=nullptr;
-};
-class strut_istream {
-public:
-    strut_istream()=default; explicit strut_istream(std::istream& s):p_(&s){}
-    template<class T> strut_istream& read_value(T& v){if(!p_)throw strut_checked_error("StreamError","input stream is not open");(*p_)>>v;return *this;}
-protected: std::istream* p_=nullptr;
-};
-class strut_ofstream : public strut_ostream {
-public:
-    strut_ofstream()=default; explicit strut_ofstream(const strut_string& path){open(path);} strut_ofstream(const strut_string& path,bool binary){open(path,binary);}
-    void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::out|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ofstream.open failed");p_=&file_;}
-    void close(){if(file_.is_open()){file_.close();if(file_.fail())throw strut_checked_error("StreamError","ofstream.close failed");}p_=nullptr;}
-    bool is_open() const{return file_.is_open();}
-    ~strut_ofstream(){if(file_.is_open())file_.close();}
-private: std::ofstream file_;
-};
-class strut_ifstream : public strut_istream {
-public:
-    strut_ifstream()=default; explicit strut_ifstream(const strut_string& path){open(path);} strut_ifstream(const strut_string& path,bool binary){open(path,binary);}
-    void open(const strut_string& path,bool binary=false){close();auto mode=std::ios::in|(binary?std::ios::binary:std::ios::openmode(0));file_.open(path.v,mode);if(!file_)throw strut_checked_error("StreamError","ifstream.open failed");p_=&file_;}
-    void close(){if(file_.is_open())file_.close();p_=nullptr;}
-    bool is_open() const{return file_.is_open();}
-)CPP" << R"CPP(    strut_string read_all(){if(!file_.is_open())throw strut_checked_error("StreamError","ifstream.read_all on closed stream");std::ostringstream out;out<<file_.rdbuf();if(file_.bad())throw strut_checked_error("StreamError","ifstream.read_all failed");return strut_string(out.str());}
-    ~strut_ifstream(){if(file_.is_open())file_.close();}
-private: std::ifstream file_;
-};
-class strut_sstream : public strut_ostream {
-public:
-    strut_sstream(){p_=&stream_;}
-    void write(const strut_string& s){stream_<<s.v;}
-    strut_string str() const{return stream_.str();}
-    strut_string read_all() const{return stream_.str();}
-    bool is_open() const{return true;}
-    void close() const{}
-private: std::stringstream stream_;
-};
-
-struct strut_endl_t{};
-[[maybe_unused]] static strut_endl_t endl{};
-template<class T> strut_ostream& operator<<(strut_ostream& s,const T& value){return s.write_value(value);}
-inline strut_ostream& operator<<(strut_ostream& s,strut_endl_t){s.write_value('\n');s.flush();return s;}
-template<class T> strut_istream& operator>>(strut_istream& s,T& value){return s.read_value(value);}
-inline strut_istream& operator>>(strut_istream& s,strut_string& value){std::string tmp;s.read_value(tmp);value=strut_string(tmp);return s;}
-static strut_istream in{std::cin};
-static strut_ostream out{std::cout};
-static strut_ostream err{std::cerr};
-inline strut_string strut_input(){std::string value;std::getline(std::cin,value);return value;}
-template<class T> void strut_input(T& value){std::cin>>value;}
-inline void strut_input(strut_string& value){std::string tmp;std::cin>>tmp;value=strut_string(tmp);}
+)CPP";generated_runtime::emit_bytes(o);generated_runtime::emit_streams(o);o<<R"CPP(
 inline json::Document strut_json_value(const json::Document& d){return d;}
 inline json::Document strut_json_value(const strut_string& s){return json::Document(s.v);}
 inline json::Document strut_json_value(const std::string& s){return json::Document(s);}
@@ -1368,11 +1338,22 @@ public:
         fd=other.fd;other.fd=-1;
 #endif
     }return *this;}
-    void write(const strut_string& s){
+    void write(const strut_string& s){write_data(s.v.data(),s.v.size());}
+    void write_bytes(const strut_bytes& value){write_data(reinterpret_cast<const char*>(value.data()),value.native_size());}
+    void flush() const noexcept{}
+    void write_data(const char* data,std::size_t size){
 #ifdef _WIN32
-        if(!h)throw strut_checked_error("ExecError","process stdin is closed");DWORD n=0;if(!WriteFile(h,s.v.data(),static_cast<DWORD>(s.v.size()),&n,nullptr)||n!=s.v.size())throw strut_checked_error("ExecError","process stdin write failed");
+        if(!h)throw strut_checked_error("ExecError","process stdin is closed");std::size_t offset=0;while(offset<size){const auto request=static_cast<DWORD>(std::min<std::size_t>(size-offset,MAXDWORD));DWORD count=0;if(!WriteFile(h,data+offset,request,&count,nullptr)||count==0)throw strut_checked_error("ExecError","process stdin write failed");offset+=count;}
 #else
-        if(fd<0)throw strut_checked_error("ExecError","process stdin is closed");const char* p=s.v.data();std::size_t left=s.v.size();while(left){ssize_t n=::write(fd,p,left);if(n<0&&errno==EINTR)continue;if(n<=0)throw strut_checked_error("ExecError","process stdin write failed");p+=n;left-=static_cast<std::size_t>(n);}
+        if(fd<0)throw strut_checked_error("ExecError","process stdin is closed");sigset_t blocked,previous,pending;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);bool ignored=false,already_pending=false;{
+            std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);struct sigaction action{};if(sigaction(SIGPIPE,nullptr,&action)<0)throw strut_checked_error("ExecError","process stdin signal setup failed");ignored=action.sa_handler==SIG_IGN;if(!ignored&&pthread_sigmask(SIG_BLOCK,&blocked,&previous)!=0)throw strut_checked_error("ExecError","process stdin signal setup failed");if(!ignored){if(sigpending(&pending)<0){pthread_sigmask(SIG_SETMASK,&previous,nullptr);throw strut_checked_error("ExecError","process stdin signal setup failed");}already_pending=sigismember(&pending,SIGPIPE)==1;}}
+        const char* p=data;std::size_t left=size;int failure=0;while(left){ssize_t n=::write(fd,p,left);if(n<0&&errno==EINTR)continue;if(n<=0){failure=errno;break;}p+=n;left-=static_cast<std::size_t>(n);}if(!ignored){std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);if(failure==EPIPE&&!already_pending){
+#ifdef __APPLE__
+            if(sigpending(&pending)==0&&sigismember(&pending,SIGPIPE)==1){int signal_number=0;(void)sigwait(&blocked,&signal_number);}
+#else
+            timespec timeout{};(void)sigtimedwait(&blocked,nullptr,&timeout);
+#endif
+        }if(pthread_sigmask(SIG_SETMASK,&previous,nullptr)!=0&&!failure)failure=EINVAL;}if(failure)throw strut_checked_error("ExecError","process stdin write failed");
 #endif
     }
     void write_line(const strut_string& s){write(strut_string(s.v+"\n"));}
@@ -1392,23 +1373,23 @@ public:
 #else
     int fd=-1;
 #endif
-    bool ended=false;
+    bool ended=false,closed=true;
     strut_process_out()=default;strut_process_out(const strut_process_out&)=delete;strut_process_out& operator=(const strut_process_out&)=delete;
-    strut_process_out(strut_process_out&& other) noexcept : ended(other.ended) {
+    strut_process_out(strut_process_out&& other) noexcept : ended(other.ended),closed(other.closed) {
 #ifdef _WIN32
         h=other.h;other.h=nullptr;
 #else
         fd=other.fd;other.fd=-1;
 #endif
-        other.ended=true;
+        other.ended=true;other.closed=true;
     }
-    strut_process_out& operator=(strut_process_out&& other) noexcept {if(this!=&other){close();ended=other.ended;
+    strut_process_out& operator=(strut_process_out&& other) noexcept {if(this!=&other){close();ended=other.ended;closed=other.closed;
 #ifdef _WIN32
         h=other.h;other.h=nullptr;
 #else
         fd=other.fd;other.fd=-1;
 #endif
-        other.ended=true;}return *this;}
+        other.ended=true;other.closed=true;}return *this;}
     strut_string read(std::int32_t count){if(count<0)throw strut_checked_error("ExecError","negative process read size");std::string out;out.resize(static_cast<std::size_t>(count));
 #ifdef _WIN32
         if(!h)return strut_string();DWORD n=0;if(!ReadFile(h,out.data(),static_cast<DWORD>(out.size()),&n,nullptr)){if(GetLastError()==ERROR_BROKEN_PIPE){ended=true;return strut_string();}throw strut_checked_error("ExecError","process pipe read failed");}out.resize(n);if(n==0)ended=true;
@@ -1418,6 +1399,14 @@ public:
         return strut_string(std::move(out));}
     strut_string read_line(){std::string out;for(;;){auto c=read(1);if(c.v.empty())break;if(c.v[0]=='\n')break;if(c.v[0]!='\r')out+=c.v[0];}return strut_string(std::move(out));}
     strut_string read_all(){std::string out;for(;;){auto chunk=read(4096);if(chunk.v.empty())break;out+=chunk.v;}return strut_string(std::move(out));}
+    strut_bytes read_bytes(std::int64_t max_bytes){if(closed)throw strut_checked_error("ExecError","process output is closed");if(max_bytes<0)throw strut_checked_error("ExecError","negative process read size");if(max_bytes==0||ended)return {};const auto request=static_cast<std::size_t>(std::min<std::int64_t>(max_bytes,65536));strut_bytes out(static_cast<std::int64_t>(request));
+#ifdef _WIN32
+        DWORD count=0;if(!ReadFile(h,out.data(),static_cast<DWORD>(request),&count,nullptr)){if(GetLastError()==ERROR_BROKEN_PIPE){ended=true;out.resize_native(0);return out;}throw strut_checked_error("ExecError","process pipe read failed");}out.resize_native(count);if(count==0)ended=true;
+#else
+        ssize_t count=::read(fd,out.data(),request);if(count<0&&errno==EINTR)return read_bytes(max_bytes);if(count<0)throw strut_checked_error("ExecError","process pipe read failed");out.resize_native(static_cast<std::size_t>(count));if(count==0)ended=true;
+#endif
+        return out;}
+    strut_bytes read_all_bytes(std::int64_t limit=INT64_MAX){if(closed)throw strut_checked_error("ExecError","process output is closed");if(limit<0)throw strut_checked_error("ExecError","negative process read limit");strut_bytes out;while(!ended){auto chunk=read_bytes(8192);if(chunk.empty())break;if(static_cast<std::uint64_t>(chunk.native_size())>static_cast<std::uint64_t>(limit)-out.native_size())throw strut_checked_error("ExecError","process output byte limit exceeded");out.append_native(reinterpret_cast<const char*>(chunk.data()),chunk.native_size());}return out;}
     bool eof() const{return ended;}
     void close(){
 #ifdef _WIN32
@@ -1425,7 +1414,7 @@ public:
 #else
         if(fd>=0){::close(fd);fd=-1;}
 #endif
-        ended=true;}
+        closed=true;}
     ~strut_process_out(){close();}
 };
 class strut_process {
@@ -1450,9 +1439,9 @@ public:
     strut_process& operator=(strut_process&&)=delete;
     void start(const strut_string& program,const std::vector<strut_string>& args){
 #ifdef _WIN32
-        SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE child_in=nullptr,out_w=nullptr,err_w=nullptr;if(!CreatePipe(&child_in,&in.h,&sa,0)||!CreatePipe(&out.h,&out_w,&sa,0)||!CreatePipe(&err.h,&err_w,&sa,0))throw strut_checked_error("ExecError","CreatePipe failed");SetHandleInformation(in.h,HANDLE_FLAG_INHERIT,0);SetHandleInformation(out.h,HANDLE_FLAG_INHERIT,0);SetHandleInformation(err.h,HANDLE_FLAG_INHERIT,0);std::string cmd=strut_win_quote(program.v);for(const auto& a:args){cmd+=' ';cmd+=strut_win_quote(a.v);}std::vector<char> mc(cmd.begin(),cmd.end());mc.push_back('\0');STARTUPINFOA si{};si.cb=sizeof(si);si.dwFlags=STARTF_USESTDHANDLES;si.hStdInput=child_in;si.hStdOutput=out_w;si.hStdError=err_w;BOOL ok=CreateProcessA(nullptr,mc.data(),nullptr,nullptr,TRUE,0,nullptr,nullptr,&si,&pi_);CloseHandle(child_in);CloseHandle(out_w);CloseHandle(err_w);if(!ok)throw strut_checked_error("ExecError","CreateProcess failed");running_=true;
+        SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE child_in=nullptr,out_w=nullptr,err_w=nullptr;if(!CreatePipe(&child_in,&in.h,&sa,0)||!CreatePipe(&out.h,&out_w,&sa,0)||!CreatePipe(&err.h,&err_w,&sa,0))throw strut_checked_error("ExecError","CreatePipe failed");SetHandleInformation(in.h,HANDLE_FLAG_INHERIT,0);SetHandleInformation(out.h,HANDLE_FLAG_INHERIT,0);SetHandleInformation(err.h,HANDLE_FLAG_INHERIT,0);out.closed=false;err.closed=false;std::string cmd=strut_win_quote(program.v);for(const auto& a:args){cmd+=' ';cmd+=strut_win_quote(a.v);}std::vector<char> mc(cmd.begin(),cmd.end());mc.push_back('\0');STARTUPINFOA si{};si.cb=sizeof(si);si.dwFlags=STARTF_USESTDHANDLES;si.hStdInput=child_in;si.hStdOutput=out_w;si.hStdError=err_w;BOOL ok=CreateProcessA(nullptr,mc.data(),nullptr,nullptr,TRUE,0,nullptr,nullptr,&si,&pi_);CloseHandle(child_in);CloseHandle(out_w);CloseHandle(err_w);if(!ok)throw strut_checked_error("ExecError","CreateProcess failed");running_=true;
 #else
-        int pin[2],pout[2],perr[2];if(pipe(pin)||pipe(pout)||pipe(perr))throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(errno));pid_=fork();if(pid_<0)throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(errno));if(pid_==0){dup2(pin[0],STDIN_FILENO);dup2(pout[1],STDOUT_FILENO);dup2(perr[1],STDERR_FILENO);::close(pin[0]);::close(pin[1]);::close(pout[0]);::close(pout[1]);::close(perr[0]);::close(perr[1]);std::vector<std::string> storage;storage.push_back(program.v);for(const auto& a:args)storage.push_back(a.v);std::vector<char*> av;for(auto& a:storage)av.push_back(a.data());av.push_back(nullptr);execvp(program.v.c_str(),av.data());_exit(errno==ENOENT?127:126);}::close(pin[0]);::close(pout[1]);::close(perr[1]);in.fd=pin[1];out.fd=pout[0];err.fd=perr[0];running_=true;
+        int pin[2],pout[2],perr[2];if(pipe(pin)||pipe(pout)||pipe(perr))throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(errno));pid_=fork();if(pid_<0)throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(errno));if(pid_==0){dup2(pin[0],STDIN_FILENO);dup2(pout[1],STDOUT_FILENO);dup2(perr[1],STDERR_FILENO);::close(pin[0]);::close(pin[1]);::close(pout[0]);::close(pout[1]);::close(perr[0]);::close(perr[1]);std::vector<std::string> storage;storage.push_back(program.v);for(const auto& a:args)storage.push_back(a.v);std::vector<char*> av;for(auto& a:storage)av.push_back(a.data());av.push_back(nullptr);execvp(program.v.c_str(),av.data());_exit(errno==ENOENT?127:126);}::close(pin[0]);::close(pout[1]);::close(perr[1]);in.fd=pin[1];out.fd=pout[0];err.fd=perr[0];out.closed=false;err.closed=false;running_=true;
 #endif
     }
     std::int32_t wait(){if(!running_)return exit_code_;

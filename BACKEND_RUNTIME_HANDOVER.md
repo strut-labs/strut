@@ -94,7 +94,7 @@ These are accepted baseline facts, not certified desirable behavior:
 - API knowledge is split among the registry, semantic analysis and code generation;
 - libcurl responses are unbounded buffered strings and transfers cannot be cancelled;
 - SQLite rows pass through JSON, lose exact large-integer semantics and do not expose BLOB values;
-- process pipes are string-oriented and process groups, timed waits and descendant cleanup are absent.
+- process pipes retain their text APIs and now also expose the binary stream contract; process groups, timed waits and descendant cleanup remain absent.
 
 ## Initial concurrency decision
 
@@ -109,7 +109,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP2: canonical builtin API schema complete.
 - CP3: generated runtime implementation boundaries complete.
 - CP4: first-class owned bytes values complete.
-- CP5: generic binary stream contracts pending.
+- CP5: generic binary stream contracts complete.
 - Review Gate 2 follows CP5. Do not begin cancellation before approval.
 
 ## CP1 validation result
@@ -152,3 +152,14 @@ cancellation contracts must not prevent a future event-driven backend.
 - Filesystem `read_bytes`, `write_file` and `append_file` use the same bytes representation directly. The API registry owns bytes methods and filesystem overload metadata; sema retains contextual literal and indexed-mutation language rules.
 - The bytes runtime component and implementation emitter add no native link dependency. Focused generated-code checks keep ordinary bytes programs free of networking, curl, OpenSSL, SQLite and process runtime.
 - Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes certification passed, native FFI linkage passed, and the independent regression suite passed 157/157.
+
+## CP5 stream result
+
+- Existing `istream` and `ostream` are the generic binary contracts; no competing reader/writer family was introduced. Their text extraction/insertion operations remain available.
+- Input streams add `read_bytes(max_bytes)`, `read_all_bytes(limit?)`, `eof()` and idempotent `close()`. Empty bytes indicate EOF only when `eof()` is true; zero-size reads do not change EOF; reads after close raise `StreamError`.
+- Output streams add complete-write `write_bytes`, `flush` and idempotent `close`. Flush does not occur implicitly, native partial writes are completed internally, flush after close is a no-op, and writes after close raise `StreamError`.
+- `ifstream` and `ofstream` implement the contract directly. Exact binary file behavior requires their existing `binary=true` mode. `sstream` implements the writer side and becomes closed after `close`.
+- Process pipes expose structurally matching byte read/write methods using `ExecError`; they remain distinct move-only process handle types pending later process redesign.
+- Stream implementations now have one owner in `generated_runtime.cpp`. The IO runtime component depends on bytes but does not introduce networking, process, curl, OpenSSL or SQLite dependencies.
+- Blocking operations retain no public cancellation argument. Their stable read/write/close surface permits CP6-CP7 to wake or interrupt the native operation underneath without changing method signatures.
+- Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes and stream certifications passed, native FFI linkage passed, and the independent regression suite passed 159/159.

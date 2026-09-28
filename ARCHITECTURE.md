@@ -92,9 +92,9 @@ the same resolved result now drives both source selection and native linking.
 
 Runtime source bodies are physically grouped into proven slices and a full
 compatibility body. Shared component emitters in `generated_runtime.cpp` provide
-the owned bytes value, executor, TCP, HTTP client, HTTP request/response helpers
-and active HTTP server to both paths, so those facilities have one maintained
-implementation.
+the owned bytes value, generic streams, executor, TCP, HTTP client, HTTP
+request/response helpers and active HTTP server to both paths, so those
+facilities have one maintained implementation.
 Component requirements choose among the bodies; remaining slice eligibility
 predicates are safety assertions while core, JSON, SQLite, filesystem and thread
 helpers are separated further. Mixed component sets conservatively use the full

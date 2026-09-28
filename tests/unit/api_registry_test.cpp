@@ -41,6 +41,10 @@ int main(){
     require(api_callable("from_string","bytes")&&api_callable("to_string","bytes"),"explicit bytes string conversions are registered");
     require(api_callable("bytes")&&api_callable("bytes")->overloads.size()==2,"bytes constructors are registered");
     require(api_callable("write_file")->overloads.size()==2&&type_spelling(api_callable("write_file")->overloads[1].parameters[1].type)=="bytes","filesystem bytes overload is registered");
+    require(api_callable("read_bytes","istream")&&type_spelling(api_callable("read_bytes","istream")->overloads[0].return_type)=="bytes","binary input contract is registered");
+    require(api_callable("write_bytes","ostream")&&api_callable("write_bytes","ofstream"),"binary output contract and file adapter are registered");
+    require(api_callable("read_all_bytes","process_out")&&api_callable("write_bytes","process_in"),"process binary adapters are registered");
+    require(api_callable("read_all_bytes","ifstream")->overloads[0].parameters[0].optional,"binary read-all limit is optional");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
     require(overloadable_operator("++",OperatorFixity::prefix),"prefix increment metadata");
