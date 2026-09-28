@@ -82,7 +82,7 @@ requirements for operations and runtime-backed types, then resolves this graph:
 IR operation/type -> required component IDs -> transitive closure -> ordered emit
 ```
 
-The implemented IDs cover core values, strings, collections, IO, JSON,
+The implemented IDs cover core values, strings, collections, IO, cancellation, JSON,
 filesystem, environment, time, processes, safe/weak/raw pointers, threading,
 channels, mutexes, async, networking, HTTP client/server, SQLite, embedded assets,
 FFI, and the explicit migration fallback. Resolution computes transitive closure,
@@ -92,7 +92,7 @@ the same resolved result now drives both source selection and native linking.
 
 Runtime source bodies are physically grouped into proven slices and a full
 compatibility body. Shared component emitters in `generated_runtime.cpp` provide
-the owned bytes value, generic streams, executor, TCP, HTTP client, HTTP
+the owned bytes value, generic streams, cancellation, executor, TCP, HTTP client, HTTP
 request/response helpers and active HTTP server to both paths, so those
 facilities have one maintained implementation.
 Component requirements choose among the bodies; remaining slice eligibility

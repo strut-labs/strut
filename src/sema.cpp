@@ -254,6 +254,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(signature)return resolve_type(type_spelling(substitute_type(signature->return_type,{"T"},builtin_bindings)));
             }
             if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;
+                if((base.name=="cancellation_source"||base.name=="cancellation_token")&&!builtin)result.diagnostics.push_back(Diagnostic{expr.span,"unknown "+base.name+" method '"+m+"'"});
                 if(base.name.rfind("atomic<",0)==0){auto elem=generic_inner(base.name,"atomic<");if((m=="fetch_add"||m=="fetch_sub")&&elem=="bool")result.diagnostics.push_back(Diagnostic{expr.span,m+" is only available on integer atomic values"});if(m=="load"||m=="exchange"||m=="fetch_add"||m=="fetch_sub")return resolve_type(elem);if(m=="store")return {TypeKind::void_type,0,"void"};if(m=="compare_exchange")return builtin_type("bool");}
                 auto container_elem=[&](std::string_view head){return generic_inner(base.name,head);};
                 if(base.name.rfind("set<",0)==0||base.name.rfind("ordered_set<",0)==0){auto elem=base.name.rfind("ordered_set<",0)==0?container_elem("ordered_set<"):container_elem("set<");if(m=="add"||m=="remove")return {TypeKind::void_type,0,"void"};if(m=="contains")return builtin_type("bool");if(m=="length")return builtin_type("int");}

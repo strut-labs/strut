@@ -14,6 +14,7 @@ enum class RuntimeComponentId {
     collections,
     bytes,
     io,
+    cancellation,
     json,
     filesystem,
     environment,

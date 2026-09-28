@@ -45,6 +45,10 @@ int main(){
     require(api_callable("write_bytes","ostream")&&api_callable("write_bytes","ofstream"),"binary output contract and file adapter are registered");
     require(api_callable("read_all_bytes","process_out")&&api_callable("write_bytes","process_in"),"process binary adapters are registered");
     require(api_callable("read_all_bytes","ifstream")->overloads[0].parameters[0].optional,"binary read-all limit is optional");
+    require(api_callable("token","cancellation_source")&&api_callable("cancel","cancellation_source"),"cancellation source contract is registered");
+    require(api_callable("cancelled","cancellation_token")&&api_callable("wait","cancellation_token"),"cancellation observer contract is registered");
+    require(api_callable("throw_if_cancelled","cancellation_token")->checked_errors==std::vector<std::string>{"CancellationError"},"cancellation checked error metadata");
+    require(api_callable("cancel","cancellation_source")->runtime_components==std::vector<RuntimeComponentId>{RuntimeComponentId::cancellation},"cancellation methods request their runtime component");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
     require(overloadable_operator("++",OperatorFixity::prefix),"prefix increment metadata");

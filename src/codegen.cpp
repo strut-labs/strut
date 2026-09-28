@@ -106,6 +106,8 @@ std::string cpp_type_legacy(std::string t){
     if(t=="process") return "strut_process";
     if(t=="process_in") return "strut_process_in";
     if(t=="process_out") return "strut_process_out";
+    if(t=="cancellation_source") return "strut_cancellation_source";
+    if(t=="cancellation_token") return "strut_cancellation_token";
     if(t=="thread") return "strut_thread";
     if(t=="tcp_socket") return "strut_tcp_socket";
     if(t=="tcp_listener") return "strut_tcp_listener";
@@ -311,7 +313,7 @@ bool minimal_expr_ok(const IRExpr* e){
     if(e->lambda_async)return false;
     if(e->kind==IRExpr::Kind::member){
         const auto& m=e->text;
-        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="slice"&&m!="from_string"&&m!="to_string"&&m!="read_bytes"&&m!="read_all_bytes"&&m!="write_bytes"&&m!="write"&&m!="read_all"&&m!="eof"&&m!="flush"&&m!="close"&&m!="open"&&m!="is_open"&&m!="str")return false;
+        if(m!="push"&&m!="pop"&&m!="length"&&m!="add"&&m!="remove"&&m!="contains"&&m!="front"&&m!="back"&&m!="top"&&m!="empty"&&m!="insert"&&m!="map"&&m!="filter"&&m!="reduce"&&m!="any"&&m!="all"&&m!="find"&&m!="count"&&m!="sort"&&m!="reserve"&&m!="slice"&&m!="from_string"&&m!="to_string"&&m!="read_bytes"&&m!="read_all_bytes"&&m!="write_bytes"&&m!="write"&&m!="read_all"&&m!="eof"&&m!="flush"&&m!="close"&&m!="open"&&m!="is_open"&&m!="str"&&m!="token"&&m!="cancel"&&m!="cancelled"&&m!="wait"&&m!="throw_if_cancelled")return false;
     }
     if(!minimal_expr_ok(e->left.get())||!minimal_expr_ok(e->right.get())||!minimal_expr_ok(e->lambda_expression.get()))return false;
     for(const auto& a:e->arguments)if(!minimal_expr_ok(a.get()))return false;
@@ -375,7 +377,7 @@ bool light_thread_stmt_ok(const IRStmt* s){
 }
 bool program_uses_light_thread_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::threading)||program_uses_stream_runtime(p)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
+    if(!components.contains(RuntimeComponentId::threading)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p)||components.contains(RuntimeComponentId::channels)||components.contains(RuntimeComponentId::mutex)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::networking)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::ffi)||!p.standard_modules.empty())return false;
     for(const auto& s:p.statements)if(!light_thread_stmt_ok(s.get()))return false;
     return true;
 }
@@ -384,6 +386,7 @@ struct MinimalRuntimeFeatures {
     bool strings=false;
     bool bytes=false;
     bool streams=false;
+    bool cancellation=false;
     bool atomics=false;
     bool pointers=false;
     bool nullable=false;
@@ -416,6 +419,7 @@ void collect_minimal_type_features(const std::string& t,MinimalRuntimeFeatures& 
     if(t.find("string")!=std::string::npos)f.strings=true;
     if(t=="bytes"){f.bytes=true;f.strings=true;f.vector=true;}
     if(stream_runtime_type(t)){f.streams=true;f.bytes=true;f.strings=true;f.vector=true;}
+    if(t.find("cancellation_source")!=std::string::npos||t.find("cancellation_token")!=std::string::npos)f.cancellation=true;
     if(t.rfind("atomic<",0)==0)f.atomics=true;
     if(t.find("ptr<")!=std::string::npos||t.find("ref<")!=std::string::npos)f.pointers=true;
     if(t.find("function<")!=std::string::npos)f.function=true;
@@ -480,9 +484,9 @@ void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f)
     if(f.function)o << "#include <functional>\n";
     if(f.nullable||f.find)o << "#include <optional>\n";
     if(f.map||f.nullable||f.pointers)o << "#include <type_traits>\n";
-    if(f.strings||f.nullable||f.pointers||f.map_insert)o << "#include <utility>\n";
+    if(f.strings||f.nullable||f.pointers||f.map_insert||f.cancellation)o << "#include <utility>\n";
     if(f.sort)o << "#include <algorithm>\n";
-    if(f.reduce||f.pointers||f.bytes)o << "#include <stdexcept>\n";
+    if(f.reduce||f.pointers||f.bytes||f.cancellation)o << "#include <stdexcept>\n";
     if(f.pointers)o << "#include <memory>\n#include <cstdlib>\n#ifdef _WIN32\n#ifndef WIN32_LEAN_AND_MEAN\n#define WIN32_LEAN_AND_MEAN\n#endif\n#ifndef NOMINMAX\n#define NOMINMAX\n#endif\n#include <windows.h>\n#else\n#include <execinfo.h>\n#endif\n";
     if(f.pointers){o << R"CPP(
 template<class T> class strut_ref {
@@ -527,7 +531,9 @@ inline bool operator<(const strut_string& a,const strut_string& b){return a.v<b.
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )CPP";}
     if(f.bytes)generated_runtime::emit_bytes(o);
-    if(f.streams){o << "#include <fstream>\n#include <sstream>\n";o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";generated_runtime::emit_streams(o);}
+    if(f.streams||f.cancellation)o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";
+    if(f.streams){o << "#include <fstream>\n#include <sstream>\n";generated_runtime::emit_streams(o);}
+    if(f.cancellation)generated_runtime::emit_cancellation(o);
     if(f.nullable){o << R"CPP(
 struct strut_null_t {
     template<class T> operator std::optional<T>() const{return std::nullopt;}
@@ -627,7 +633,7 @@ bool light_sqlite_stmt_ok(const IRStmt* st){
 }
 bool program_uses_light_sqlite_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||program_uses_stream_runtime(p))return false;
+    if(!components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(!light_sqlite_stmt_ok(st.get()))return false;
     return true;
@@ -699,7 +705,7 @@ bool light_json_stmt_ok(const IRStmt* st,bool& found){
 }
 bool program_uses_light_json_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||program_uses_stream_runtime(p))return false;
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_json_stmt_ok(st.get(),found))return false;return found;
 }
@@ -776,7 +782,7 @@ bool light_async_stmt_ok(const IRStmt* st,bool& found){
     return true;
 }
 bool program_uses_light_async_runtime(const IRProgram& p){
-    if(!p.standard_modules.empty())return false;
+    if(!p.standard_modules.empty()||analyze_runtime_components(p).contains(RuntimeComponentId::cancellation))return false;
     bool found=false;for(const auto& st:p.statements)if(!light_async_stmt_ok(st.get(),found))return false;return found;
 }
 void emit_light_async_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
@@ -811,7 +817,7 @@ bool expr_uses_non_http_client_runtime(const IRExpr* e){
 bool stmt_uses_non_http_client_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_non_http_client_runtime(s->value.get())||expr_uses_non_http_client_runtime(s->target.get())||expr_uses_non_http_client_runtime(s->condition.get())||expr_uses_non_http_client_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_non_http_client_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_non_http_client_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;return false;}
 bool program_uses_light_http_client_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||program_uses_stream_runtime(p))return false;
+    if(!components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_non_http_client_runtime(st.get()))return false;
     return true;
@@ -856,7 +862,7 @@ bool light_http_stmt_ok(const IRStmt* st,bool& found){
 }
 bool program_uses_light_http_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||program_uses_stream_runtime(p))return false;
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
@@ -921,7 +927,7 @@ bool program_uses_light_filesystem_runtime(const IRProgram& p){
         else if(m!="vector"&&m!="deque"&&m!="list"&&m!="map"&&m!="set"&&m!="ordered_map"&&m!="ordered_set"&&m!="queue"&&m!="stack"&&m!="priority_queue"&&m!="tuple")return false;
     }
     const auto components=analyze_runtime_components(p);
-    if(!filesystem||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||program_uses_stream_runtime(p))return false;
+    if(!filesystem||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
     for(const auto& st:p.statements)if(!light_filesystem_stmt_ok(st.get()))return false;
     return true;
 }
@@ -1109,7 +1115,7 @@ inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.
 inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
 namespace std { template<> struct hash<strut_string> { size_t operator()(const strut_string& s) const noexcept { return std::hash<std::string>{}(s.v); } }; }
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
-)CPP";generated_runtime::emit_bytes(o);generated_runtime::emit_streams(o);o<<R"CPP(
+)CPP";generated_runtime::emit_bytes(o);generated_runtime::emit_streams(o);if(has(RuntimeComponentId::cancellation))generated_runtime::emit_cancellation(o);o<<R"CPP(
 inline json::Document strut_json_value(const json::Document& d){return d;}
 inline json::Document strut_json_value(const strut_string& s){return json::Document(s.v);}
 inline json::Document strut_json_value(const std::string& s){return json::Document(s);}

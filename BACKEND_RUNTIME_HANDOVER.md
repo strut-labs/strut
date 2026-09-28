@@ -110,7 +110,9 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP3: generated runtime implementation boundaries complete.
 - CP4: first-class owned bytes values complete.
 - CP5: generic binary stream contracts complete.
-- Review Gate 2 follows CP5. Do not begin cancellation before approval.
+- Review Gate 2 approved.
+- CP6: unified cancellation primitives complete.
+- CP7: cancellable blocking handles pending.
 
 ## CP1 validation result
 
@@ -163,3 +165,12 @@ cancellation contracts must not prevent a future event-driven backend.
 - Stream implementations now have one owner in `generated_runtime.cpp`. The IO runtime component depends on bytes but does not introduce networking, process, curl, OpenSSL or SQLite dependencies.
 - Blocking operations retain no public cancellation argument. Their stable read/write/close surface permits CP6-CP7 to wake or interrupt the native operation underneath without changing method signatures.
 - Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes and stream certifications passed, native FFI linkage passed, and the independent regression suite passed 159/159.
+
+## CP6 cancellation result
+
+- `cancellation_source` and `cancellation_token` are copyable handles over shared reference-counted state. Source destruction does not imply cancellation, tokens outlive sources safely, and cancellation is one-way, thread-safe and idempotent.
+- The public token supports non-blocking `cancelled()`, condition-variable-backed `wait()`, and checked `throw_if_cancelled()` using the subsystem-neutral `CancellationError`.
+- CP6 exposes only explicit cancellation. The internal terminal-state boundary can add timeout, disconnect and shutdown reasons without replacing the public source/token types.
+- Internal subscriptions close the registration/cancellation race under one state mutex. Cancellation extracts registrations before invoking callbacks, callbacks execute outside the state lock, and removal synchronizes with an in-flight callback.
+- Cancellation is an independent runtime component with no networking, process, curl, OpenSSL or SQLite dependency. There is no process-global or thread-local current token.
+- Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes and stream certifications passed, cancellation certification passed 50 repeated cycles with 32 waiters and 8 concurrent cancellers, native FFI linkage passed, and the independent regression suite passed 160/160.

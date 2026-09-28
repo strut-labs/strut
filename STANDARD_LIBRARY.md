@@ -34,6 +34,14 @@ The existing `istream` and `ostream` types are the generic input and output cont
 
 `write_bytes(value)` has complete-write-or-error semantics, including internal retries for partial native writes. It does not flush implicitly. `flush()` reports native flush failures, while flushing after close is a defined no-op. `close()` is idempotent; later writes fail. File streams must be opened with `binary=true` when byte-exact behavior is required on platforms with text-mode translation.
 
+## Cancellation
+
+`cancellation_source` owns the authority to request cancellation. `source.token()` returns a cheap copyable `cancellation_token` that observes the same shared state. Sources are also copyable; all copies retain cancellation authority over that state. Destroying a source does not cancel, tokens remain valid after every source is destroyed, and `cancel()` is one-way, thread-safe, and idempotent.
+
+`token.cancelled()` performs non-blocking observation. `token.wait()` sleeps without busy-spinning until cancellation is requested. `token.throw_if_cancelled()` raises the checked `CancellationError`. Tokens cannot reset or request cancellation. CP6 represents only explicit cancellation; the internal terminal-state representation can gain timeout, disconnect, or shutdown reasons compatibly when those producers are introduced.
+
+Native runtime facilities may subscribe to a token to wake blocking operations. Subscription is intentionally not public: registration cannot miss concurrent cancellation, removal waits for an in-flight callback, and callbacks run without the cancellation-state lock held.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.

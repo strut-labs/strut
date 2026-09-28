@@ -1,6 +1,6 @@
 # Concurrency hardening
 
-Strut's safe concurrency surface currently consists of native `thread`, shared `mutex`, typed `channel<T>`, async functions/lambdas, futures and the global multithreaded executor.
+Strut's safe concurrency surface currently consists of native `thread`, shared `mutex`, typed `channel<T>`, async functions/lambdas, futures, unified cancellation and the global multithreaded executor.
 
 ## Guarantees
 
@@ -12,8 +12,10 @@ Strut's safe concurrency surface currently consists of native `thread`, shared `
 
 ## Cancellation
 
-Strut does not currently expose task cancellation. That is deliberate: there is therefore no partial cancellation contract to race against shutdown. A future cancellation feature must define cooperative cancellation points and receive its own race/stress certification before becoming part of the safe surface.
+`cancellation_source` and `cancellation_token` share reference-counted state without raw lifetime coupling. Cancellation is monotonic and idempotent. Observation is atomic; `wait()` uses a condition variable rather than polling. Internal native-operation subscriptions are registered and removed under the state lock, but callbacks execute outside it. Removal synchronizes with an already-running callback so captured operation state cannot be destroyed prematurely.
+
+There is no global or thread-local current token. Operations receive an explicit copied token through their owning context, allowing unrelated work to cancel independently. Source destruction is not cancellation.
 
 ## Stress policy
 
-The repository includes a generated Strut program that exercises 1,000 channel messages, concurrent mutex-protected mutation and async scheduling. Certification runs the resulting native executable repeatedly. ThreadSanitizer should also be used where the host toolchain/runtime supports it; sanitizer availability is not assumed on every CI image.
+The repository includes generated Strut programs that exercise 1,000 channel messages, concurrent mutex-protected mutation, async scheduling, copied cancellation tokens, 32 simultaneous waiters and 8 concurrent cancellers. Certification runs the resulting native executables repeatedly. ThreadSanitizer should also be used where the host toolchain/runtime supports it; sanitizer availability is not assumed on every CI image.
