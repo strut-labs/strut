@@ -114,6 +114,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="tls_stream") return "strut_tls_stream";
     if(t=="http_response") return "strut_http_response";
     if(t=="http_request") return "strut_server_request";
+    if(t=="http_request_body") return "strut_http_request_body";
     if(t=="http_server_response") return "strut_server_response";
     if(t=="http_response_writer") return "strut_http_response_writer";
     if(t=="http_server") return "strut_http_server";

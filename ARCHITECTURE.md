@@ -107,9 +107,14 @@ read/write signatures remain transport-neutral. Native wake objects and handle
 lifetime synchronization stay inside the generated process implementation.
 
 HTTP request intake separates transport acquisition from a pure validated
-request-head/framing result and exact body acquisition. Routing still receives a
-buffered request, but later body streaming can replace the body sink without
-redefining request-line, header, Host, Content-Length or Transfer-Encoding rules.
+request-head/framing result and one socket-backed body reader. Fixed-length and
+strict chunked decoding feed the same binary reader state; buffered handlers
+adapt it into `request.body`, while request-stream handlers consume it directly.
+Decoded bytes and framing overhead have independent bounds. Reader invalidation
+interrupts an escaped active read before transport lifetime ends. Response
+commitment excludes active and future request-body reads, so one TLS transport
+never enters concurrent OpenSSL read and write calls. This adds no
+second request-line, header, Host, Content-Length or Transfer-Encoding parser.
 Each listener generation owns a bounded blocking queue, a lazily grown reusable
 worker set and its admitted socket registry. Admission, graceful drain and forced
 shutdown are linearized under the generation lock and share one monotonic

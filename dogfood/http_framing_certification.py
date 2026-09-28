@@ -103,7 +103,7 @@ def main():
         ("negative-length", b"POST /post HTTP/1.1\r\nHost: localhost\r\nContent-Length: -1\r\n\r\n", 400, None),
         ("overflow-length", b"POST /post HTTP/1.1\r\nHost: localhost\r\nContent-Length: 184467440737095516160\r\n\r\n", 413, None),
         ("whitespace-before-content-colon", b"POST /post HTTP/1.1\r\nHost: localhost\r\nContent-Length : 5\r\n\r\nhello", 400, None),
-        ("chunked", b"POST /post HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", 501, None),
+        ("chunked", b"POST /post HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", 200, b""),
         ("te-and-cl", b"POST /post HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\nhello", 400, None),
         ("oversized-cl-and-te", b"POST /post HTTP/1.1\r\nHost: localhost\r\nContent-Length: 17\r\nTransfer-Encoding: chunked\r\n\r\n", 400, None),
         ("oversized-duplicate-cl", b"POST /post HTTP/1.1\r\nHost: localhost\r\nContent-Length: 17\r\nContent-Length: 17\r\n\r\n", 400, None),

@@ -120,6 +120,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP9: bounded HTTP worker and connection ownership complete.
 - CP9A: HTTP foundation corrections complete.
 - CP10: streaming response writer complete.
+- CP11: streaming request bodies complete.
 
 ## CP1 validation result
 
@@ -226,3 +227,12 @@ cancellation contracts must not prevent a future event-driven backend.
 - Known-length output uses transport-owned Content-Length. Unknown-length HTTP/1.1 output uses internally generated chunk sizes and one terminal chunk; HTTP/1.0 output is close-delimited. Writes apply blocking socket backpressure without retaining the whole response, and plaintext/TLS use the same framing path.
 - Response-stream certification covers many small writes, a 64 KiB NUL-bearing binary write, prompt flush, known/unknown lengths, HTTP/1.0, empty and forbidden bodies, invalid metadata, pre/postcommit failures, terminal-state operations, disconnect recovery, blocked-write shutdown and TLS parity. Cross-platform and release workflows run the certification.
 - Validation: warning-clean GCC and Clang builds passed CTest 16/16, the ASan/UBSan build passed CTest 16/16 and pointer/thread stress, all HTTP and non-HTTP runtime certifications passed, native FFI and package certification passed, and the independent regression suite passed 161/161. Repeated response-security and resource/lifecycle review found no remaining blocking CP10 defect; hosted CI remains the execution gate for macOS, Windows and ARM64-specific paths.
+
+## CP11 streaming request result
+
+- `http_request_body` provides binary `read_bytes`, bounded `read_all_bytes`, EOF and close operations. `get_request_stream` and `post_request_stream` supply it with the CP10 writer, while existing buffered and response-stream handlers retain their prior signatures and body behavior.
+- CP8's request-head parser remains authoritative. Its validated fixed-length or sole HTTP/1.1 chunked framing result creates one body state; buffered `request.body` consumes that reader, so there is no parallel parser or decoder. TE/CL remains rejected and unsupported coding chains remain 501.
+- Chunk decoding validates hexadecimal sizes, quoted/token extensions, exact CRLF, decoded-size overflow, aggregate framing overhead, the zero chunk and an empty trailer section. Non-empty trailers and `Expect` are rejected. Transport/TLS failures normalize to `NetworkError`.
+- Reader copies share one consumption state, concurrent reads fail, and invalidation interrupts an escaped active read before transport destruction. Request-body reads and response commitment are serialized: commitment fails during an active or failed read, and later reads fail. A handler may leave a body unread only because CP11 closes after the response; CP12 must not reuse that connection without a terminal body.
+- Request-stream certification covers fixed and chunked binary bodies, byte-fragmented framing, extensions, zero reads, active close, early response, buffered compatibility, escaped readers, unread bodies, caught framing failures, malformed/overflow/truncated chunks, payload and framing limits, TE/CL, unsupported coding, trailers, `Expect`, blocked-read shutdown and TLS parity. Cross-platform and release workflows run the certification.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16, the GCC ASan/UBSan build passed CTest 16/16 and pointer/thread stress, all HTTP and non-HTTP runtime certifications passed, native FFI and package certification passed, and the independent regression suite passed 161/161. Final request-framing/security and resource/lifecycle reviews found no remaining actionable CP11 defects. The local Clang sanitizer build could not link because its installed LLVM 21 toolchain lacks the ASan runtime archives; GCC sanitizer coverage passed, and hosted CI remains the execution gate for macOS, Windows and ARM64 paths.

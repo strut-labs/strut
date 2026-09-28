@@ -46,6 +46,12 @@ Native runtime facilities may subscribe to a token to wake blocking operations. 
 
 Native completion, including EOF, wins when it is observed in the same wake cycle as cancellation. A token already cancelled when an operation starts fails before I/O. If close and cancellation are both pending when a blocked operation resumes, cancellation wins; a blocked operation interrupted only by close raises `ExecError`. The existing text `read()` compatibility behavior still returns an empty string when invoked after close, while `read_bytes()` raises `ExecError`. Process pipes do not currently expose a timeout, and cancellation is not reported as timeout, EOF, peer close, or another I/O failure.
 
+## HTTP request body
+
+`http_request_body` is the request-scoped binary reader supplied by `http_server.get_request_stream` and `post_request_stream`. It mirrors the input-stream contract with `read_bytes(max_bytes)`, `read_all_bytes(limit?)`, `eof()` and idempotent `close()`, using `NetworkError` for malformed framing, transport failure and invalid operations.
+
+Fixed-length reads expose exactly the declared payload. HTTP/1.1 chunked reads expose decoded bytes without chunk boundaries, enforce body and framing-overhead limits, and reject malformed sizes, terminators, unsupported trailers and truncation. Reader copies share one consumption position; concurrent reads are rejected, and escaped active reads are interrupted before the request transport is released. A request-stream handler must consume or close the body before committing its response; commitment during an active read and reads after commitment fail with `NetworkError`. Buffered `request.body` is an adapter over the same reader rather than a second body path.
+
 ## HTTP response writer
 
 `http_response_writer` is the request-scoped binary-capable output handle used by `http_server.get_stream` and `post_stream`. It follows the stream vocabulary with `write`, `write_bytes`, `flush` and `finish`, while adding precommit `status`, `header`, `content_type` and transport-owned `content_length` configuration. Operations that can fail raise `NetworkError`.
