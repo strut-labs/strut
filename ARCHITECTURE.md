@@ -118,6 +118,14 @@ operations before final close so a descriptor cannot be reused underneath them.
 TLS handshakes use nonblocking OpenSSL progress with platform polling against an
 absolute deadline before entering the shared HTTP parser.
 
+Buffered handler output passes through one validated response-head serializer.
+The transport exclusively owns Content-Type, Content-Length, Transfer-Encoding
+and Connection semantics; malformed or conflicting application metadata becomes
+a safe 500 before commitment. This serializer is the boundary future streaming
+and file response producers must reuse rather than creating parallel header rules.
+Server lifecycle transitions are explicit and the pending generation is published
+before resolve/bind, so stop linearizes against both startup and active admission.
+
 Initialization and teardown are component-owned RAII declarations. Platform
 implementations share one component ID and select their body at emission time, so
 platform selection does not create a second dependency graph.

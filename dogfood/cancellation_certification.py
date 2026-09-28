@@ -52,6 +52,7 @@ function main() -> int : ThreadError {{
     try {{
         token.throw_if_cancelled();
     }} catch (CancellationError caught) {{
+        if (caught.message != "operation cancelled") {{ return 101; }}
         print("cancellation certification passed");
         return 0;
     }}

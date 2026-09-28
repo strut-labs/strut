@@ -39,18 +39,67 @@ jobs:
       - name: Enable MSVC developer environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Install generated-program dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev libsqlite3-dev
       - name: Install current LLVM toolchain (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install llvm
+          brew install llvm openssl@3
           echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
+          echo "CPATH=$(brew --prefix openssl@3)/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
+      - name: Install generated-program dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          vcpkg install curl:x64-windows sqlite3:x64-windows openssl:x64-windows
+          $vcpkgRoot = Split-Path -Parent (Get-Command vcpkg).Source
+          $installed = "$vcpkgRoot\installed\x64-windows"
+          "INCLUDE=$env:INCLUDE;$installed\include" >> $env:GITHUB_ENV
+          "LIB=$env:LIB;$installed\lib" >> $env:GITHUB_ENV
+          "$installed\bin" >> $env:GITHUB_PATH
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Certify release runtime (POSIX)
+        if: runner.os != 'Windows'
+        env:
+          STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
+        run: |
+          python3 dogfood/http_framing_certification.py build/strut
+          python3 dogfood/http_response_certification.py build/strut
+          python3 dogfood/http_worker_certification.py build/strut
+          python3 dogfood/http_lifecycle_certification.py build/strut
+          python3 dogfood/backend_baseline_certification.py build/strut
+          python3 dogfood/bytes_certification.py build/strut
+          python3 dogfood/stream_contract_certification.py build/strut
+          python3 dogfood/cancellation_certification.py build/strut
+          python3 dogfood/process_cancellation_certification.py build/strut
+          python3 tests/ffi/run_native_link_tests.py build/strut
+      - name: Certify release runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          STRUT_CXXFLAGS: /W4 /WX /wd4459 /wd4702 /D_CRT_SECURE_NO_WARNINGS
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python dogfood/http_framing_certification.py build/Release/strut.exe
+          python dogfood/http_response_certification.py build/Release/strut.exe
+          python dogfood/http_worker_certification.py build/Release/strut.exe
+          python dogfood/http_lifecycle_certification.py build/Release/strut.exe
+          python dogfood/backend_baseline_certification.py build/Release/strut.exe
+          python dogfood/bytes_certification.py build/Release/strut.exe
+          python dogfood/stream_contract_certification.py build/Release/strut.exe
+          python dogfood/cancellation_certification.py build/Release/strut.exe
+          python dogfood/process_cancellation_certification.py build/Release/strut.exe
       - name: Install (POSIX)
         if: runner.os != 'Windows'
         run: cmake --install build --config Release --prefix "stage/strut-${GITHUB_REF_NAME#v}-${{ matrix.platform }}"
@@ -69,6 +118,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $compiler = "stage/strut-$($env:GITHUB_REF_NAME.TrimStart('v'))-${{ matrix.platform }}/bin/strut.exe"
           & $compiler --version
           & $compiler dogfood/json/transform.p -o release-smoke.exe

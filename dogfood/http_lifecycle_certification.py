@@ -5,10 +5,17 @@ from concurrent.futures import ThreadPoolExecutor
 import http.client
 from pathlib import Path
 import ssl
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+
+
+def available_port():
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
 
 
 def request(port, method="GET", path="/slow", body=None, headers=None):
@@ -22,7 +29,7 @@ def request(port, method="GET", path="/slow", body=None, headers=None):
 
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
-    port = 18137
+    port = available_port()
     source = """function main() -> int : (NetworkError, TimeError) {
     app := http_server();
     app.timeouts(3000, 3000, 3000, 2000);
@@ -60,65 +67,70 @@ def main():
             # one of the six finite accepts.
             with ThreadPoolExecutor(max_workers=3) as pool:
                 results = list(pool.map(lambda _: request(port), range(3)))
-            assert results == [(200, "done")] * 3
-            assert request(port, "POST", "/slow") == (405, "Method Not Allowed")
-            assert request(port, "POST", "/missing", "x" * 64, {"Content-Length": "64"}) == (413, "Payload Too Large")
+            if results != [(200, "done")] * 3:
+                raise RuntimeError(f"concurrent lifecycle requests failed: {results!r}")
+            if request(port, "POST", "/slow") != (405, "Method Not Allowed"):
+                raise RuntimeError("method mismatch did not return 405")
+            if request(port, "POST", "/missing", "x" * 64, {"Content-Length": "64"}) != (413, "Payload Too Large"):
+                raise RuntimeError("oversized request did not return 413")
             stdout, stderr = server.communicate(timeout=8)
             if server.returncode != 0:
                 raise RuntimeError(f"server returned {server.returncode}\n{stdout}\n{stderr}")
         finally:
             if server.poll() is None:
                 server.kill(); server.wait()
+        stop_port = available_port()
         stop_program = root / "explicit-stop.p"
         stop_executable = root / ("explicit-stop.exe" if sys.platform == "win32" else "explicit-stop")
-        stop_program.write_text("""function main() -> int : (NetworkError, ThreadError, TimeError) {
+        stop_program.write_text(f"""function main() -> int : (NetworkError, ThreadError, TimeError) {{
     app := http_server();
-    listener := thread(() => { app.listen("127.0.0.1", 18138); });
-    while (!app.running()) {
+    listener := thread(() => {{ app.listen("127.0.0.1", {stop_port}); }});
+    while (!app.running()) {{
         sleep_ms(5);
-    }
+    }}
     app.stop();
     app.stop();
     listener.join();
-    if (app.running()) {
+    if (app.running()) {{
         return 1;
-    }
+    }}
     return 0;
-}
+}}
 """, encoding="utf-8")
         subprocess.run([compiler, stop_program, "-o", stop_executable], check=True, cwd=root)
         stopped = subprocess.run([stop_executable], cwd=root, text=True, capture_output=True, timeout=8)
         if stopped.returncode != 0:
             raise RuntimeError(f"explicit stop returned {stopped.returncode}\n{stopped.stdout}\n{stopped.stderr}")
+        tls_port = available_port()
         tls_program = root / "tls-server.p"
         tls_executable = root / ("tls-server.exe" if sys.platform == "win32" else "tls-server")
-        tls_program.write_text("""function main(string command, string[] args) -> int : (NetworkError, TlsError, ThreadError, TimeError, SqliteError) {
+        tls_program.write_text(f"""function main(string command, string[] args) -> int : (NetworkError, TlsError, ThreadError, TimeError, SqliteError) {{
     database := sqlite_open(args[2]);
     database.exec("CREATE TABLE IF NOT EXISTS status(message TEXT)");
     database.exec("DELETE FROM status");
     database.exec("INSERT INTO status(message) VALUES ('secure')");
     app := http_server();
-    app.get("/secure", (http_request request) => { return http_json_response(database.query("SELECT message FROM status")); });
-    listener := thread(() => { app.listen_tls("127.0.0.1", 18139, args[0], args[1]); });
-    while (!app.running()) { sleep_ms(5); }
+    app.get("/secure", (http_request request) => {{ return http_json_response(database.query("SELECT message FROM status")); }});
+    listener := thread(() => {{ app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1]); }});
+    while (!app.running()) {{ sleep_ms(5); }}
     sleep_ms(15000);
     app.stop();
     listener.join();
     return 0;
-}
+}}
 """, encoding="utf-8")
         subprocess.run([compiler, tls_program, "-o", tls_executable], check=True, cwd=root)
         client_program = root / "tls-client.p"
         client_executable = root / ("tls-client.exe" if sys.platform == "win32" else "tls-client")
-        client_program.write_text("""function main(string command, string[] args) -> int : HttpError {
-    if (args.length == 0) {
-        http_get("https://localhost:18139/secure");
+        client_program.write_text(f"""function main(string command, string[] args) -> int : HttpError {{
+    if (args.length == 0) {{
+        http_get("https://localhost:{tls_port}/secure");
         return 1;
-    }
-    response := http_get_ca("https://localhost:18139/secure", args[0]);
+    }}
+    response := http_get_ca("https://localhost:{tls_port}/secure", args[0]);
     println(response.body);
     return 0;
-}
+}}
 """, encoding="utf-8")
         subprocess.run([compiler, client_program, "-o", client_executable], check=True, cwd=root)
         fixture = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "tls"
@@ -129,8 +141,8 @@ def main():
             while True:
                 try:
                     unverified = ssl.create_default_context()
-                    with unverified.wrap_socket(__import__("socket").socket(), server_hostname="localhost") as sock:
-                        sock.settimeout(0.2); sock.connect(("127.0.0.1", 18139))
+                    with unverified.wrap_socket(socket.socket(), server_hostname="localhost") as sock:
+                        sock.settimeout(0.2); sock.connect(("127.0.0.1", tls_port))
                     raise AssertionError("fixture certificate unexpectedly trusted")
                 except ssl.SSLCertVerificationError:
                     break
@@ -139,7 +151,8 @@ def main():
                         raise RuntimeError("TLS server did not start")
                     time.sleep(0.03)
             rejected = subprocess.run([client_executable], cwd=root, text=True, capture_output=True)
-            assert rejected.returncode != 0
+            if rejected.returncode == 0:
+                raise RuntimeError("untrusted TLS certificate was accepted")
             if tls_server.poll() is not None:
                 stdout, stderr = tls_server.communicate()
                 raise RuntimeError(f"TLS server exited before trusted client ({tls_server.returncode})\n{stdout}\n{stderr}")

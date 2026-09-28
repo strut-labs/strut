@@ -118,6 +118,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - Review Gate 3 approved.
 - CP8: strict HTTP/1 request parsing and framing complete.
 - CP9: bounded HTTP worker and connection ownership complete.
+- CP9A: HTTP foundation corrections complete.
 
 ## CP1 validation result
 
@@ -207,3 +208,12 @@ cancellation contracts must not prevent a future event-driven backend.
 - TLS handshakes use nonblocking OpenSSL progress with `poll`/`WSAPoll` against the shortest configured read, write or idle timeout. Persistent workers clear the OpenSSL error queue between handshake attempts, and TLS reads, writes and shutdown participate in socket operation pinning.
 - Black-box worker certification covers saturation and recovery, finite admission accounting, bounded shutdown, retired handlers, synchronous and asynchronous handler-initiated stop, silent TLS handshake expiry and worker reuse after timeout. Compiler CI runs it on Linux x64, Linux ARM64, macOS and Windows.
 - Validation: GCC and Clang generated-code checks passed, CTest passed 16/16, worker, framing, lifecycle and backend baseline certifications passed, bytes, stream, CP6 cancellation and CP7 process-cancellation certifications passed, native FFI linkage passed, and the independent regression suite passed 161/161. Repeated adversarial concurrency, ownership and portability review found no blocking defects; hosted CI remains the execution gate for macOS, Windows and ARM64-specific paths.
+
+## CP9A HTTP foundation corrections result
+
+- Buffered HTTP responses are serialized through one validation boundary before any bytes are committed. Status codes are limited to 200 through 599, content types follow media-type syntax, field names follow HTTP token syntax, and field values reject response-splitting controls. Case-insensitive duplicate and transport-owned `Content-Type`, `Content-Length`, `Transfer-Encoding`, and `Connection` fields are rejected. Invalid metadata produces a fixed safe 500 response.
+- Responses for 204, 205 and 304 reject non-empty bodies. The transport omits `Content-Length` for 204 and 304, emits zero length for 205, owns all framing fields, and retains the buffered `Connection: close` contract. Plain and TLS native writes cap each operation to the platform API's integer range.
+- Server lifecycle transitions are explicit: stopped, starting, running, stopping and stopped. A pending generation is published before bind, startup completion is part of drain completion, and stop cannot publish stopped or permit restart while startup could still acquire or own a listener. Generation checks prevent stale startup and worker publication.
+- Response certification covers valid custom metadata and 21 rejection cases with a healthy follow-up request after each rejection. Worker certification adds startup/stop races, concurrent stop callers, bounded shutdown timing, 600 sustained requests, native thread bounds, handler self-stop and TLS handshake expiry. The backend baseline covers 500 sequential requests and 20 start/stop generations that each serve a real request.
+- Cross-platform compiler CI runs response and backend baseline certification in addition to the existing HTTP gates. Release packaging is gated per platform by CTest and the HTTP framing, response, worker, lifecycle, backend baseline, bytes, stream, cancellation and process-cancellation suites; POSIX packages additionally run native FFI linkage. Windows PowerShell steps fail immediately on native command errors.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16, the ASan/UBSan build passed CTest 16/16 and pointer/thread stress, all HTTP and non-HTTP runtime certifications passed, package and dogfood checks passed, native FFI linkage passed, and the independent regression suite passed 161/161. Repeated adversarial response-security, lifecycle, resource and release-gate reviews found no blocking defects; hosted CI remains the execution gate for macOS, Windows and ARM64-specific paths.

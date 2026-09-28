@@ -2,6 +2,7 @@
 """Certify bounded HTTP worker admission, shutdown, and TLS handshakes."""
 
 import http.client
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import socket
 import ssl
@@ -75,6 +76,13 @@ def require_clean_exit(process, timeout=10):
     return stdout
 
 
+def native_thread_count(process):
+    tasks = Path(f"/proc/{process.pid}/task")
+    if tasks.is_dir():
+        return len(list(tasks.iterdir()))
+    return None
+
+
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
     with tempfile.TemporaryDirectory(prefix="strut-http-workers-") as temporary:
@@ -87,7 +95,7 @@ def main():
             "admission",
             f'''function main() -> void : NetworkError {{
     app := http_server();
-    app.timeouts(2000, 2000, 2000, 1000);
+    app.timeouts(2000, 2000, 2000, 3000);
     app.limits(1024, 4096, 16, 2);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
     app.listen("127.0.0.1", {admission_port}, 4);
@@ -138,7 +146,7 @@ def main():
             "handler-stop",
             f'''function main() -> void : NetworkError {{
     app := http_server();
-    app.timeouts(2000, 2000, 2000, 1000);
+    app.timeouts(2000, 2000, 2000, 3000);
     app.get("/stop", (http_request request) => {{
         app.stop();
         return http_text("stopped");
@@ -156,7 +164,7 @@ def main():
             if request(handler_stop_port, "/stop") != (200, b"stopped"):
                 raise RuntimeError("handler-initiated stop lost its response")
             require_clean_exit(server)
-            if time.monotonic() - started > 0.75:
+            if time.monotonic() - started > 1.5:
                 raise RuntimeError("handler-initiated stop waited for its own shutdown deadline")
         finally:
             if server.poll() is None:
@@ -170,7 +178,7 @@ def main():
             "async-handler-stop",
             f'''function main() -> void : NetworkError {{
     app := http_server();
-    app.timeouts(2000, 2000, 2000, 1000);
+    app.timeouts(2000, 2000, 2000, 3000);
     app.get_async("/stop", async (http_request request) => {{
         app.stop();
         return http_text("async-stopped");
@@ -188,7 +196,7 @@ def main():
             if request(async_stop_port, "/stop") != (200, b"async-stopped"):
                 raise RuntimeError("async handler-initiated stop lost its response")
             require_clean_exit(server)
-            if time.monotonic() - started > 0.75:
+            if time.monotonic() - started > 1.5:
                 raise RuntimeError("async handler-initiated stop waited for its own deadline")
         finally:
             if server.poll() is None:
@@ -202,7 +210,7 @@ def main():
             "shutdown",
             f'''function main() -> int : (NetworkError, ThreadError, TimeError) {{
     app := http_server();
-    app.timeouts(5000, 5000, 5000, 250);
+    app.timeouts(5000, 5000, 5000, 500);
     app.limits(1024, 4096, 16, 1);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
     listener := thread(() => {{ app.listen("127.0.0.1", {shutdown_port}); }});
@@ -225,7 +233,7 @@ def main():
             blocker.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
             stdout = require_clean_exit(server)
             elapsed_ms = int(stdout.strip())
-            if elapsed_ms > 450:
+            if elapsed_ms > 850:
                 raise RuntimeError(f"shutdown exceeded one deadline: {elapsed_ms} ms")
         finally:
             if blocker is not None:
@@ -274,6 +282,97 @@ def main():
             finally:
                 slow.close()
             require_clean_exit(server, timeout=4)
+        finally:
+            if server.poll() is None:
+                server.kill()
+                server.wait()
+
+        race_port = available_port()
+        startup_race = compile_program(
+            compiler,
+            root,
+            "startup-stop-race",
+            f'''function main() -> int : (NetworkError, ThreadError, TimeError) {{
+    app := http_server();
+    app.timeouts(1000, 1000, 1000, 200);
+    app.stop();
+    initial := thread(() => {{ app.listen("127.0.0.1", {race_port}); }});
+    while (!app.running()) {{ sleep_ms(1); }}
+    app.stop();
+    initial.join();
+    int cycle := 0;
+    while (cycle < 20) {{
+        listener := thread(() => {{ app.listen("127.0.0.1", {race_port}); }});
+        first := thread(() => {{
+            int attempt := 0;
+            while (attempt < 50) {{ app.stop(); sleep_ms(1); attempt++; }}
+        }});
+        second := thread(() => {{
+            int attempt := 0;
+            while (attempt < 50) {{ app.stop(); sleep_ms(1); attempt++; }}
+        }});
+        sleep_ms(10);
+        app.stop();
+        first.join();
+        second.join();
+        app.stop();
+        listener.join();
+        if (app.running()) {{ return 1; }}
+        cycle++;
+    }}
+    return 0;
+}}
+''',
+        )
+        raced = subprocess.run(
+            [startup_race], cwd=root, text=True, capture_output=True, timeout=20
+        )
+        if raced.returncode != 0 or raced.stdout or raced.stderr:
+            raise RuntimeError(
+                f"startup/stop race failed: exit={raced.returncode} "
+                f"stdout={raced.stdout!r} stderr={raced.stderr!r}"
+            )
+
+        sustained_port = available_port()
+        sustained = compile_program(
+            compiler,
+            root,
+            "sustained-workers",
+            f'''function main() -> void : (NetworkError, TimeError) {{
+    app := http_server();
+    app.timeouts(5000, 5000, 5000, 2000);
+    app.limits(1024, 4096, 16, 4);
+    app.get("/", (http_request request) => {{ return http_text("ok"); }});
+    app.get("/batch", (http_request request) => {{ sleep_ms(20); return http_text("batch"); }});
+    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.listen("127.0.0.1", {sustained_port});
+}}
+''',
+        )
+        server = subprocess.Popen(
+            [sustained], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        try:
+            wait_until_listening(sustained_port)
+            for index in range(500):
+                if request(sustained_port) != (200, b"ok"):
+                    raise RuntimeError(f"sequential worker reuse failed at request {index}")
+            peak_threads = native_thread_count(server)
+            for batch in range(25):
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    futures = [pool.submit(request, sustained_port, "/batch") for _ in range(4)]
+                    time.sleep(0.005)
+                    observed = native_thread_count(server)
+                    if observed is not None:
+                        peak_threads = max(peak_threads or 0, observed)
+                    results = [future.result() for future in futures]
+                if results != [(200, b"batch")] * 4:
+                    raise RuntimeError(f"concurrent worker reuse failed in batch {batch}: {results!r}")
+            if peak_threads is not None and peak_threads > 6:
+                raise RuntimeError(f"worker thread bound exceeded: observed {peak_threads}, expected at most 6")
+            if request(sustained_port, "/stop") != (200, b"stopped"):
+                raise RuntimeError("sustained server did not stop through its handler")
+            require_clean_exit(server, timeout=15)
         finally:
             if server.poll() is None:
                 server.kill()
@@ -341,7 +440,8 @@ def main():
 
     print(
         "HTTP worker certification: bounded admission and reuse, finite accounting, "
-        "single-deadline shutdown, retired handlers, sync/async handler stop, and TLS handshake timeout passed"
+        "single-deadline shutdown, retired handlers, startup races, 600 sustained requests, "
+        "sync/async handler stop, and TLS handshake timeout passed"
     )
 
 

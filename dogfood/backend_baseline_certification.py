@@ -55,33 +55,17 @@ def raw_request(port, payload):
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
     port = available_port()
-    restart_port = available_port()
     source = """function main() -> int : (NetworkError, TimeError) {
     app := http_server();
     app.timeouts(2000, 2000, 2000, 2000);
     app.limits(32, 1024, 8, 2);
     app.get("/get", (http_request request) => { return http_text("get"); });
     app.post("/post", (http_request request) => { return http_text(request.body); });
-    app.listen("127.0.0.1", %d, 49);
+    app.listen("127.0.0.1", %d, 509);
     if (app.running()) { return 1; }
     return 0;
 }
 """ % port
-    restart_source = """function main() -> int : (NetworkError, ThreadError, TimeError) {
-    app := http_server();
-    int count := 0;
-    while (count < 10) {
-        listener := thread(() => { app.listen("127.0.0.1", %d); });
-        while (!app.running()) { sleep_ms(1); }
-        app.stop();
-        listener.join();
-        if (app.running()) { return 1; }
-        count++;
-    }
-    return 0;
-}
-""" % restart_port
-
     with tempfile.TemporaryDirectory(prefix="strut-backend-baseline-") as temporary:
         root = Path(temporary)
         program = root / "baseline-server.p"
@@ -94,11 +78,15 @@ def main():
         )
         try:
             wait_until_listening(port)
-            assert request(port) == (200, b"get")
-            assert request(port, "POST", "/post", b"post") == (200, b"post")
-            assert request(port, "GET", "/missing") == (404, b"Not Found")
-            assert request(port, "POST", "/get") == (405, b"Method Not Allowed")
-            assert request(port, "POST", "/post", b"x" * 64) == (413, b"Payload Too Large")
+            expected = [
+                (request(port), (200, b"get")),
+                (request(port, "POST", "/post", b"post"), (200, b"post")),
+                (request(port, "GET", "/missing"), (404, b"Not Found")),
+                (request(port, "POST", "/get"), (405, b"Method Not Allowed")),
+                (request(port, "POST", "/post", b"x" * 64), (413, b"Payload Too Large")),
+            ]
+            if any(observed != wanted for observed, wanted in expected):
+                raise RuntimeError(f"backend route baseline failed: {expected!r}")
 
             oversized = raw_request(
                 port,
@@ -106,7 +94,8 @@ def main():
                 + b"x" * 1100
                 + b"\r\n\r\n",
             )
-            assert b" 431 " in oversized
+            if b" 431 " not in oversized:
+                raise RuntimeError(f"oversized header was not rejected: {oversized!r}")
 
             blockers = []
             for _ in range(2):
@@ -114,15 +103,17 @@ def main():
                 blocked.sendall(b"GET /get HTTP/1.1\r\nHost: localhost\r\n")
                 blockers.append(blocked)
             time.sleep(0.1)
-            assert request(port) == (503, b"Service Unavailable")
+            if request(port) != (503, b"Service Unavailable"):
+                raise RuntimeError("saturated connection was not rejected")
             for blocked in blockers:
                 blocked.close()
 
             started = time.monotonic()
             with ThreadPoolExecutor(max_workers=1) as pool:
-                sequential = list(pool.map(lambda _: request(port), range(40)))
+                sequential = list(pool.map(lambda _: request(port), range(500)))
             elapsed = time.monotonic() - started
-            assert sequential == [(200, b"get")] * 40
+            if sequential != [(200, b"get")] * 500:
+                raise RuntimeError("sustained sequential request baseline failed")
 
             stdout, stderr = server.communicate(timeout=8)
             if server.returncode != 0:
@@ -134,12 +125,29 @@ def main():
                 server.kill()
                 server.wait()
 
+        restart_port = available_port()
+        restart_source = """function main() -> int : (NetworkError, HttpError, ThreadError, TimeError) {
+    app := http_server();
+    app.get("/health", (http_request request) => { return http_text("ok"); });
+    int count := 0;
+    while (count < 20) {
+        listener := thread(() => { app.listen("127.0.0.1", %d, 1); });
+        while (!app.running()) { sleep_ms(1); }
+        response := http_get("http://127.0.0.1:%d/health");
+        if (response.status != 200 || response.body != "ok") { return 2; }
+        listener.join();
+        if (app.running()) { return 1; }
+        count++;
+    }
+    return 0;
+}
+""" % (restart_port, restart_port)
         restart_program = root / "restart.p"
         restart_executable = root / ("restart.exe" if sys.platform == "win32" else "restart")
         restart_program.write_text(restart_source, encoding="utf-8")
         subprocess.run([compiler, restart_program, "-o", restart_executable], check=True, cwd=root)
         restarted = subprocess.run(
-            [restart_executable], cwd=root, text=True, capture_output=True, timeout=20
+            [restart_executable], cwd=root, text=True, capture_output=True, timeout=40
         )
         if restarted.returncode != 0:
             raise RuntimeError(
@@ -149,7 +157,7 @@ def main():
 
     print(
         "Backend baseline: GET/POST, 404/405/413/431, connection limit, "
-        f"40 sequential requests in {elapsed:.3f}s, and 10 start/stop cycles passed"
+        f"500 sequential requests in {elapsed:.3f}s, and 20 start/stop cycles passed"
     )
 
 

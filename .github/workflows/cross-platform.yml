@@ -17,6 +17,7 @@ on:
       - 'tools/certify_docs.py'
       - 'RELEASE_NOTES.md'
       - '.github/workflows/cross-platform.yml'
+      - '.github/workflows/release.yml'
   pull_request:
     paths:
       - 'src/**'
@@ -31,6 +32,7 @@ on:
       - 'tools/certify_docs.py'
       - 'RELEASE_NOTES.md'
       - '.github/workflows/cross-platform.yml'
+      - '.github/workflows/release.yml'
 
 jobs:
   compiler:
@@ -64,7 +66,7 @@ jobs:
         run: python3 tools/check_release.py
       - name: Install generated-program dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev libsqlite3-dev
       - name: Install current LLVM toolchain (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -77,6 +79,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           vcpkg install curl:x64-windows sqlite3:x64-windows openssl:x64-windows
           $vcpkgRoot = Split-Path -Parent (Get-Command vcpkg).Source
           $installed = "$vcpkgRoot\installed\x64-windows"
@@ -119,7 +123,9 @@ jobs:
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/http_framing_certification.py build/strut
+          python3 dogfood/http_response_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
+          python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
@@ -128,12 +134,16 @@ jobs:
           # `out`/`err` are intentional globals; JSONIC triggers C4702; getenv is portability-wrapped.
           STRUT_CXXFLAGS: /W4 /WX /wd4459 /wd4702 /D_CRT_SECURE_NO_WARNINGS
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           python dogfood/check.py build/Release/strut.exe
           python dogfood/diagnostics.py build/Release/strut.exe
           python dogfood/package_certification.py build/Release/strut.exe
           python dogfood/http_lifecycle_certification.py build/Release/strut.exe
           python dogfood/http_framing_certification.py build/Release/strut.exe
+          python dogfood/http_response_certification.py build/Release/strut.exe
           python dogfood/http_worker_certification.py build/Release/strut.exe
+          python dogfood/backend_baseline_certification.py build/Release/strut.exe
           python dogfood/process_cancellation_certification.py build/Release/strut.exe
 
   linux-arm64:
@@ -150,7 +160,7 @@ jobs:
       - name: Check release metadata
         run: python3 tools/check_release.py
       - name: Install generated-program dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev libsqlite3-dev
       - run: cmake -S . -B build -DCMAKE_CXX_COMPILER=g++ -DSTRUT_WARNINGS_AS_ERRORS=ON
       - run: cmake --build build --parallel
       - name: Certify executable documentation
@@ -167,5 +177,7 @@ jobs:
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/http_framing_certification.py build/strut
+          python3 dogfood/http_response_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
+          python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
