@@ -185,11 +185,15 @@ private:std::shared_ptr<strut_cancellation_state> state_;
 
 void emit_executor(std::ostream& out) {
     out << R"STRUT_ASYNC(
+#ifndef STRUT_EXECUTION_CONTEXT_DEFINED
+#define STRUT_EXECUTION_CONTEXT_DEFINED
+inline thread_local const void* strut_execution_context=nullptr;
+#endif
 class strut_executor {
 public:
     strut_executor(){auto n=std::thread::hardware_concurrency();if(n<2)n=2;for(unsigned i=0;i<n;++i)workers_.emplace_back([this]{worker();});}
     ~strut_executor(){{std::lock_guard<std::mutex> g(m_);stopping_=true;}cv_.notify_all();for(auto& t:workers_)if(t.joinable())t.join();}
-    template<class F> auto submit(F&& f)->std::future<std::invoke_result_t<F>>{using R=std::invoke_result_t<F>;auto task=std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));auto fut=task->get_future();{std::lock_guard<std::mutex> g(m_);q_.emplace([task]{(*task)();});}cv_.notify_one();return fut;}
+    template<class F> auto submit(F&& f)->std::future<std::invoke_result_t<F>>{using R=std::invoke_result_t<F>;auto task=std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));auto fut=task->get_future();const void* context=strut_execution_context;{std::lock_guard<std::mutex> g(m_);q_.emplace([task,context]{const void* previous=strut_execution_context;strut_execution_context=context;(*task)();strut_execution_context=previous;});}cv_.notify_one();return fut;}
 private:
     void worker(){for(;;){std::function<void()> job;{std::unique_lock<std::mutex> l(m_);cv_.wait(l,[this]{return stopping_||!q_.empty();});if(stopping_&&q_.empty())return;job=std::move(q_.front());q_.pop();}job();}}
     std::vector<std::thread> workers_;std::queue<std::function<void()>> q_;std::mutex m_;std::condition_variable cv_;bool stopping_=false;
@@ -208,36 +212,78 @@ inline void strut_await(strut_future<void>&& f){f.get();}
 
 void emit_tcp(std::ostream& out, bool connect, bool async) {
     out << R"STRUT_TCP(
+#include <atomic>
+#include <cerrno>
 #ifdef _WIN32
 using strut_socket_handle=SOCKET; constexpr strut_socket_handle strut_invalid_socket=INVALID_SOCKET;
 inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){shutdown(h,SD_BOTH);closesocket(h);}}
+inline bool strut_socket_set_blocking(strut_socket_handle h,bool blocking){u_long mode=blocking?0:1;return ioctlsocket(h,FIONBIO,&mode)==0;}
+inline bool strut_socket_would_block(){const int error=WSAGetLastError();return error==WSAEWOULDBLOCK||error==WSAEINPROGRESS;}
+inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){WSAPOLLFD descriptor{h,POLLIN,0};return WSAPoll(&descriptor,1,timeout_ms);}
 struct strut_winsock_runtime{strut_winsock_runtime(){WSADATA d{};if(WSAStartup(MAKEWORD(2,2),&d)!=0)throw strut_checked_error("NetworkError","WSAStartup failed");}~strut_winsock_runtime(){WSACleanup();}};
 inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runtime;}
 #else
+#include <fcntl.h>
+#include <poll.h>
 using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socket=-1;
 inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){::shutdown(h,SHUT_RDWR);::close(h);}}
+inline bool strut_socket_set_blocking(strut_socket_handle h,bool blocking){const int flags=fcntl(h,F_GETFL,0);return flags>=0&&fcntl(h,F_SETFL,blocking?(flags&~O_NONBLOCK):(flags|O_NONBLOCK))==0;}
+inline bool strut_socket_would_block(){return errno==EAGAIN||errno==EWOULDBLOCK;}
+inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){pollfd descriptor{h,POLLIN,0};int result;do{result=poll(&descriptor,1,timeout_ms);}while(result<0&&(errno==EINTR||errno==EAGAIN));return result;}
 inline void strut_socket_init(){}
 #endif
-struct strut_socket_state{strut_socket_handle handle=strut_invalid_socket;~strut_socket_state(){strut_socket_close(handle);}};
+inline void strut_socket_prepare(strut_socket_handle h){
+#ifdef SO_NOSIGPIPE
+    int enabled=1;setsockopt(h,SOL_SOCKET,SO_NOSIGPIPE,reinterpret_cast<const char*>(&enabled),sizeof(enabled));
+#else
+    (void)h;
+#endif
+}
+struct strut_socket_state;
+struct strut_socket_operation{std::shared_ptr<strut_socket_state> state;strut_socket_handle handle=strut_invalid_socket;strut_socket_operation()=default;strut_socket_operation(std::shared_ptr<strut_socket_state> value,strut_socket_handle native):state(std::move(value)),handle(native){}strut_socket_operation(const strut_socket_operation&)=delete;strut_socket_operation& operator=(const strut_socket_operation&)=delete;strut_socket_operation(strut_socket_operation&& other) noexcept:state(std::move(other.state)),handle(other.handle){other.handle=strut_invalid_socket;}~strut_socket_operation();};
+struct strut_socket_state:std::enable_shared_from_this<strut_socket_state>{mutable std::mutex mutex;std::condition_variable cv;strut_socket_handle handle=strut_invalid_socket;std::size_t operations=0;bool closing=false;~strut_socket_state(){strut_socket_close(handle);}strut_socket_operation acquire(){std::lock_guard<std::mutex> lock(mutex);if(closing||handle==strut_invalid_socket)throw strut_checked_error("NetworkError","operation on closed socket");++operations;return {shared_from_this(),handle};}void release(){std::lock_guard<std::mutex> lock(mutex);if(operations>0)--operations;if(operations==0)cv.notify_all();}void interrupt(){std::lock_guard<std::mutex> lock(mutex);if(handle==strut_invalid_socket)return;
+#ifdef _WIN32
+    ::shutdown(handle,SD_BOTH);
+#else
+    ::shutdown(handle,SHUT_RDWR);
+#endif
+}void close(){std::unique_lock<std::mutex> lock(mutex);if(closing){cv.wait(lock,[&]{return !closing;});return;}if(handle==strut_invalid_socket)return;closing=true;const auto native=handle;
+#ifdef _WIN32
+    ::shutdown(native,SD_BOTH);
+#else
+    ::shutdown(native,SHUT_RDWR);
+#endif
+    cv.wait(lock,[&]{return operations==0;});handle=strut_invalid_socket;lock.unlock();strut_socket_close(native);lock.lock();closing=false;lock.unlock();cv.notify_all();}strut_socket_handle peek() const{std::lock_guard<std::mutex> lock(mutex);return handle;}};
+inline strut_socket_operation::~strut_socket_operation(){if(state)state->release();}
+struct strut_listener_state;
+struct strut_listener_operation{std::shared_ptr<strut_listener_state> state;strut_socket_handle handle=strut_invalid_socket;strut_listener_operation(std::shared_ptr<strut_listener_state> value,strut_socket_handle native):state(std::move(value)),handle(native){}strut_listener_operation(const strut_listener_operation&)=delete;strut_listener_operation& operator=(const strut_listener_operation&)=delete;strut_listener_operation(strut_listener_operation&&)=default;~strut_listener_operation();};
+struct strut_listener_state:std::enable_shared_from_this<strut_listener_state>{mutable std::mutex mutex;std::condition_variable cv;strut_socket_handle handle=strut_invalid_socket;std::size_t operations=0;bool closing=false;~strut_listener_state(){strut_socket_close(handle);}strut_listener_operation acquire(){std::lock_guard<std::mutex> lock(mutex);if(closing||handle==strut_invalid_socket)throw strut_checked_error("NetworkError","accept on closed listener");++operations;return {shared_from_this(),handle};}void release(){std::lock_guard<std::mutex> lock(mutex);if(operations>0)--operations;if(operations==0)cv.notify_all();}bool interrupted() const{std::lock_guard<std::mutex> lock(mutex);return closing||handle==strut_invalid_socket;}void close(){std::unique_lock<std::mutex> lock(mutex);if(closing){cv.wait(lock,[&]{return !closing;});return;}if(handle==strut_invalid_socket)return;closing=true;cv.wait(lock,[&]{return operations==0;});const auto native=handle;handle=strut_invalid_socket;lock.unlock();strut_socket_close(native);lock.lock();closing=false;lock.unlock();cv.notify_all();}strut_socket_handle peek() const{std::lock_guard<std::mutex> lock(mutex);return handle;}};
+inline strut_listener_operation::~strut_listener_operation(){if(state)state->release();}
 class strut_tcp_socket {
 public:
-    strut_tcp_socket():s_(std::make_shared<strut_socket_state>()){} explicit strut_tcp_socket(strut_socket_handle h):s_(std::make_shared<strut_socket_state>()){s_->handle=h;}
-    bool is_open() const{return s_&&s_->handle!=strut_invalid_socket;}void close(){if(is_open()){strut_socket_close(s_->handle);s_->handle=strut_invalid_socket;}}
-    void write(const strut_string& data){if(!is_open())throw strut_checked_error("NetworkError","write on closed socket");std::size_t off=0;while(off<data.v.size()){
+    strut_tcp_socket():s_(std::make_shared<strut_socket_state>()){} explicit strut_tcp_socket(strut_socket_handle h){try{s_=std::make_shared<strut_socket_state>();strut_socket_prepare(h);s_->handle=h;}catch(...){strut_socket_close(h);throw;}}
+    bool is_open() const{return native_handle()!=strut_invalid_socket;}void close(){if(s_)s_->close();}void shutdown_io() const{if(s_)s_->interrupt();}
+    void write(const strut_string& data){if(!s_)throw strut_checked_error("NetworkError","write on closed socket");auto operation=s_->acquire();const auto h=operation.handle;std::size_t off=0;while(off<data.v.size()){
 #ifdef _WIN32
-        int n=::send(s_->handle,data.v.data()+off,static_cast<int>(data.v.size()-off),0);
+        int n=::send(h,data.v.data()+off,static_cast<int>(data.v.size()-off),0);
 #else
-        ssize_t n=::send(s_->handle,data.v.data()+off,data.v.size()-off,0);
+        ssize_t n=::send(h,data.v.data()+off,data.v.size()-off,
+#ifdef MSG_NOSIGNAL
+            MSG_NOSIGNAL
+#else
+            0
+#endif
+        );
 #endif
         if(n<=0)throw strut_checked_error("NetworkError","socket write failed");off+=static_cast<std::size_t>(n);}}
-    strut_string read(std::int64_t max_bytes=4096){if(!is_open())throw strut_checked_error("NetworkError","read on closed socket");if(max_bytes<=0)return {};std::string out(static_cast<std::size_t>(max_bytes),'\0');
+    strut_string read(std::int64_t max_bytes=4096){if(!s_)throw strut_checked_error("NetworkError","read on closed socket");auto operation=s_->acquire();const auto h=operation.handle;if(max_bytes<=0)return {};std::string out(static_cast<std::size_t>(max_bytes),'\0');
 #ifdef _WIN32
-        int n=::recv(s_->handle,out.data(),static_cast<int>(out.size()),0);
+        int n=::recv(h,out.data(),static_cast<int>(out.size()),0);
 #else
-        ssize_t n=::recv(s_->handle,out.data(),out.size(),0);
+        ssize_t n=::recv(h,out.data(),out.size(),0);
 #endif
         if(n<0)throw strut_checked_error("NetworkError","socket read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}
-    strut_socket_handle native_handle() const{return s_->handle;}
+    strut_socket_handle native_handle() const{return s_?s_->peek():strut_invalid_socket;}strut_socket_operation pin() const{if(!s_)throw strut_checked_error("NetworkError","operation on closed socket");return s_->acquire();}
 private:std::shared_ptr<strut_socket_state> s_;
 };
 )STRUT_TCP";
@@ -250,15 +296,15 @@ inline strut_tcp_socket tcp_connect(const strut_string& host,std::int32_t port){
     out << R"STRUT_TCP(
 class strut_tcp_listener {
 public:
-    strut_tcp_listener():s_(std::make_shared<strut_socket_state>()){} explicit strut_tcp_listener(strut_socket_handle h):s_(std::make_shared<strut_socket_state>()){s_->handle=h;}
-    bool is_open() const{return s_&&s_->handle!=strut_invalid_socket;}void close(){if(is_open()){strut_socket_close(s_->handle);s_->handle=strut_invalid_socket;}}
-    strut_tcp_socket accept(){if(!is_open())throw strut_checked_error("NetworkError","accept on closed listener");auto h=::accept(s_->handle,nullptr,nullptr);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP accept failed");return strut_tcp_socket(h);}
+    strut_tcp_listener():s_(std::make_shared<strut_listener_state>()){} explicit strut_tcp_listener(strut_socket_handle h){try{s_=std::make_shared<strut_listener_state>();s_->handle=h;}catch(...){strut_socket_close(h);throw;}}
+    bool is_open() const{return native_handle()!=strut_invalid_socket;}void close(){if(s_)s_->close();}
+    strut_tcp_socket accept(){if(!s_)throw strut_checked_error("NetworkError","accept on closed listener");auto operation=s_->acquire();for(;;){auto h=::accept(operation.handle,nullptr,nullptr);if(h!=strut_invalid_socket){if(!strut_socket_set_blocking(h,true)){strut_socket_close(h);throw strut_checked_error("NetworkError","unable to configure accepted socket");}return strut_tcp_socket(h);}if(!strut_socket_would_block())throw strut_checked_error("NetworkError","TCP accept failed");if(s_->interrupted())throw strut_checked_error("NetworkError","accept on closed listener");if(strut_socket_poll_read(operation.handle,50)<0)throw strut_checked_error("NetworkError","TCP accept failed");}}
 )STRUT_TCP";
     if (async) out << "    strut_future<strut_tcp_socket> accept_async(){auto copy=*this;return strut_async([copy]() mutable{return copy.accept();});}\n";
     out << R"STRUT_TCP(
-private:std::shared_ptr<strut_socket_state> s_;
+private:strut_socket_handle native_handle() const{return s_?s_->peek():strut_invalid_socket;}std::shared_ptr<strut_listener_state> s_;
 };
-inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed: address unavailable or port already in use");return strut_tcp_listener(h);}
+inline strut_tcp_listener tcp_listen(const strut_string& host,std::int32_t port,std::int32_t backlog=128){strut_socket_init();if(port<1||port>65535)throw strut_checked_error("NetworkError","invalid TCP port");addrinfo hints{};hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;hints.ai_flags=AI_PASSIVE;addrinfo* list=nullptr;const std::string service=std::to_string(port);const char* node=host.v.empty()?nullptr:host.v.c_str();if(getaddrinfo(node,service.c_str(),&hints,&list)!=0)throw strut_checked_error("NetworkError","listen address resolution failed");strut_socket_handle h=strut_invalid_socket;for(addrinfo* p=list;p;p=p->ai_next){h=::socket(p->ai_family,p->ai_socktype,p->ai_protocol);if(h==strut_invalid_socket)continue;int yes=1;setsockopt(h,SOL_SOCKET,SO_REUSEADDR,reinterpret_cast<const char*>(&yes),sizeof(yes));if(::bind(h,p->ai_addr,static_cast<int>(p->ai_addrlen))==0&&::listen(h,backlog)==0)break;strut_socket_close(h);h=strut_invalid_socket;}freeaddrinfo(list);if(h==strut_invalid_socket)throw strut_checked_error("NetworkError","TCP listen failed: address unavailable or port already in use");if(!strut_socket_set_blocking(h,false)){strut_socket_close(h);throw strut_checked_error("NetworkError","unable to configure TCP listener");}return strut_tcp_listener(h);}
 )STRUT_TCP";
 }
 
@@ -346,10 +392,15 @@ inline bool strut_route_match(const std::string& pattern,const std::string& path
 }
 
 void emit_http_server(std::ostream& out, bool async_handlers, bool tls) {
-    if (tls) out << "#define STRUT_USE_SERVER_TLS 1\n#include <openssl/ssl.h>\n#include <openssl/err.h>\n";
+    if (tls) out << "#define STRUT_USE_SERVER_TLS 1\n#include <openssl/ssl.h>\n#include <openssl/err.h>\n#include <cerrno>\n#ifndef _WIN32\n#include <fcntl.h>\n#include <poll.h>\n#endif\n";
     out << R"STRUT_SERVER(
 #include <atomic>
 #include <csignal>
+#include <deque>
+#ifndef STRUT_EXECUTION_CONTEXT_DEFINED
+#define STRUT_EXECUTION_CONTEXT_DEFINED
+inline thread_local const void* strut_execution_context=nullptr;
+#endif
 #ifndef _WIN32
 #ifndef STRUT_SIGPIPE_MUTEX_DEFINED
 #define STRUT_SIGPIPE_MUTEX_DEFINED
@@ -368,31 +419,40 @@ public:
     void post_async(const strut_string& path,std::function<strut_future<strut_server_response>(strut_server_request)> h) const{post(path,[h=std::move(h)](strut_server_request r){return strut_await(h(std::move(r)));});}
 )STRUT_SERVER";
     out << R"STRUT_SERVER(
-    void serve_static(const strut_string& prefix,const std::unordered_map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()) const{require_stopped("configure static files");s_->static_prefix=prefix.v;s_->static_files=files;s_->static_fallback=fallback.v;}
-    void timeouts(std::int32_t read_ms,std::int32_t write_ms,std::int32_t idle_ms,std::int32_t shutdown_ms) const{require_stopped("configure timeouts");if(read_ms<=0||write_ms<=0||idle_ms<=0||shutdown_ms<0)throw strut_checked_error("NetworkError","HTTP timeouts must be positive (shutdown may be zero)");s_->read_timeout_ms=read_ms;s_->write_timeout_ms=write_ms;s_->idle_timeout_ms=idle_ms;s_->shutdown_timeout_ms=shutdown_ms;}
-    void limits(std::int64_t body_bytes,std::int64_t header_bytes,std::int32_t header_count,std::int32_t connections) const{require_stopped("configure limits");if(body_bytes<0||header_bytes<1024||header_count<=0||connections<=0||static_cast<std::uint64_t>(body_bytes)>std::numeric_limits<std::size_t>::max()||static_cast<std::uint64_t>(header_bytes)>std::numeric_limits<std::size_t>::max())throw strut_checked_error("NetworkError","invalid HTTP server limits");s_->max_body_bytes=static_cast<std::size_t>(body_bytes);s_->max_header_bytes=static_cast<std::size_t>(header_bytes);s_->max_header_count=header_count;s_->max_connections=connections;}
+    void serve_static(const strut_string& prefix,const std::unordered_map<strut_string,strut_string>& files,const strut_string& fallback=strut_string()) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("configure static files");s_->static_prefix=prefix.v;s_->static_files=files;s_->static_fallback=fallback.v;}
+    void timeouts(std::int32_t read_ms,std::int32_t write_ms,std::int32_t idle_ms,std::int32_t shutdown_ms) const{if(read_ms<=0||write_ms<=0||idle_ms<=0||shutdown_ms<0)throw strut_checked_error("NetworkError","HTTP timeouts must be positive (shutdown may be zero)");std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("configure timeouts");s_->read_timeout_ms=read_ms;s_->write_timeout_ms=write_ms;s_->idle_timeout_ms=idle_ms;s_->shutdown_timeout_ms=shutdown_ms;}
+    void limits(std::int64_t body_bytes,std::int64_t header_bytes,std::int32_t header_count,std::int32_t connections) const{if(body_bytes<0||header_bytes<1024||header_count<=0||connections<=0||static_cast<std::uint64_t>(body_bytes)>std::numeric_limits<std::size_t>::max()||static_cast<std::uint64_t>(header_bytes)>std::numeric_limits<std::size_t>::max())throw strut_checked_error("NetworkError","invalid HTTP server limits");std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("configure limits");s_->max_body_bytes=static_cast<std::size_t>(body_bytes);s_->max_header_bytes=static_cast<std::size_t>(header_bytes);s_->max_header_count=header_count;s_->max_connections=connections;}
     bool running() const{return s_->running.load();}
-    void stop() const{auto s=s_;if(!s->running.load())return;s->stopping.store(true);s->listener.close();std::unique_lock<std::mutex> lock(s->mutex);if(!s->cv.wait_for(lock,std::chrono::milliseconds(s->shutdown_timeout_ms),[&]{return s->active==0;})){for(auto& socket:s->active_sockets)socket.close();}}
+    void stop() const{std::shared_ptr<run_state> run;{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);run=s_->current;}if(!run)return;request_stop(run);if(worker_run_!=run.get()&&strut_execution_context!=run.get())wait_for_drain(run);}
     void listen(const strut_string& host,std::int32_t port,std::int32_t max_requests=0) const{
 #ifndef _WIN32
         {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
-        auto s=s_;bool expected=false;if(!s->running.compare_exchange_strong(expected,true))throw strut_checked_error("NetworkError","HTTP server is already running");
-        {std::lock_guard<std::mutex> lock(s->mutex);if(s->active!=0){s->running.store(false);throw strut_checked_error("NetworkError","HTTP server shutdown is still in progress");}}
-        s->stopping.store(false);try{s->listener=tcp_listen(host,port);}catch(...){s->running.store(false);throw;}
-        std::vector<std::thread> workers;std::int32_t served=0;
-        try{while(!s->stopping.load()&&(max_requests<=0||served<max_requests)){
-            strut_tcp_socket socket;try{socket=s->listener.accept();}catch(...){if(s->stopping.load())break;throw;}
-            bool saturated=false;{std::lock_guard<std::mutex> lock(s->mutex);saturated=s->active>=s->max_connections;if(!saturated){++s->active;s->active_sockets.push_back(socket);}}
-            if(saturated){send_error(socket,503,"Service Unavailable");continue;}
-            workers.emplace_back([s,socket]() mutable{serve_one(s,socket);{std::lock_guard<std::mutex> lock(s->mutex);--s->active;}s->cv.notify_all();});++served;
-        }}catch(...){s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);throw;}
-        s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);s->stopping.store(false);
+        auto s=s_;run_server(host,port,max_requests,[s](strut_tcp_socket& socket){serve_one(s,socket);},[s](strut_tcp_socket& socket){set_socket_timeouts(socket,s->write_timeout_ms,s->write_timeout_ms);send_error(socket,503,"Service Unavailable");});
     }
 )STRUT_SERVER";
     if (tls) out << R"STRUT_SERVER(
 private:
-    class tls_socket{public:tls_socket(strut_tcp_socket socket,SSL* ssl):socket_(std::move(socket)),ssl_(ssl){}tls_socket(const tls_socket&)=delete;tls_socket& operator=(const tls_socket&)=delete;tls_socket(tls_socket&& other) noexcept:socket_(std::move(other.socket_)),ssl_(other.ssl_){other.ssl_=nullptr;}~tls_socket(){close();}strut_socket_handle native_handle() const{return socket_.native_handle();}strut_string read(std::int64_t max_bytes=4096){if(max_bytes<=0)return {};std::string out(static_cast<std::size_t>(max_bytes),'\0');int n=SSL_read(ssl_,out.data(),static_cast<int>(out.size()));if(n==0)return {};if(n<0)throw strut_checked_error("TlsError","TLS request read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}void write(const strut_string& data){std::size_t offset=0;while(offset<data.v.size()){int n=SSL_write(ssl_,data.v.data()+offset,static_cast<int>(data.v.size()-offset));if(n<=0)throw strut_checked_error("TlsError","TLS response write failed");offset+=static_cast<std::size_t>(n);}}void close(){if(ssl_){SSL_shutdown(ssl_);SSL_free(ssl_);ssl_=nullptr;}socket_.close();}private:strut_tcp_socket socket_;SSL* ssl_=nullptr;};
+    class tls_socket{public:tls_socket(strut_tcp_socket socket,SSL* ssl):socket_(std::move(socket)),ssl_(ssl){}tls_socket(const tls_socket&)=delete;tls_socket& operator=(const tls_socket&)=delete;tls_socket(tls_socket&& other) noexcept:socket_(std::move(other.socket_)),ssl_(other.ssl_){other.ssl_=nullptr;}~tls_socket(){close();}strut_socket_handle native_handle() const{return socket_.native_handle();}strut_socket_operation pin() const{return socket_.pin();}strut_string read(std::int64_t max_bytes=4096){if(max_bytes<=0)return {};auto operation=socket_.pin();std::string out(static_cast<std::size_t>(max_bytes),'\0');int n=SSL_read(ssl_,out.data(),static_cast<int>(out.size()));if(n==0)return {};if(n<0)throw strut_checked_error("TlsError","TLS request read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}void write(const strut_string& data){auto operation=socket_.pin();std::size_t offset=0;while(offset<data.v.size()){int n=SSL_write(ssl_,data.v.data()+offset,static_cast<int>(data.v.size()-offset));if(n<=0)throw strut_checked_error("TlsError","TLS response write failed");offset+=static_cast<std::size_t>(n);}}void close(){if(ssl_){try{auto operation=socket_.pin();SSL_shutdown(ssl_);}catch(...){ }SSL_free(ssl_);ssl_=nullptr;}socket_.close();}private:strut_tcp_socket socket_;SSL* ssl_=nullptr;};
+    static bool tls_accept_until(const strut_tcp_socket& socket,SSL* ssl,std::int32_t timeout_ms){auto operation=socket.pin();const auto handle=operation.handle;
+#ifdef _WIN32
+        u_long nonblocking=1;if(ioctlsocket(handle,FIONBIO,&nonblocking)!=0)return false;
+#else
+        const int flags=fcntl(handle,F_GETFL,0);if(flags<0||fcntl(handle,F_SETFL,flags|O_NONBLOCK)!=0)return false;
+#endif
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout_ms);bool accepted=false;for(;;){ERR_clear_error();const int result=SSL_accept(ssl);if(result==1){accepted=std::chrono::steady_clock::now()<=deadline;break;}const int error=SSL_get_error(ssl,result);if(error!=SSL_ERROR_WANT_READ&&error!=SSL_ERROR_WANT_WRITE)break;const auto now=std::chrono::steady_clock::now();if(now>=deadline)break;const auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-now+std::chrono::milliseconds(1)).count();
+#ifdef _WIN32
+        WSAPOLLFD descriptor{handle,static_cast<SHORT>(error==SSL_ERROR_WANT_WRITE?POLLOUT:POLLIN),0};const int selected=WSAPoll(&descriptor,1,static_cast<INT>(std::min<std::int64_t>(remaining,std::numeric_limits<int>::max())));if(selected==SOCKET_ERROR&&WSAGetLastError()==WSAEINTR)continue;
+#else
+        pollfd descriptor{handle,static_cast<short>(error==SSL_ERROR_WANT_WRITE?POLLOUT:POLLIN),0};const int selected=poll(&descriptor,1,static_cast<int>(std::min<std::int64_t>(remaining,std::numeric_limits<int>::max())));if(selected<0&&(errno==EINTR||errno==EAGAIN))continue;
+#endif
+        if(selected<=0)break;}
+#ifdef _WIN32
+        u_long blocking=0;if(ioctlsocket(handle,FIONBIO,&blocking)!=0)accepted=false;
+#else
+        if(fcntl(handle,F_SETFL,flags)!=0)accepted=false;
+#endif
+        return accepted;}
 public:
     void listen_tls(const strut_string& host,std::int32_t port,const strut_string& certificate,const strut_string& private_key,std::int32_t max_requests=0) const{
 #ifndef _WIN32
@@ -402,29 +462,36 @@ public:
         if(SSL_CTX_use_certificate_chain_file(raw,certificate.v.c_str())!=1)throw strut_checked_error("TlsError","unable to load TLS certificate chain from '"+certificate.v+"'");
         if(SSL_CTX_use_PrivateKey_file(raw,private_key.v.c_str(),SSL_FILETYPE_PEM)!=1)throw strut_checked_error("TlsError","unable to load TLS private key from '"+private_key.v+"'");
         if(SSL_CTX_check_private_key(raw)!=1)throw strut_checked_error("TlsError","TLS certificate and private key do not match");
-        auto s=s_;bool expected=false;if(!s->running.compare_exchange_strong(expected,true))throw strut_checked_error("NetworkError","HTTP server is already running");{std::lock_guard<std::mutex> lock(s->mutex);if(s->active!=0){s->running.store(false);throw strut_checked_error("NetworkError","HTTP server shutdown is still in progress");}}s->stopping.store(false);try{s->listener=tcp_listen(host,port);}catch(...){s->running.store(false);throw;}
-        std::vector<std::thread> workers;std::int32_t served=0;try{while(!s->stopping.load()&&(max_requests<=0||served<max_requests)){strut_tcp_socket socket;try{socket=s->listener.accept();}catch(...){if(s->stopping.load())break;throw;}bool saturated=false;{std::lock_guard<std::mutex> lock(s->mutex);saturated=s->active>=s->max_connections;if(!saturated){++s->active;s->active_sockets.push_back(socket);}}if(saturated){socket.close();continue;}workers.emplace_back([s,socket,context]() mutable{SSL* ssl=SSL_new(context.get());if(ssl){SSL_set_fd(ssl,static_cast<int>(socket.native_handle()));if(SSL_accept(ssl)==1){tls_socket secure(std::move(socket),ssl);serve_one(s,std::move(secure));ssl=nullptr;}if(ssl)SSL_free(ssl);}socket.close();{std::lock_guard<std::mutex> lock(s->mutex);--s->active;}s->cv.notify_all();});++served;}}catch(...){s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);throw;}s->stopping.store(true);s->listener.close();finish_workers(s,workers);s->running.store(false);s->stopping.store(false);
+        auto s=s_;run_server(host,port,max_requests,[s,context](strut_tcp_socket& socket){std::unique_ptr<SSL,decltype(&SSL_free)> ssl(SSL_new(context.get()),SSL_free);if(!ssl)return;if(SSL_set_fd(ssl.get(),static_cast<int>(socket.native_handle()))!=1||!tls_accept_until(socket,ssl.get(),std::min({s->read_timeout_ms,s->write_timeout_ms,s->idle_timeout_ms})))return;tls_socket secure(socket,ssl.release());serve_one(s,secure);},[](strut_tcp_socket& socket){socket.close();});
     }
 )STRUT_SERVER";
     out << R"STRUT_SERVER(
 private:
     struct route{std::string method,path;handler fn;};
-    struct state{std::vector<route> routes;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false},stopping{false};strut_tcp_listener listener;std::mutex mutex;std::condition_variable cv;std::int32_t active=0;std::vector<strut_tcp_socket> active_sockets;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;};
+    struct connection{explicit connection(strut_tcp_socket value):socket(std::move(value)){}strut_tcp_socket socket;bool running=false;};
+    struct run_state{std::mutex mutex;std::condition_variable work_cv,drain_cv;std::deque<std::shared_ptr<connection>> queue,connections;std::shared_ptr<connection> rejecting;strut_tcp_listener listener;std::size_t in_flight=0;bool accepting=true,workers_stopping=false,forced=false,deadline_set=false;std::chrono::steady_clock::time_point deadline;std::int32_t shutdown_timeout_ms=0;};
+    struct state{std::vector<route> routes;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false};std::mutex lifecycle_mutex;std::shared_ptr<run_state> current;bool starting=false;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;};
     std::shared_ptr<state> s_;
-    void require_stopped(const char* action) const{if(s_->running.load())throw strut_checked_error("NetworkError",std::string("cannot ")+action+" while HTTP server is running");}
-    void add_route(const char* method,const strut_string& path,handler h) const{require_stopped("register routes");s_->routes.push_back({method,path.v,std::move(h)});}
-    static void finish_workers(const std::shared_ptr<state>& s,std::vector<std::thread>& workers){bool drained;{std::unique_lock<std::mutex> lock(s->mutex);drained=s->cv.wait_for(lock,std::chrono::milliseconds(s->shutdown_timeout_ms),[&]{return s->active==0;});if(!drained)for(auto& socket:s->active_sockets)socket.close();s->active_sockets.clear();}for(auto& worker:workers){if(!worker.joinable())continue;if(drained)worker.join();else worker.detach();}}
+    inline static thread_local run_state* worker_run_=nullptr;
+    void require_stopped_locked(const char* action) const{if(s_->starting||s_->running.load())throw strut_checked_error("NetworkError",std::string("cannot ")+action+" while HTTP server is running");if(s_->current){std::lock_guard<std::mutex> run_lock(s_->current->mutex);if(s_->current->in_flight!=0)throw strut_checked_error("NetworkError",std::string("cannot ")+action+" while HTTP server shutdown is still in progress");}}
+    void add_route(const char* method,const strut_string& path,handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,std::move(h)});}
+    static void request_stop(const std::shared_ptr<run_state>& run){{std::lock_guard<std::mutex> lock(run->mutex);run->accepting=false;if(!run->deadline_set){run->deadline_set=true;run->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(run->shutdown_timeout_ms);}if(run->rejecting)run->rejecting->socket.close();}run->listener.close();run->work_cv.notify_all();}
+    static void force_shutdown_locked(const std::shared_ptr<run_state>& run){if(run->forced)return;run->forced=true;while(!run->queue.empty()){auto connection=run->queue.front();run->queue.pop_front();connection->socket.close();auto found=std::find(run->connections.begin(),run->connections.end(),connection);if(found!=run->connections.end())run->connections.erase(found);--run->in_flight;}for(const auto& connection:run->connections)if(connection->running)connection->socket.close();run->workers_stopping=true;run->work_cv.notify_all();run->drain_cv.notify_all();}
+    static bool wait_for_drain(const std::shared_ptr<run_state>& run){std::unique_lock<std::mutex> lock(run->mutex);if(!run->deadline_set){run->deadline_set=true;run->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(run->shutdown_timeout_ms);}bool drained=run->drain_cv.wait_until(lock,run->deadline,[&]{return run->in_flight==0;});if(!drained){force_shutdown_locked(run);drained=run->in_flight==0;}else{run->workers_stopping=true;run->work_cv.notify_all();}return drained;}
+    static void worker_loop(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::function<void(strut_tcp_socket&)>& process){for(;;){std::shared_ptr<connection> connection;{std::unique_lock<std::mutex> lock(run->mutex);run->work_cv.wait(lock,[&]{return run->workers_stopping||!run->queue.empty();});if(run->queue.empty()){if(run->workers_stopping)return;continue;}connection=run->queue.front();run->queue.pop_front();connection->running=true;}const void* previous_context=strut_execution_context;worker_run_=run.get();strut_execution_context=run.get();try{process(connection->socket);}catch(...){connection->socket.close();}strut_execution_context=previous_context;worker_run_=nullptr;bool retired_drained=false;{std::lock_guard<std::mutex> lock(run->mutex);auto found=std::find(run->connections.begin(),run->connections.end(),connection);if(found!=run->connections.end())run->connections.erase(found);if(run->in_flight>0)--run->in_flight;if(run->in_flight==0){retired_drained=run->forced;run->drain_cv.notify_all();}}if(retired_drained){std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->current==run)s->running.store(false);}}}
+    void run_server(const strut_string& host,std::int32_t port,std::int32_t max_requests,const std::function<void(strut_tcp_socket&)>& process,const std::function<void(strut_tcp_socket&)>& reject) const{auto s=s_;auto run=std::make_shared<run_state>();{std::lock_guard<std::mutex> lock(s->lifecycle_mutex);require_stopped_locked("start HTTP server");run->shutdown_timeout_ms=s->shutdown_timeout_ms;s->starting=true;}try{run->listener=tcp_listen(host,port);}catch(...){std::lock_guard<std::mutex> lock(s->lifecycle_mutex);s->starting=false;throw;}{std::lock_guard<std::mutex> lock(s->lifecycle_mutex);s->starting=false;s->current=run;s->running.store(true);}std::vector<std::thread> workers;std::uint64_t admitted=0;std::exception_ptr failure;try{while(max_requests<=0||admitted<static_cast<std::uint64_t>(max_requests)){strut_tcp_socket socket;try{socket=run->listener.accept();}catch(...){std::lock_guard<std::mutex> lock(run->mutex);if(!run->accepting)break;throw;}auto connection=std::make_shared<strut_http_server::connection>(std::move(socket));bool saturated=false;{std::lock_guard<std::mutex> lock(run->mutex);if(!run->accepting){connection->socket.close();break;}saturated=run->in_flight>=static_cast<std::size_t>(s->max_connections);if(saturated)run->rejecting=connection;else{if(workers.size()<=run->in_flight&&workers.size()<static_cast<std::size_t>(s->max_connections))workers.emplace_back([s,run,process]{worker_loop(s,run,process);});run->connections.push_back(connection);try{run->queue.push_back(connection);}catch(...){run->connections.pop_back();throw;}++run->in_flight;}}if(saturated){reject(connection->socket);std::lock_guard<std::mutex> lock(run->mutex);if(run->rejecting==connection)run->rejecting.reset();continue;}++admitted;run->work_cv.notify_one();}}catch(...){failure=std::current_exception();}request_stop(run);const bool drained=wait_for_drain(run);for(auto& worker:workers)if(worker.joinable()){if(drained)worker.join();else worker.detach();}{std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(drained)s->running.store(false);}if(failure)std::rethrow_exception(failure);}
     template<class Socket> static void set_socket_timeouts(const Socket& socket,std::int32_t read_ms,std::int32_t write_ms){
+        auto operation=socket.pin();const auto handle=operation.handle;
 #ifdef _WIN32
-        DWORD read=static_cast<DWORD>(read_ms),write=static_cast<DWORD>(write_ms);setsockopt(socket.native_handle(),SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&read),sizeof(read));setsockopt(socket.native_handle(),SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<const char*>(&write),sizeof(write));
+        DWORD read=static_cast<DWORD>(read_ms),write=static_cast<DWORD>(write_ms);setsockopt(handle,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&read),sizeof(read));setsockopt(handle,SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<const char*>(&write),sizeof(write));
 #else
-        timeval read{read_ms/1000,(read_ms%1000)*1000},write{write_ms/1000,(write_ms%1000)*1000};setsockopt(socket.native_handle(),SOL_SOCKET,SO_RCVTIMEO,&read,sizeof(read));setsockopt(socket.native_handle(),SOL_SOCKET,SO_SNDTIMEO,&write,sizeof(write));
+        timeval read{read_ms/1000,(read_ms%1000)*1000},write{write_ms/1000,(write_ms%1000)*1000};setsockopt(handle,SOL_SOCKET,SO_RCVTIMEO,&read,sizeof(read));setsockopt(handle,SOL_SOCKET,SO_SNDTIMEO,&write,sizeof(write));
 #endif
     }
     template<class Socket> static void send_error(Socket& socket,std::int32_t status,const char* message){try{std::string body=message;std::ostringstream out;out<<"HTTP/1.1 "<<status<<' '<<message<<"\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: "<<body.size()<<"\r\nConnection: close\r\n\r\n"<<body;socket.write(strut_string(out.str()));socket.close();}catch(...){socket.close();}}
     static strut_string mime(const std::string& p){auto dot=p.rfind('.');auto e=dot==std::string::npos?std::string():p.substr(dot);if(e==".html")return "text/html; charset=utf-8";if(e==".css")return "text/css; charset=utf-8";if(e==".js")return "application/javascript";if(e==".json")return "application/json";if(e==".svg")return "image/svg+xml";if(e==".png")return "image/png";return "application/octet-stream";}
     static std::string etag(const std::string& data){std::uint64_t h=1469598103934665603ull;for(unsigned char c:data){h^=c;h*=1099511628211ull;}std::ostringstream out;out<<'"'<<std::hex<<h<<'"';return out.str();}
-    template<class Socket> static void serve_one(const std::shared_ptr<state>& s,Socket socket){
+    template<class Socket> static void serve_one(const std::shared_ptr<state>& s,Socket& socket){
         try{set_socket_timeouts(socket,std::min(s->read_timeout_ms,s->idle_timeout_ms),s->write_timeout_ms);std::string raw;std::size_t header_end=std::string::npos;for(;;){auto chunk=socket.read(4096).v;if(chunk.empty()){send_error(socket,400,"Bad Request");return;}raw+=chunk;header_end=raw.find("\r\n\r\n");const std::size_t inspected=header_end==std::string::npos?raw.size():header_end+4;bool invalid_line_end=false;for(std::size_t i=0;i<inspected;++i){if(raw[i]=='\n'&&(i==0||raw[i-1]!='\r'))invalid_line_end=true;if(raw[i]=='\r'&&i+1<inspected&&raw[i+1]!='\n')invalid_line_end=true;}if(invalid_line_end){send_error(socket,400,"Bad Request");return;}if(header_end!=std::string::npos){if(header_end+4>s->max_header_bytes){send_error(socket,431,"Request Header Fields Too Large");return;}break;}if(raw.size()>s->max_header_bytes){send_error(socket,431,"Request Header Fields Too Large");return;}}
             auto parsed=strut_parse_http_request_head(raw.substr(0,header_end+2),s->max_body_bytes,s->max_header_count);if(!parsed){send_error(socket,parsed.status,parsed.message);return;}strut_server_request req=std::move(parsed.head.request);const std::size_t content_len=parsed.head.content_length;
             req.body=strut_string(raw.substr(header_end+4,std::min(content_len,raw.size()-(header_end+4))));while(req.body.v.size()<content_len){const auto remaining=content_len-req.body.v.size();auto more=socket.read(static_cast<std::int64_t>(std::min<std::size_t>(remaining,8192))).v;if(more.empty()){send_error(socket,400,"Bad Request");return;}if(more.size()>remaining)more.resize(remaining);req.body.v+=more;}

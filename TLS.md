@@ -22,6 +22,8 @@ response := http_get_ca("https://localhost:8443/health", "local-ca.pem");
 
 Server-side TLS uses the approved OpenSSL dependency and is selected only by `listen_tls`; plaintext HTTP does not link OpenSSL.
 
+Inbound handshakes are nonblocking and bounded by one absolute deadline using the shortest configured HTTP read, write or idle timeout. A silent or trickling peer therefore cannot retain a server worker indefinitely.
+
 ```strut
 function main(string command, string[] args) -> int : (NetworkError, TlsError) {
     app := http_server();

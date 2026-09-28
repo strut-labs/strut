@@ -17,7 +17,9 @@ Redirects are followed by default with a maximum of 10 hops. The default timeout
 
 ## Server lifecycle
 
-`http_server` accepts connections concurrently and owns its listener and active request workers. `listen` blocks until `stop()` is requested or the optional finite request count is reached. `stop()` is safe before start and idempotent; it closes the listener, permits active handlers to drain until the configured shutdown timeout, then closes remaining client sockets. `running()` exposes the accepting/draining state. A stopped server may be started again after its previous handlers have drained.
+`http_server` accepts connections concurrently through a lazily grown reusable worker pool. Queued plus running connections never exceed the configured connection limit, so native worker and socket tracking remain bounded. Saturated plaintext connections receive 503; saturated TLS connections close before handshake. `listen` blocks until `stop()` is requested or the optional finite admitted-connection count is reached. Malformed requests and failed TLS handshakes count once admitted; saturation rejections do not.
+
+`stop()` is safe before start and idempotent. It closes the listener, permits admitted work to drain against one shared graceful-shutdown deadline, then closes queued and running sockets. Synchronous and asynchronous handlers may initiate stop without waiting on themselves. A handler that does not return by the deadline is isolated in its retired listener generation; `running()` remains true and restart or reconfiguration remains unavailable until that handler finishes. A drained server may then be started again.
 
 ```strut
 app := http_server();
@@ -27,7 +29,7 @@ app.get("/health", (http_request request) => { return http_text("ok"); });
 app.listen("127.0.0.1", 8080);
 ```
 
-The timeout arguments are read, write, idle and graceful-shutdown milliseconds. The limit arguments are maximum body bytes, header bytes, header count and active connections. Defaults match the values above. Malformed requests and operational limits produce controlled 400, 405, 413, 414, 431, 500, 501, 503 or 505 responses; handler failures do not expose native C++ details.
+The timeout arguments are read, write, idle and graceful-shutdown milliseconds. The TLS handshake uses one absolute deadline equal to the shortest read, write or idle timeout. The limit arguments are maximum body bytes, header bytes, header count and total admitted connections. Defaults match the values above. Malformed requests and operational limits produce controlled 400, 405, 413, 414, 431, 500, 501, 503 or 505 responses; handler failures do not expose native C++ details.
 
 The server accepts strict HTTP/1.0 and HTTP/1.1 request heads. Request lines require exact space separators and origin-form targets. HTTP/1.1 requires exactly one valid `Host`; HTTP/1.0 permits zero or one. Header names use case-insensitive protocol matching, field syntax and control bytes are validated, and obsolete folded fields are rejected. Parsed occurrences are retained internally; because the current public request header type is single-valued, every repeated field name is conservatively rejected and accepted map keys are normalized to lowercase.
 

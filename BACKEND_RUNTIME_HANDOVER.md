@@ -65,6 +65,7 @@ ctest --test-dir build --output-on-failure
 python3 dogfood/http_lifecycle_certification.py build/strut
 python3 dogfood/backend_baseline_certification.py build/strut
 python3 dogfood/http_framing_certification.py build/strut
+python3 dogfood/http_worker_certification.py build/strut
 python3 tests/ffi/run_native_link_tests.py build/strut
 python3 ../strut-regression-suite/runner.py --compiler build/strut
 ```
@@ -90,8 +91,7 @@ These are the remaining accepted baseline facts after CP8:
 - no protocol-upgrade or WebSocket path exists;
 - handlers receive no request cancellation or disconnect signal;
 - no streaming request-body or response-writer abstraction exists;
-- one native thread is created per accepted connection;
-- completed server workers and socket records are retained until listener shutdown;
+- admitted HTTP work uses a bounded reusable blocking worker pool; a reactor/event loop remains deferred;
 - remaining light/full duplication is limited to foundational core/string/JSON/SQLite and unrelated filesystem/thread helpers; executor, TCP, HTTP client/helpers and the active HTTP server have one implementation owner;
 - API knowledge is split among the registry, semantic analysis and code generation;
 - libcurl responses are unbounded buffered strings and transfers cannot be cancelled;
@@ -117,6 +117,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP7: cancellable blocking process handles complete.
 - Review Gate 3 approved.
 - CP8: strict HTTP/1 request parsing and framing complete.
+- CP9: bounded HTTP worker and connection ownership complete.
 
 ## CP1 validation result
 
@@ -196,3 +197,13 @@ cancellation contracts must not prevent a future event-driven backend.
 - Request-head validation produces a framing result before exact bounded body acquisition. Premature EOF fails closed, bytes after the validated body cannot become another request, and malformed requests do not reach handlers. Buffered handlers and `Connection: close` remain unchanged.
 - The black-box framing certification covers 51 plaintext syntax, limit and smuggling cases, HTTPS parser parity, and TLS head/body truncation. Abrupt TLS truncation may close without an HTTP response because the record channel is already broken. Cross-platform compiler CI runs the certification; no duplicate declarative regression fixture was added because that runner does not orchestrate raw sockets.
 - Validation: CMake build passed, CTest passed 16/16, HTTP framing, lifecycle and backend baseline certifications passed, bytes, stream, CP6 cancellation and CP7 process-cancellation certifications passed, native FFI linkage passed, and the independent regression suite passed 161/161. The final adversarial security and portability review found no blocking defects; macOS, Windows and ARM64 execution remains delegated to hosted CI.
+
+## CP9 bounded HTTP worker result
+
+- Each listener generation owns a lazily grown reusable blocking worker set. The configured connection limit bounds queued plus running admissions, worker count and tracked sockets; completed work is reclaimed during service instead of being retained until shutdown.
+- Admission is linearized against stop. Finite `max_requests` counts successfully admitted connections, including malformed requests and failed TLS handshakes, while saturation rejections do not consume the count. Plaintext saturation receives a bounded 503 path and pre-handshake TLS saturation closes.
+- Listener and connected-socket native operations pin descriptor ownership. Listener close interrupts a short nonblocking `poll`/`WSAPoll` accept cycle, while forced connection close first wakes blocked I/O and waits for pinned operations before releasing the descriptor.
+- Graceful stop uses one monotonic deadline across callers and the listener. Queued work is closed at expiry; running sockets are interrupted and closed. A non-returning handler is isolated in its retired generation, keeps `running()` true, and blocks restart or reconfiguration until completion. Synchronous and asynchronous handlers may initiate stop without waiting on themselves.
+- TLS handshakes use nonblocking OpenSSL progress with `poll`/`WSAPoll` against the shortest configured read, write or idle timeout. Persistent workers clear the OpenSSL error queue between handshake attempts, and TLS reads, writes and shutdown participate in socket operation pinning.
+- Black-box worker certification covers saturation and recovery, finite admission accounting, bounded shutdown, retired handlers, synchronous and asynchronous handler-initiated stop, silent TLS handshake expiry and worker reuse after timeout. Compiler CI runs it on Linux x64, Linux ARM64, macOS and Windows.
+- Validation: GCC and Clang generated-code checks passed, CTest passed 16/16, worker, framing, lifecycle and backend baseline certifications passed, bytes, stream, CP6 cancellation and CP7 process-cancellation certifications passed, native FFI linkage passed, and the independent regression suite passed 161/161. Repeated adversarial concurrency, ownership and portability review found no blocking defects; hosted CI remains the execution gate for macOS, Windows and ARM64-specific paths.

@@ -110,6 +110,13 @@ HTTP request intake separates transport acquisition from a pure validated
 request-head/framing result and exact body acquisition. Routing still receives a
 buffered request, but later body streaming can replace the body sink without
 redefining request-line, header, Host, Content-Length or Transfer-Encoding rules.
+Each listener generation owns a bounded blocking queue, a lazily grown reusable
+worker set and its admitted socket registry. Admission, graceful drain and forced
+shutdown are linearized under the generation lock and share one monotonic
+deadline. Native socket operations pin handle ownership; shutdown wakes blocked
+operations before final close so a descriptor cannot be reused underneath them.
+TLS handshakes use nonblocking OpenSSL progress with platform polling against an
+absolute deadline before entering the shared HTTP parser.
 
 Initialization and teardown are component-owned RAII declarations. Platform
 implementations share one component ID and select their body at emission time, so
