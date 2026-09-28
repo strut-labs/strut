@@ -1062,10 +1062,22 @@ private:
 template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
 struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
 #ifndef _WIN32
+#include <fcntl.h>
 #ifndef STRUT_SIGPIPE_MUTEX_DEFINED
 #define STRUT_SIGPIPE_MUTEX_DEFINED
 inline std::mutex strut_sigpipe_mutex;
 #endif
+inline std::mutex strut_process_spawn_mutex;
+inline void strut_close_fd(int& descriptor) noexcept{if(descriptor>=0){::close(descriptor);descriptor=-1;}}
+inline void strut_close_pipe(int (&descriptors)[2]) noexcept{strut_close_fd(descriptors[0]);strut_close_fd(descriptors[1]);}
+inline bool strut_make_process_pipe(int (&descriptors)[2]) noexcept{
+#ifdef __linux__
+    if(pipe2(descriptors,O_CLOEXEC)!=0)return false;
+#else
+    if(pipe(descriptors)!=0)return false;for(int descriptor:descriptors){const int flags=fcntl(descriptor,F_GETFD,0);if(flags<0||fcntl(descriptor,F_SETFD,flags|FD_CLOEXEC)<0){const int failure=errno;strut_close_pipe(descriptors);errno=failure;return false;}}
+#endif
+    for(int& descriptor:descriptors)if(descriptor<=STDERR_FILENO){const int replacement=fcntl(descriptor,F_DUPFD_CLOEXEC,STDERR_FILENO+1);if(replacement<0){const int failure=errno;strut_close_pipe(descriptors);errno=failure;return false;}::close(descriptor);descriptor=replacement;}return true;
+}
 #endif
 struct strut_null_t {
     template<class T> operator std::optional<T>() const { return std::nullopt; }
@@ -1232,15 +1244,16 @@ inline strut_exec_options strut_parse_exec_options(const json::Document& d){stru
 #ifndef _WIN32
 #include <signal.h>
 inline strut_exec_result strut_exec_impl(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
-)CPP" << R"CPP(    int out_pipe[2]={-1,-1},err_pipe[2]={-1,-1}; if(options.capture&&(pipe(out_pipe)!=0||pipe(err_pipe)!=0))throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(errno));
-    pid_t pid=fork(); if(pid<0)throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(errno));
+)CPP" << R"CPP(    std::vector<std::string> storage;storage.reserve(args.size()+1);storage.push_back(program.v);for(const auto& argument:args)storage.push_back(argument.v);std::vector<char*> argv;argv.reserve(storage.size()+1);for(auto& argument:storage)argv.push_back(argument.data());argv.push_back(nullptr);
+    int out_pipe[2]={-1,-1},err_pipe[2]={-1,-1};std::unique_lock<std::mutex> spawn_lock(strut_process_spawn_mutex);if(options.capture&&(!strut_make_process_pipe(out_pipe)||!strut_make_process_pipe(err_pipe))){const int failure=errno;strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(failure));}
+    pid_t pid=fork();if(pid<0){const int failure=errno;strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(failure));}
     if(pid==0){
-        if(options.capture){close(out_pipe[0]);close(err_pipe[0]);dup2(out_pipe[1],STDOUT_FILENO);dup2(err_pipe[1],STDERR_FILENO);close(out_pipe[1]);close(err_pipe[1]);}
+        if(options.capture){::close(out_pipe[0]);::close(err_pipe[0]);if(dup2(out_pipe[1],STDOUT_FILENO)<0||dup2(err_pipe[1],STDERR_FILENO)<0)_exit(126);::close(out_pipe[1]);::close(err_pipe[1]);}
         if(!options.cwd.v.empty()&&chdir(options.cwd.v.c_str())!=0)_exit(126);
         for(const auto& kv:options.env)if(setenv(kv.first.c_str(),kv.second.c_str(),1)!=0)_exit(126);
-        std::vector<std::string> storage;storage.reserve(args.size()+1);storage.push_back(program.v);for(const auto& a:args)storage.push_back(a.v);std::vector<char*> argv;argv.reserve(storage.size()+1);for(auto& a:storage)argv.push_back(a.data());argv.push_back(nullptr);execvp(program.v.c_str(),argv.data());_exit(errno==ENOENT?127:126);
+        execvp(program.v.c_str(),argv.data());_exit(errno==ENOENT?127:126);
     }
-    if(options.capture){close(out_pipe[1]);close(err_pipe[1]);}
+    if(options.capture){strut_close_fd(out_pipe[1]);strut_close_fd(err_pipe[1]);}spawn_lock.unlock();
     strut_exec_result result; std::string sout,serr;
     auto read_fd=[](int fd,std::string& dst){char b[4096];for(;;){ssize_t n=read(fd,b,sizeof(b));if(n>0)dst.append(b,static_cast<std::size_t>(n));else break;}close(fd);};
     std::thread t1,t2;if(options.capture){t1=std::thread(read_fd,out_pipe[0],std::ref(sout));t2=std::thread(read_fd,err_pipe[0],std::ref(serr));}
@@ -1250,11 +1263,12 @@ inline strut_exec_result strut_exec_impl(const strut_string& program,const std::
 #else
 inline std::string strut_win_quote(const std::string& a){if(a.find_first_of(" \t\"")==std::string::npos)return a;std::string r="\"";std::size_t slashes=0;for(char c:a){if(c=='\\'){++slashes;continue;}if(c=='\"'){r.append(slashes*2+1,'\\');r+='\"';slashes=0;continue;}r.append(slashes,'\\');slashes=0;r+=c;}r.append(slashes*2,'\\');r+='\"';return r;}
 inline strut_exec_result strut_exec_impl(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
-    SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE out_r=nullptr,out_w=nullptr,err_r=nullptr,err_w=nullptr;if(options.capture){if(!CreatePipe(&out_r,&out_w,&sa,0)||!CreatePipe(&err_r,&err_w,&sa,0))throw strut_checked_error("ExecError","CreatePipe failed");SetHandleInformation(out_r,HANDLE_FLAG_INHERIT,0);SetHandleInformation(err_r,HANDLE_FLAG_INHERIT,0);}
     std::string cmd=strut_win_quote(program.v);for(const auto& a:args){cmd+=' ';cmd+=strut_win_quote(a.v);}std::vector<char> mutable_cmd(cmd.begin(),cmd.end());mutable_cmd.push_back('\0');
-    STARTUPINFOA si{};si.cb=sizeof(si);if(options.capture||options.inherit_stdio){si.dwFlags|=STARTF_USESTDHANDLES;si.hStdInput=GetStdHandle(STD_INPUT_HANDLE);si.hStdOutput=options.capture?out_w:GetStdHandle(STD_OUTPUT_HANDLE);si.hStdError=options.capture?err_w:GetStdHandle(STD_ERROR_HANDLE);}
     std::vector<char> env_block;LPVOID env_ptr=nullptr;if(!options.env.empty()){LPCH raw=GetEnvironmentStringsA();std::map<std::string,std::string> env;if(raw){for(LPCH p=raw;*p;){std::string entry=p;p+=entry.size()+1;auto eq=entry.find('=');if(eq!=std::string::npos&&eq>0)env[entry.substr(0,eq)]=entry.substr(eq+1);}FreeEnvironmentStringsA(raw);}for(const auto& kv:options.env)env[kv.first]=kv.second;for(const auto& kv:env){auto line=kv.first+"="+kv.second;env_block.insert(env_block.end(),line.begin(),line.end());env_block.push_back('\0');}env_block.push_back('\0');env_ptr=env_block.data();}
-    PROCESS_INFORMATION pi{};BOOL ok=CreateProcessA(nullptr,mutable_cmd.data(),nullptr,nullptr,options.capture||options.inherit_stdio,0,env_ptr,options.cwd.v.empty()?nullptr:options.cwd.v.c_str(),&si,&pi);if(options.capture){CloseHandle(out_w);CloseHandle(err_w);}if(!ok)throw strut_checked_error("ExecError","CreateProcess failed");
+    auto close_handle=[](HANDLE& handle){if(handle&&handle!=INVALID_HANDLE_VALUE){CloseHandle(handle);handle=nullptr;}};SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE out_r=nullptr,out_w=nullptr,err_r=nullptr,err_w=nullptr,child_in=nullptr,child_out=nullptr,child_err=nullptr;if(options.capture){if(!CreatePipe(&out_r,&out_w,&sa,0)||!CreatePipe(&err_r,&err_w,&sa,0)){close_handle(out_r);close_handle(out_w);close_handle(err_r);close_handle(err_w);throw strut_checked_error("ExecError","CreatePipe failed");}SetHandleInformation(out_r,HANDLE_FLAG_INHERIT,0);SetHandleInformation(err_r,HANDLE_FLAG_INHERIT,0);child_out=out_w;child_err=err_w;}
+    const bool use_stdio=options.capture||options.inherit_stdio;auto duplicate_inheritable=[&](DWORD id,HANDLE& target){HANDLE source=GetStdHandle(id);return source&&source!=INVALID_HANDLE_VALUE&&DuplicateHandle(GetCurrentProcess(),source,GetCurrentProcess(),&target,0,TRUE,DUPLICATE_SAME_ACCESS);};if(use_stdio){if(!duplicate_inheritable(STD_INPUT_HANDLE,child_in)||(!options.capture&&(!duplicate_inheritable(STD_OUTPUT_HANDLE,child_out)||!duplicate_inheritable(STD_ERROR_HANDLE,child_err)))){close_handle(out_r);close_handle(out_w);close_handle(err_r);close_handle(err_w);close_handle(child_in);if(!options.capture){close_handle(child_out);close_handle(child_err);}throw strut_checked_error("ExecError","standard handle setup failed");}}
+    STARTUPINFOEXA si{};si.StartupInfo.cb=use_stdio?sizeof(si):sizeof(STARTUPINFOA);std::vector<unsigned char> attribute_storage;BOOL list_ok=FALSE,attributes_ok=TRUE;if(use_stdio){si.StartupInfo.dwFlags=STARTF_USESTDHANDLES;si.StartupInfo.hStdInput=child_in;si.StartupInfo.hStdOutput=child_out;si.StartupInfo.hStdError=child_err;SIZE_T attribute_size=0;InitializeProcThreadAttributeList(nullptr,1,0,&attribute_size);attribute_storage.resize(attribute_size);si.lpAttributeList=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());HANDLE inherited[3]={child_in,child_out,child_err};list_ok=InitializeProcThreadAttributeList(si.lpAttributeList,1,0,&attribute_size);attributes_ok=list_ok&&UpdateProcThreadAttribute(si.lpAttributeList,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,inherited,sizeof(inherited),nullptr,nullptr);}
+    PROCESS_INFORMATION pi{};BOOL ok=FALSE;if(attributes_ok)ok=CreateProcessA(nullptr,mutable_cmd.data(),nullptr,nullptr,use_stdio,use_stdio?EXTENDED_STARTUPINFO_PRESENT:0,env_ptr,options.cwd.v.empty()?nullptr:options.cwd.v.c_str(),&si.StartupInfo,&pi);if(list_ok)DeleteProcThreadAttributeList(si.lpAttributeList);close_handle(child_in);if(options.capture){close_handle(out_w);close_handle(err_w);}else{close_handle(child_out);close_handle(child_err);}if(!ok){close_handle(out_r);close_handle(err_r);throw strut_checked_error("ExecError","CreateProcess failed");}
     std::string sout,serr;auto read_handle=[](HANDLE h,std::string& dst){char b[4096];DWORD n=0;while(ReadFile(h,b,sizeof(b),&n,nullptr)&&n)dst.append(b,n);CloseHandle(h);};std::thread t1,t2;if(options.capture){t1=std::thread(read_handle,out_r,std::ref(sout));t2=std::thread(read_handle,err_r,std::ref(serr));}WaitForSingleObject(pi.hProcess,INFINITE);DWORD code=0;GetExitCodeProcess(pi.hProcess,&code);CloseHandle(pi.hThread);CloseHandle(pi.hProcess);if(options.capture){t1.join();t2.join();auto normalize=[](std::string& value){std::size_t pos=0;while((pos=value.find("\r\n",pos))!=std::string::npos)value.erase(pos,1);};normalize(sout);normalize(serr);}strut_exec_result result;result.exit_code=static_cast<std::int32_t>(code);result.stdout=strut_string(std::move(sout));result.stderr=strut_string(std::move(serr));return result;
 }
 #endif
@@ -1322,112 +1336,135 @@ public:
 private:
     std::thread thread_;std::shared_ptr<std::exception_ptr> error_;
 };
+#ifndef _WIN32
+#include <fcntl.h>
+#include <poll.h>
+#endif
+constexpr std::int32_t strut_process_cancelled_code=125;
+#ifdef STRUT_CANCELLATION_RUNTIME_DEFINED
+using strut_process_cancellation_token=strut_cancellation_token;
+#else
+struct strut_process_cancellation_subscription{};
+struct strut_process_cancellation_token{bool cancelled() const noexcept{return false;}template<class F>strut_process_cancellation_subscription subscribe(F&&) const{return {};}};
+#endif
+struct strut_process_pipe_operation {
+    std::atomic<bool> cancelled{false},closed{false};
+#ifdef _WIN32
+    HANDLE wake=CreateEventA(nullptr,TRUE,FALSE,nullptr);
+    strut_process_pipe_operation(){if(!wake)throw strut_checked_error("ExecError","process pipe cancellation setup failed");}
+    void signal() noexcept{SetEvent(wake);}
+    ~strut_process_pipe_operation(){CloseHandle(wake);}
+#else
+    int wake[2]{-1,-1};
+    strut_process_pipe_operation(){
+#ifdef __linux__
+        if(pipe2(wake,O_NONBLOCK|O_CLOEXEC)!=0)throw strut_checked_error("ExecError","process pipe cancellation setup failed");
+#else
+        std::lock_guard<std::mutex> spawn_lock(strut_process_spawn_mutex);if(pipe(wake)!=0)throw strut_checked_error("ExecError","process pipe cancellation setup failed");for(int descriptor:wake){const int flags=fcntl(descriptor,F_GETFL,0);const int fd_flags=fcntl(descriptor,F_GETFD,0);if(flags<0||fd_flags<0||fcntl(descriptor,F_SETFL,flags|O_NONBLOCK)<0||fcntl(descriptor,F_SETFD,fd_flags|FD_CLOEXEC)<0){const int saved=errno;::close(wake[0]);::close(wake[1]);wake[0]=wake[1]=-1;errno=saved;throw strut_checked_error("ExecError","process pipe cancellation setup failed");}}
+#endif
+    }
+    void signal() noexcept{const char byte=0;ssize_t result;do{result=::write(wake[1],&byte,1);}while(result<0&&errno==EINTR);}
+    ~strut_process_pipe_operation(){if(wake[0]>=0)::close(wake[0]);if(wake[1]>=0)::close(wake[1]);}
+#endif
+};
+struct strut_process_pipe_state {
+    mutable std::mutex mutex;bool closed=true,eof=false;strut_process_cancellation_token token;std::weak_ptr<strut_process_pipe_operation> active;
+#ifdef _WIN32
+    HANDLE handle=nullptr;
+#else
+    int handle=-1;
+#endif
+    ~strut_process_pipe_state(){
+#ifdef _WIN32
+        if(handle)CloseHandle(handle);
+#else
+        if(handle>=0)::close(handle);
+#endif
+    }
+};
+inline void strut_process_close_native(strut_process_pipe_state& state) noexcept{
+#ifdef _WIN32
+    if(state.handle){CloseHandle(state.handle);state.handle=nullptr;}
+#else
+    if(state.handle>=0){::close(state.handle);state.handle=-1;}
+#endif
+}
+inline void strut_process_close_pipe(const std::shared_ptr<strut_process_pipe_state>& state) noexcept{if(!state)return;std::shared_ptr<strut_process_pipe_operation> active;{std::lock_guard<std::mutex> lock(state->mutex);if(state->closed)return;state->closed=true;active=state->active.lock();if(!active)strut_process_close_native(*state);}if(active){active->closed.store(true,std::memory_order_release);active->signal();}}
+class strut_process_pipe_guard {
+public:
+    explicit strut_process_pipe_guard(std::shared_ptr<strut_process_pipe_state> state):state_(std::move(state)),operation_(std::make_shared<strut_process_pipe_operation>()){
+        std::lock_guard<std::mutex> lock(state_->mutex);if(state_->closed)throw strut_checked_error("ExecError","process pipe is closed");if(!state_->active.expired())throw strut_checked_error("ExecError","process pipe already has an active operation");state_->active=operation_;handle=state_->handle;token=state_->token;
+    }
+    ~strut_process_pipe_guard(){std::lock_guard<std::mutex> lock(state_->mutex);if(auto active=state_->active.lock();active==operation_)state_->active.reset();if(state_->closed)strut_process_close_native(*state_);}
+    strut_process_pipe_guard(const strut_process_pipe_guard&)=delete;strut_process_pipe_guard& operator=(const strut_process_pipe_guard&)=delete;
+    void check_interrupted() const{if(token.cancelled())throw strut_checked_error("ExecError","process I/O cancelled",strut_process_cancelled_code);if(operation_->closed.load(std::memory_order_acquire))throw strut_checked_error("ExecError","process pipe is closed");}
+    std::shared_ptr<strut_process_pipe_state> state_;std::shared_ptr<strut_process_pipe_operation> operation_;strut_process_cancellation_token token;
+#ifdef _WIN32
+    HANDLE handle=nullptr;
+#else
+    int handle=-1;
+#endif
+};
+#ifndef _WIN32
+inline short strut_process_poll(strut_process_pipe_guard& guard,short events){for(;;){guard.check_interrupted();pollfd descriptors[2]={{guard.handle,events,0},{guard.operation_->wake[0],POLLIN,0}};const int result=poll(descriptors,2,-1);if(result<0&&errno==EINTR)continue;if(result<0)throw strut_checked_error("ExecError","process pipe poll failed");if(descriptors[0].revents)return descriptors[0].revents;guard.check_interrupted();}}
+inline ssize_t strut_process_write_once(int fd,const char* data,std::size_t size,int& failure){sigset_t blocked,previous,pending;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);const int mask_error=pthread_sigmask(SIG_BLOCK,&blocked,&previous);if(mask_error!=0){failure=mask_error;return -1;}if(sigpending(&pending)<0){failure=errno;pthread_sigmask(SIG_SETMASK,&previous,nullptr);return -1;}const bool already_pending=sigismember(&pending,SIGPIPE)==1;
+    ssize_t count=::write(fd,data,size);failure=count<0?errno:0;if(failure==EPIPE&&!already_pending){
+#ifdef __APPLE__
+        if(sigpending(&pending)==0&&sigismember(&pending,SIGPIPE)==1){int signal_number=0;(void)sigwait(&blocked,&signal_number);}
+#else
+        timespec timeout{};(void)sigtimedwait(&blocked,nullptr,&timeout);
+#endif
+    }if(pthread_sigmask(SIG_SETMASK,&previous,nullptr)!=0&&!failure){failure=EINVAL;count=-1;}return count;}
+#endif
 class strut_process_in {
 public:
+    strut_process_in():state_(std::make_shared<strut_process_pipe_state>()){}strut_process_in(const strut_process_in&)=delete;strut_process_in& operator=(const strut_process_in&)=delete;strut_process_in(strut_process_in&&)=default;strut_process_in& operator=(strut_process_in&& other) noexcept{if(this!=&other){close();state_=std::move(other.state_);}return *this;}
 #ifdef _WIN32
-    HANDLE h=nullptr;
+    void attach(HANDLE handle,const strut_process_cancellation_token& token){state_->handle=handle;state_->token=token;state_->closed=false;}
 #else
-    int fd=-1;
+    void attach(int handle,const strut_process_cancellation_token& token){const int flags=fcntl(handle,F_GETFL,0);if(flags<0||fcntl(handle,F_SETFL,flags|O_NONBLOCK)<0)throw strut_checked_error("ExecError","process stdin setup failed");state_->handle=handle;state_->token=token;state_->closed=false;}
 #endif
-    strut_process_in()=default;strut_process_in(const strut_process_in&)=delete;strut_process_in& operator=(const strut_process_in&)=delete;
-    strut_process_in(strut_process_in&& other) noexcept {
+    void write(const strut_string& value){write_data(value.v.data(),value.v.size());}void write_bytes(const strut_bytes& value){write_data(reinterpret_cast<const char*>(value.data()),value.native_size());}void flush() const noexcept{}
+    void write_data(const char* data,std::size_t size){strut_process_pipe_guard guard(state_);[[maybe_unused]] auto subscription=guard.token.subscribe([operation=guard.operation_]{operation->cancelled.store(true,std::memory_order_release);operation->signal();});guard.check_interrupted();std::size_t offset=0;while(offset<size){
 #ifdef _WIN32
-        h=other.h;other.h=nullptr;
+        OVERLAPPED overlapped{};overlapped.hEvent=CreateEventA(nullptr,TRUE,FALSE,nullptr);if(!overlapped.hEvent)throw strut_checked_error("ExecError","process stdin write setup failed");const DWORD request=static_cast<DWORD>(std::min<std::size_t>(size-offset,MAXDWORD));DWORD count=0;BOOL result=WriteFile(guard.handle,data+offset,request,nullptr,&overlapped);if(!result&&GetLastError()==ERROR_IO_PENDING){HANDLE waits[2]={overlapped.hEvent,guard.operation_->wake};const DWORD selected=WaitForMultipleObjects(2,waits,FALSE,INFINITE);if(selected==WAIT_OBJECT_0)result=GetOverlappedResult(guard.handle,&overlapped,&count,FALSE);else{CancelIoEx(guard.handle,&overlapped);WaitForSingleObject(overlapped.hEvent,INFINITE);CloseHandle(overlapped.hEvent);guard.check_interrupted();throw strut_checked_error("ExecError","process stdin write failed");}}else if(result)result=GetOverlappedResult(guard.handle,&overlapped,&count,FALSE);CloseHandle(overlapped.hEvent);if(!result||count==0){guard.check_interrupted();throw strut_checked_error("ExecError","process stdin write failed");}offset+=count;
 #else
-        fd=other.fd;other.fd=-1;
+        (void)strut_process_poll(guard,POLLOUT);int failure=0;const ssize_t count=strut_process_write_once(guard.handle,data+offset,size-offset,failure);if(count<0&&(failure==EAGAIN||failure==EWOULDBLOCK||failure==EINTR))continue;if(count<=0){guard.check_interrupted();throw strut_checked_error("ExecError","process stdin write failed");}offset+=static_cast<std::size_t>(count);
 #endif
-    }
-    strut_process_in& operator=(strut_process_in&& other) noexcept {if(this!=&other){close();
-#ifdef _WIN32
-        h=other.h;other.h=nullptr;
-#else
-        fd=other.fd;other.fd=-1;
-#endif
-    }return *this;}
-    void write(const strut_string& s){write_data(s.v.data(),s.v.size());}
-    void write_bytes(const strut_bytes& value){write_data(reinterpret_cast<const char*>(value.data()),value.native_size());}
-    void flush() const noexcept{}
-    void write_data(const char* data,std::size_t size){
-#ifdef _WIN32
-        if(!h)throw strut_checked_error("ExecError","process stdin is closed");std::size_t offset=0;while(offset<size){const auto request=static_cast<DWORD>(std::min<std::size_t>(size-offset,MAXDWORD));DWORD count=0;if(!WriteFile(h,data+offset,request,&count,nullptr)||count==0)throw strut_checked_error("ExecError","process stdin write failed");offset+=count;}
-#else
-        if(fd<0)throw strut_checked_error("ExecError","process stdin is closed");sigset_t blocked,previous,pending;sigemptyset(&blocked);sigaddset(&blocked,SIGPIPE);bool ignored=false,already_pending=false;{
-            std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);struct sigaction action{};if(sigaction(SIGPIPE,nullptr,&action)<0)throw strut_checked_error("ExecError","process stdin signal setup failed");ignored=action.sa_handler==SIG_IGN;if(!ignored&&pthread_sigmask(SIG_BLOCK,&blocked,&previous)!=0)throw strut_checked_error("ExecError","process stdin signal setup failed");if(!ignored){if(sigpending(&pending)<0){pthread_sigmask(SIG_SETMASK,&previous,nullptr);throw strut_checked_error("ExecError","process stdin signal setup failed");}already_pending=sigismember(&pending,SIGPIPE)==1;}}
-        const char* p=data;std::size_t left=size;int failure=0;while(left){ssize_t n=::write(fd,p,left);if(n<0&&errno==EINTR)continue;if(n<=0){failure=errno;break;}p+=n;left-=static_cast<std::size_t>(n);}if(!ignored){std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);if(failure==EPIPE&&!already_pending){
-#ifdef __APPLE__
-            if(sigpending(&pending)==0&&sigismember(&pending,SIGPIPE)==1){int signal_number=0;(void)sigwait(&blocked,&signal_number);}
-#else
-            timespec timeout{};(void)sigtimedwait(&blocked,nullptr,&timeout);
-#endif
-        }if(pthread_sigmask(SIG_SETMASK,&previous,nullptr)!=0&&!failure)failure=EINVAL;}if(failure)throw strut_checked_error("ExecError","process stdin write failed");
-#endif
-    }
-    void write_line(const strut_string& s){write(strut_string(s.v+"\n"));}
-    void close(){
-#ifdef _WIN32
-        if(h){CloseHandle(h);h=nullptr;}
-#else
-        if(fd>=0){::close(fd);fd=-1;}
-#endif
-    }
-    ~strut_process_in(){close();}
+    }}
+    void write_line(const strut_string& value){write(strut_string(value.v+"\n"));}void close(){strut_process_close_pipe(state_);}~strut_process_in(){close();}
+private:std::shared_ptr<strut_process_pipe_state> state_;
 };
 class strut_process_out {
 public:
+    strut_process_out():state_(std::make_shared<strut_process_pipe_state>()){}strut_process_out(const strut_process_out&)=delete;strut_process_out& operator=(const strut_process_out&)=delete;strut_process_out(strut_process_out&&)=default;strut_process_out& operator=(strut_process_out&& other) noexcept{if(this!=&other){close();state_=std::move(other.state_);}return *this;}
 #ifdef _WIN32
-    HANDLE h=nullptr;
+    void attach(HANDLE handle,const strut_process_cancellation_token& token){state_->handle=handle;state_->token=token;state_->closed=false;state_->eof=false;}
 #else
-    int fd=-1;
+    void attach(int handle,const strut_process_cancellation_token& token){const int flags=fcntl(handle,F_GETFL,0);if(flags<0||fcntl(handle,F_SETFL,flags|O_NONBLOCK)<0)throw strut_checked_error("ExecError","process output setup failed");state_->handle=handle;state_->token=token;state_->closed=false;state_->eof=false;}
 #endif
-    bool ended=false,closed=true;
-    strut_process_out()=default;strut_process_out(const strut_process_out&)=delete;strut_process_out& operator=(const strut_process_out&)=delete;
-    strut_process_out(strut_process_out&& other) noexcept : ended(other.ended),closed(other.closed) {
-#ifdef _WIN32
-        h=other.h;other.h=nullptr;
-#else
-        fd=other.fd;other.fd=-1;
-#endif
-        other.ended=true;other.closed=true;
-    }
-    strut_process_out& operator=(strut_process_out&& other) noexcept {if(this!=&other){close();ended=other.ended;closed=other.closed;
-#ifdef _WIN32
-        h=other.h;other.h=nullptr;
-#else
-        fd=other.fd;other.fd=-1;
-#endif
-        other.ended=true;other.closed=true;}return *this;}
-    strut_string read(std::int32_t count){if(count<0)throw strut_checked_error("ExecError","negative process read size");std::string out;out.resize(static_cast<std::size_t>(count));
-#ifdef _WIN32
-        if(!h)return strut_string();DWORD n=0;if(!ReadFile(h,out.data(),static_cast<DWORD>(out.size()),&n,nullptr)){if(GetLastError()==ERROR_BROKEN_PIPE){ended=true;return strut_string();}throw strut_checked_error("ExecError","process pipe read failed");}out.resize(n);if(n==0)ended=true;
-#else
-        if(fd<0)return strut_string();ssize_t n=::read(fd,out.data(),out.size());if(n<0&&errno==EINTR)return read(count);if(n<0)throw strut_checked_error("ExecError","process pipe read failed");out.resize(static_cast<std::size_t>(n));if(n==0)ended=true;
-#endif
-        return strut_string(std::move(out));}
+    strut_string read(std::int32_t count){if(count<0)throw strut_checked_error("ExecError","negative process read size");if(count==0)return {};{std::lock_guard<std::mutex> lock(state_->mutex);if(state_->closed)return {};}std::string out(static_cast<std::size_t>(count),'\0');out.resize(read_data(out.data(),out.size()));return strut_string(std::move(out));}
     strut_string read_line(){std::string out;for(;;){auto c=read(1);if(c.v.empty())break;if(c.v[0]=='\n')break;if(c.v[0]!='\r')out+=c.v[0];}return strut_string(std::move(out));}
     strut_string read_all(){std::string out;for(;;){auto chunk=read(4096);if(chunk.v.empty())break;out+=chunk.v;}return strut_string(std::move(out));}
-    strut_bytes read_bytes(std::int64_t max_bytes){if(closed)throw strut_checked_error("ExecError","process output is closed");if(max_bytes<0)throw strut_checked_error("ExecError","negative process read size");if(max_bytes==0||ended)return {};const auto request=static_cast<std::size_t>(std::min<std::int64_t>(max_bytes,65536));strut_bytes out(static_cast<std::int64_t>(request));
+    strut_bytes read_bytes(std::int64_t max_bytes){if(max_bytes<0)throw strut_checked_error("ExecError","negative process read size");{std::lock_guard<std::mutex> lock(state_->mutex);if(state_->closed)throw strut_checked_error("ExecError","process output is closed");if(max_bytes==0||state_->eof)return {};}const auto request=static_cast<std::size_t>(std::min<std::int64_t>(max_bytes,65536));strut_bytes out(static_cast<std::int64_t>(request));out.resize_native(read_data(reinterpret_cast<char*>(out.data()),request));return out;}
+    strut_bytes read_all_bytes(std::int64_t limit=INT64_MAX){if(limit<0)throw strut_checked_error("ExecError","negative process read limit");strut_bytes out;while(!eof()){auto chunk=read_bytes(8192);if(chunk.empty())break;if(static_cast<std::uint64_t>(chunk.native_size())>static_cast<std::uint64_t>(limit)-out.native_size())throw strut_checked_error("ExecError","process output byte limit exceeded");out.append_native(reinterpret_cast<const char*>(chunk.data()),chunk.native_size());}return out;}
+    bool eof() const{std::lock_guard<std::mutex> lock(state_->mutex);return state_->eof;}void close(){strut_process_close_pipe(state_);}~strut_process_out(){close();}
+private:
+    std::size_t read_data(char* data,std::size_t size){strut_process_pipe_guard guard(state_);[[maybe_unused]] auto subscription=guard.token.subscribe([operation=guard.operation_]{operation->cancelled.store(true,std::memory_order_release);operation->signal();});guard.check_interrupted();
 #ifdef _WIN32
-        DWORD count=0;if(!ReadFile(h,out.data(),static_cast<DWORD>(request),&count,nullptr)){if(GetLastError()==ERROR_BROKEN_PIPE){ended=true;out.resize_native(0);return out;}throw strut_checked_error("ExecError","process pipe read failed");}out.resize_native(count);if(count==0)ended=true;
+        OVERLAPPED overlapped{};overlapped.hEvent=CreateEventA(nullptr,TRUE,FALSE,nullptr);if(!overlapped.hEvent)throw strut_checked_error("ExecError","process output read setup failed");DWORD count=0;BOOL result=ReadFile(guard.handle,data,static_cast<DWORD>(size),nullptr,&overlapped);if(!result&&GetLastError()==ERROR_IO_PENDING){HANDLE waits[2]={overlapped.hEvent,guard.operation_->wake};const DWORD selected=WaitForMultipleObjects(2,waits,FALSE,INFINITE);if(selected==WAIT_OBJECT_0)result=GetOverlappedResult(guard.handle,&overlapped,&count,FALSE);else{CancelIoEx(guard.handle,&overlapped);WaitForSingleObject(overlapped.hEvent,INFINITE);CloseHandle(overlapped.hEvent);guard.check_interrupted();throw strut_checked_error("ExecError","process pipe read failed");}}else if(result)result=GetOverlappedResult(guard.handle,&overlapped,&count,FALSE);const DWORD error=result?ERROR_SUCCESS:GetLastError();CloseHandle(overlapped.hEvent);if(!result&&error!=ERROR_BROKEN_PIPE){guard.check_interrupted();throw strut_checked_error("ExecError","process pipe read failed");}
 #else
-        ssize_t count=::read(fd,out.data(),request);if(count<0&&errno==EINTR)return read_bytes(max_bytes);if(count<0)throw strut_checked_error("ExecError","process pipe read failed");out.resize_native(static_cast<std::size_t>(count));if(count==0)ended=true;
+        std::size_t count=0;for(;;){(void)strut_process_poll(guard,POLLIN);const ssize_t result=::read(guard.handle,data,size);if(result<0&&(errno==EAGAIN||errno==EWOULDBLOCK||errno==EINTR))continue;if(result<0){guard.check_interrupted();throw strut_checked_error("ExecError","process pipe read failed");}count=static_cast<std::size_t>(result);break;}
 #endif
-        return out;}
-    strut_bytes read_all_bytes(std::int64_t limit=INT64_MAX){if(closed)throw strut_checked_error("ExecError","process output is closed");if(limit<0)throw strut_checked_error("ExecError","negative process read limit");strut_bytes out;while(!ended){auto chunk=read_bytes(8192);if(chunk.empty())break;if(static_cast<std::uint64_t>(chunk.native_size())>static_cast<std::uint64_t>(limit)-out.native_size())throw strut_checked_error("ExecError","process output byte limit exceeded");out.append_native(reinterpret_cast<const char*>(chunk.data()),chunk.native_size());}return out;}
-    bool eof() const{return ended;}
-    void close(){
-#ifdef _WIN32
-        if(h){CloseHandle(h);h=nullptr;}
-#else
-        if(fd>=0){::close(fd);fd=-1;}
-#endif
-        closed=true;}
-    ~strut_process_out(){close();}
+        if(count==0){std::lock_guard<std::mutex> lock(state_->mutex);state_->eof=true;}return static_cast<std::size_t>(count);}
+    std::shared_ptr<strut_process_pipe_state> state_;
 };
 class strut_process {
 public:
     strut_process_in in;strut_process_out out;strut_process_out err;
     strut_process()=default;
-    strut_process(const strut_string& program,const std::vector<strut_string>& args){start(program,args);}
+    strut_process(const strut_string& program,const std::vector<strut_string>& args){start(program,args,{});}
+    strut_process(const strut_string& program,const std::vector<strut_string>& args,const strut_process_cancellation_token& token){start(program,args,token);}
     strut_process(const strut_process&)=delete;strut_process& operator=(const strut_process&)=delete;
     strut_process(strut_process&& other) noexcept : in(std::move(other.in)),out(std::move(other.out)),err(std::move(other.err)),
 #ifdef _WIN32
@@ -1443,11 +1480,11 @@ public:
 #endif
     }
     strut_process& operator=(strut_process&&)=delete;
-    void start(const strut_string& program,const std::vector<strut_string>& args){
+    void start(const strut_string& program,const std::vector<strut_string>& args,const strut_process_cancellation_token& token){
 #ifdef _WIN32
-        SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE child_in=nullptr,out_w=nullptr,err_w=nullptr;if(!CreatePipe(&child_in,&in.h,&sa,0)||!CreatePipe(&out.h,&out_w,&sa,0)||!CreatePipe(&err.h,&err_w,&sa,0))throw strut_checked_error("ExecError","CreatePipe failed");SetHandleInformation(in.h,HANDLE_FLAG_INHERIT,0);SetHandleInformation(out.h,HANDLE_FLAG_INHERIT,0);SetHandleInformation(err.h,HANDLE_FLAG_INHERIT,0);out.closed=false;err.closed=false;std::string cmd=strut_win_quote(program.v);for(const auto& a:args){cmd+=' ';cmd+=strut_win_quote(a.v);}std::vector<char> mc(cmd.begin(),cmd.end());mc.push_back('\0');STARTUPINFOA si{};si.cb=sizeof(si);si.dwFlags=STARTF_USESTDHANDLES;si.hStdInput=child_in;si.hStdOutput=out_w;si.hStdError=err_w;BOOL ok=CreateProcessA(nullptr,mc.data(),nullptr,nullptr,TRUE,0,nullptr,nullptr,&si,&pi_);CloseHandle(child_in);CloseHandle(out_w);CloseHandle(err_w);if(!ok)throw strut_checked_error("ExecError","CreateProcess failed");running_=true;
+        std::string cmd=strut_win_quote(program.v);for(const auto& argument:args){cmd+=' ';cmd+=strut_win_quote(argument.v);}std::vector<char> mutable_cmd(cmd.begin(),cmd.end());mutable_cmd.push_back('\0');SIZE_T attribute_size=0;InitializeProcThreadAttributeList(nullptr,1,0,&attribute_size);std::vector<unsigned char> attribute_storage(attribute_size);HANDLE parent_in=nullptr,child_in=nullptr,parent_out=nullptr,child_out=nullptr,parent_err=nullptr,child_err=nullptr;if(!create_pipe(false,parent_in,child_in)||!create_pipe(true,parent_out,child_out)||!create_pipe(true,parent_err,child_err)){close_handle(parent_in);close_handle(child_in);close_handle(parent_out);close_handle(child_out);close_handle(parent_err);close_handle(child_err);throw strut_checked_error("ExecError","CreatePipe failed");}STARTUPINFOEXA si{};si.StartupInfo.cb=sizeof(si);si.StartupInfo.dwFlags=STARTF_USESTDHANDLES;si.StartupInfo.hStdInput=child_in;si.StartupInfo.hStdOutput=child_out;si.StartupInfo.hStdError=child_err;si.lpAttributeList=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());HANDLE inherited[3]={child_in,child_out,child_err};const BOOL list_ok=InitializeProcThreadAttributeList(si.lpAttributeList,1,0,&attribute_size);const BOOL attributes_ok=list_ok&&UpdateProcThreadAttribute(si.lpAttributeList,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,inherited,sizeof(inherited),nullptr,nullptr);BOOL ok=FALSE;if(attributes_ok)ok=CreateProcessA(nullptr,mutable_cmd.data(),nullptr,nullptr,TRUE,EXTENDED_STARTUPINFO_PRESENT,nullptr,nullptr,&si.StartupInfo,&pi_);if(list_ok)DeleteProcThreadAttributeList(si.lpAttributeList);close_handle(child_in);close_handle(child_out);close_handle(child_err);if(!ok){close_handle(parent_in);close_handle(parent_out);close_handle(parent_err);throw strut_checked_error("ExecError","CreateProcess failed");}in.attach(parent_in,token);out.attach(parent_out,token);err.attach(parent_err,token);running_=true;
 #else
-        int pin[2],pout[2],perr[2];if(pipe(pin)||pipe(pout)||pipe(perr))throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(errno));pid_=fork();if(pid_<0)throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(errno));if(pid_==0){dup2(pin[0],STDIN_FILENO);dup2(pout[1],STDOUT_FILENO);dup2(perr[1],STDERR_FILENO);::close(pin[0]);::close(pin[1]);::close(pout[0]);::close(pout[1]);::close(perr[0]);::close(perr[1]);std::vector<std::string> storage;storage.push_back(program.v);for(const auto& a:args)storage.push_back(a.v);std::vector<char*> av;for(auto& a:storage)av.push_back(a.data());av.push_back(nullptr);execvp(program.v.c_str(),av.data());_exit(errno==ENOENT?127:126);}::close(pin[0]);::close(pout[1]);::close(perr[1]);in.fd=pin[1];out.fd=pout[0];err.fd=perr[0];out.closed=false;err.closed=false;running_=true;
+        std::vector<std::string> storage;storage.reserve(args.size()+1);storage.push_back(program.v);for(const auto& argument:args)storage.push_back(argument.v);std::vector<char*> argv;argv.reserve(storage.size()+1);for(auto& argument:storage)argv.push_back(argument.data());argv.push_back(nullptr);int pin[2]{-1,-1},pout[2]{-1,-1},perr[2]{-1,-1};std::unique_lock<std::mutex> spawn_lock(strut_process_spawn_mutex);if(!create_pipe(pin)||!create_pipe(pout)||!create_pipe(perr)){const int failure=errno;close_pipe(pin);close_pipe(pout);close_pipe(perr);throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(failure));}pid_=fork();if(pid_<0){const int failure=errno;close_pipe(pin);close_pipe(pout);close_pipe(perr);throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(failure));}if(pid_==0){if(dup2(pin[0],STDIN_FILENO)<0||dup2(pout[1],STDOUT_FILENO)<0||dup2(perr[1],STDERR_FILENO)<0)_exit(126);::close(pin[0]);::close(pin[1]);::close(pout[0]);::close(pout[1]);::close(perr[0]);::close(perr[1]);execvp(program.v.c_str(),argv.data());_exit(errno==ENOENT?127:126);}close_fd(pin[0]);close_fd(pout[1]);close_fd(perr[1]);spawn_lock.unlock();try{in.attach(pin[1],token);pin[1]=-1;out.attach(pout[0],token);pout[0]=-1;err.attach(perr[0],token);perr[0]=-1;}catch(...){close_pipe(pin);close_pipe(pout);close_pipe(perr);in.close();out.close();err.close();(void)::kill(pid_,SIGKILL);int status=0;while(waitpid(pid_,&status,0)<0&&errno==EINTR){}pid_=-1;throw;}running_=true;
 #endif
     }
     std::int32_t wait(){if(!running_)return exit_code_;
@@ -1465,11 +1502,16 @@ public:
 #endif
     }
     bool running(){return running_;}std::int32_t exit_code(){return running_?-1:exit_code_;}void close_input(){in.close();}
-    ~strut_process(){if(running_){terminate();try{wait();}catch(...){}}}
+    ~strut_process() noexcept{if(running_){try{terminate();}catch(...){ }try{wait();}catch(...){ }}}
 private:
 #ifdef _WIN32
+    static void close_handle(HANDLE& handle) noexcept{if(handle){CloseHandle(handle);handle=nullptr;}}
+    static bool create_pipe(bool parent_reads,HANDLE& parent,HANDLE& child){static std::atomic<unsigned long> serial{0};const std::string name="\\\\.\\pipe\\strut-"+std::to_string(GetCurrentProcessId())+"-"+std::to_string(serial.fetch_add(1,std::memory_order_relaxed));const DWORD access=(parent_reads?PIPE_ACCESS_INBOUND:PIPE_ACCESS_OUTBOUND)|FILE_FLAG_OVERLAPPED;parent=CreateNamedPipeA(name.c_str(),access,PIPE_TYPE_BYTE|PIPE_READMODE_BYTE|PIPE_WAIT,1,65536,65536,0,nullptr);if(parent==INVALID_HANDLE_VALUE){parent=nullptr;return false;}SECURITY_ATTRIBUTES attributes{sizeof(attributes),nullptr,TRUE};child=CreateFileA(name.c_str(),parent_reads?GENERIC_WRITE:GENERIC_READ,0,&attributes,OPEN_EXISTING,0,nullptr);if(child==INVALID_HANDLE_VALUE){child=nullptr;close_handle(parent);return false;}OVERLAPPED connection{};connection.hEvent=CreateEventA(nullptr,TRUE,FALSE,nullptr);if(!connection.hEvent){close_handle(parent);close_handle(child);return false;}BOOL connected=ConnectNamedPipe(parent,&connection);if(!connected){const DWORD error=GetLastError();if(error==ERROR_PIPE_CONNECTED)connected=TRUE;else if(error==ERROR_IO_PENDING){DWORD transferred=0;connected=GetOverlappedResult(parent,&connection,&transferred,TRUE);}}CloseHandle(connection.hEvent);if(!connected){close_handle(parent);close_handle(child);return false;}return true;}
     PROCESS_INFORMATION pi_{};
 #else
+    static void close_fd(int& descriptor) noexcept{strut_close_fd(descriptor);}
+    static void close_pipe(int (&descriptors)[2]) noexcept{strut_close_pipe(descriptors);}
+    static bool create_pipe(int (&descriptors)[2]) noexcept{return strut_make_process_pipe(descriptors);}
     pid_t pid_=-1;
 #endif
     bool running_=false;std::int32_t exit_code_=-1;

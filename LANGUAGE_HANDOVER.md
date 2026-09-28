@@ -627,7 +627,7 @@ print(result.stderr);
 print(result.exit_code);
 ```
 
-Support cwd/environment control, inherited or captured stdio, exit status, and errors. The lower-level `process(program, args)` API exposes blocking `in`, `out`, and `err` pipe streams plus `wait()`, `terminate()`, `running()`, and `exit_code()`. `pipe_exec(...)` composes two argv-based processes with an OS pipe and never requires shell interpolation. These APIs are deliberately blocking until the async I/O layer is introduced.
+Support cwd/environment control, inherited or captured stdio, exit status, and errors. The lower-level `process(program, args)` API exposes blocking `in`, `out`, and `err` pipe streams plus `wait()`, `terminate()`, `running()`, and `exit_code()`. The overload `process(program, args, token)` makes those pipe reads and writes cancellable without changing their method signatures; cancellation does not terminate the child. `pipe_exec(...)` composes two argv-based processes with an OS pipe and never requires shell interpolation. These APIs are deliberately blocking until the async I/O layer is introduced.
 
 ## 20. Static and dynamic linking
 

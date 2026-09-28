@@ -41,7 +41,7 @@ const std::vector<ApiCallable>& api_callables(){
         call("sqlite_open","function","sqlite","",overload({{"path","string"}},"sqlite_db"),{"SqliteError"},{R::sqlite},"Open a SQLite database."),
         call("exec","function","process","",optional_last(overload({{"program","string"},{"args","string[]"},{"options","json"}},"exec_result")),{"ExecError"},{R::process},"Execute a program without shell interpolation."),
         call("exec_shell","function","process","",overload({{"command","string"}},"exec_result"),{"ExecError"},{R::process},"Execute an explicit shell command."),
-        call("process","function","process","",overload({{"program","string"},{"args","string[]"}},"process"),{"ExecError"},{R::process},"Start a streaming child process."),
+        with_overload(call("process","function","process","",overload({{"program","string"},{"args","string[]"}},"process"),{"ExecError"},{R::process},"Start a streaming child process, optionally binding cancellation to its blocking pipe operations."),overload({{"program","string"},{"args","string[]"},{"token","cancellation_token"}},"process")),
         call("pipe_exec","function","process","",overload({{"commands","string[]"}},"exec_result"),{"ExecError"},{R::process},"Execute a pipeline."),
         call("embed_file","function","embedding","",overload({{"path","string"}},"string"),{"EmbedError"},{R::embedded_assets},"Embed a file at compile time."),
         call("embed_dir","function","embedding","",overload({{"path","string"}},"map<string,string>"),{"EmbedError"},{R::embedded_assets},"Embed a directory at compile time."),

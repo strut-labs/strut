@@ -101,6 +101,11 @@ helpers are separated further. Mixed component sets conservatively use the full
 body, preventing helper under-generation. This fallback is migration debt, not
 the feature-selection API.
 
+The process component depends on cancellation because each process pipe owns a
+copied token context. That ownership is explicit at process construction; pipe
+read/write signatures remain transport-neutral. Native wake objects and handle
+lifetime synchronization stay inside the generated process implementation.
+
 Initialization and teardown are component-owned RAII declarations. Platform
 implementations share one component ID and select their body at emission time, so
 platform selection does not create a second dependency graph.

@@ -42,6 +42,10 @@ The existing `istream` and `ostream` types are the generic input and output cont
 
 Native runtime facilities may subscribe to a token to wake blocking operations. Subscription is intentionally not public: registration cannot miss concurrent cancellation, removal waits for an in-flight callback, and callbacks run without the cancellation-state lock held.
 
+`process(program, args, token)` binds a copied token to the new process's `in`, `out`, and `err` handles. The two-argument form remains available and uses an independent token that is never cancelled. Existing stream methods do not take token parameters. Cancelling the bound token wakes blocked process-pipe reads and writes and raises `ExecError("process I/O cancelled", 125)`; it does not terminate or wait for the child.
+
+Native completion, including EOF, wins when it is observed in the same wake cycle as cancellation. A token already cancelled when an operation starts fails before I/O. If close and cancellation are both pending when a blocked operation resumes, cancellation wins; a blocked operation interrupted only by close raises `ExecError`. The existing text `read()` compatibility behavior still returns an empty string when invoked after close, while `read_bytes()` raises `ExecError`. Process pipes do not currently expose a timeout, and cancellation is not reported as timeout, EOF, peer close, or another I/O failure.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.

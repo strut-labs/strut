@@ -118,6 +118,7 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
+          python3 dogfood/process_cancellation_certification.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -129,6 +130,7 @@ jobs:
           python dogfood/diagnostics.py build/Release/strut.exe
           python dogfood/package_certification.py build/Release/strut.exe
           python dogfood/http_lifecycle_certification.py build/Release/strut.exe
+          python dogfood/process_cancellation_certification.py build/Release/strut.exe
 
   linux-arm64:
     name: linux-arm64-gcc
@@ -160,3 +162,4 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
+          python3 dogfood/process_cancellation_certification.py build/strut

@@ -11,6 +11,7 @@ The `v0.0.3` source has been built/tested locally with warnings-as-errors using 
 - concurrency stress: 20/20 passing;
 - native Linux x64 cross-target smoke has been exercised previously.
 - CP6 cancellation certification passed locally on Linux for 50 process cycles, each with 32 waiting observers and 8 concurrent cancellation requests. CP6 adds only standard C++ synchronization primitives; macOS and Windows execution remains pending their CI jobs.
+- CP7 process-pipe cancellation passed locally on Linux for 10 runs of 10 consecutive in-process cancellation cycles, plus blocked writes, independent tokens, close, EOF, normal completion and pre-cancelled tokens. The macOS `poll` path and Windows overlapped named-pipe path are implemented but not locally executed; their certification remains pending supported-platform CI.
 
 This local evidence is supplemented by the completed supported-platform CI matrix below.
 

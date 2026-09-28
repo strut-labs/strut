@@ -111,6 +111,7 @@ inline void strut_input(strut_string& value){std::string temporary;std::cin>>tem
 
 void emit_cancellation(std::ostream& out) {
     out << R"STRUT_CANCEL(
+#define STRUT_CANCELLATION_RUNTIME_DEFINED 1
 #include <atomic>
 #include <condition_variable>
 #include <functional>

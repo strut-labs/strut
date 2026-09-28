@@ -21,6 +21,12 @@ struct RegistryApiTests{RegistryApiTests(){
     req(sema("function main() -> void : StreamError { ofstream output := ofstream(\"x\", true); output.write_bytes([0, 255]); output.flush(); output.close(); ifstream input := ifstream(\"x\", true); bytes chunk := input.read_bytes(2); bytes rest := input.read_all_bytes(10); bool done := input.eof(); input.close(); }").ok(),"binary file stream contract");
     req(!sema("function main() -> void { ofstream output; output.write_bytes([0]); }").ok(),"binary stream checked error enforced");
     req(sema("function main() -> void : ExecError { string[] args := []; child := process(\"tool\", args); child.in.write_bytes([0, 255]); child.in.flush(); child.in.close(); bytes data := child.out.read_all_bytes(); child.out.close(); }").ok(),"binary process stream adapters");
+    req(sema("function main() -> void : ExecError { cancellation_source source; string[] args := []; child := process(\"tool\", args, source.token()); child.out.read_bytes(1); }").ok(),"process accepts a cancellation token");
+    req(!sema("function main() -> void : ExecError { string[] args := []; child := process(\"tool\", args, true); }").ok(),"process rejects a non-token cancellation argument");
+    req(!sema("function main() -> void : ExecError { child := process(true, [\"arg\"]); }").ok(),"process rejects a non-string program");
+    req(!sema("function main() -> void : ExecError { child := process(\"tool\", [1]); }").ok(),"process rejects non-string arguments");
+    req(sema("function main() -> void : ExecError { child := process(\"tool\", []); }").ok(),"process contextually types empty arguments");
+    req(!sema("function main() -> void : ExecError { child := process(\"tool\"); }").ok(),"process cancellation overload preserves constructor arity checks");
     req(!sema("function main() -> void : StreamError { ifstream input; input.read_bytes(\"bad\"); }").ok(),"binary stream argument types checked");
     req(sema("include <filesystem>; function main() -> void : FilesystemError { write_file(\"empty.bin\", []); }").ok(),"empty bytes infer through filesystem overload");
     req(sema("function main() -> void : CancellationError { cancellation_source source; cancellation_token token := source.token(); cancellation_token copy := token; bool before := copy.cancelled(); source.cancel(); source.cancel(); copy.wait(); token.throw_if_cancelled(); }").ok(),"unified cancellation source and token contract");

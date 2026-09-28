@@ -22,7 +22,7 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::filesystem,"filesystem",{Id::strings,Id::collections,Id::io},{"filesystem"},{}},
         {Id::environment,"environment",{Id::strings},{"cstdlib"},{}},
         {Id::time,"time",{Id::core},{"chrono","thread"},{}},
-        {Id::process,"process",{Id::strings,Id::collections,Id::io,Id::threading},{"cerrno","cstring"},{}},
+        {Id::process,"process",{Id::strings,Id::collections,Id::io,Id::threading,Id::cancellation},{"cerrno","cstring"},{}},
         {Id::safe_pointer,"safe_pointer",{Id::core},{"memory"},{}},
         {Id::weak_pointer,"weak_pointer",{Id::safe_pointer},{},{}},
         {Id::raw_pointer,"raw_pointer",{Id::safe_pointer},{},{}},

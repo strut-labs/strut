@@ -112,7 +112,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP5: generic binary stream contracts complete.
 - Review Gate 2 approved.
 - CP6: unified cancellation primitives complete.
-- CP7: cancellable blocking handles pending.
+- CP7: cancellable blocking process handles complete.
 
 ## CP1 validation result
 
@@ -174,3 +174,13 @@ cancellation contracts must not prevent a future event-driven backend.
 - Internal subscriptions close the registration/cancellation race under one state mutex. Cancellation extracts registrations before invoking callbacks, callbacks execute outside the state lock, and removal synchronizes with an in-flight callback.
 - Cancellation is an independent runtime component with no networking, process, curl, OpenSSL or SQLite dependency. There is no process-global or thread-local current token.
 - Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes and stream certifications passed, cancellation certification passed 50 repeated cycles with 32 waiters and 8 concurrent cancellers, native FFI linkage passed, and the independent regression suite passed 160/160.
+
+## CP7 cancellable-handle result
+
+- `process(program, args, token)` explicitly binds one copied cancellation token to the owning process-pipe context. The original two-argument constructor remains source compatible, and `read_bytes`, `read_all_bytes`, `write_bytes`, `eof`, `flush`, and `close` retain their Gate 2 signatures.
+- Cancellation wakes blocked stdin writes and stdout/stderr reads and raises `ExecError` with message `process I/O cancelled` and code 125. It does not terminate or wait for the child. Independent process contexts use independent tokens.
+- Completion and EOF win when observed in the same native wake cycle. A pre-cancelled token fails before I/O; cancellation wins over close or native failure when both are pending at interruption. Close alone remains distinct, peer close remains a checked I/O error, and process pipes do not yet expose timeout operations.
+- Endpoint close and native-handle ownership are synchronized. Active operations retain the native handle until they finish, while close and cancellation wake them through operation-local objects. Concurrent operations on one endpoint are rejected; distinct endpoints and processes remain independent.
+- Linux and macOS use nonblocking process descriptors with `poll` and an operation-local wake pipe. Existing thread-local SIGPIPE handling remains intact without holding the signal coordination mutex across blocking progress. Windows uses overlapped named pipes and operation-local events with `CancelIoEx`.
+- Linux certification exercises 10 runs of 10 consecutive in-process cancellation cycles, plus pipe-capacity-blocked writes, independent tokens, close, EOF, normal completion and pre-cancellation. macOS and Windows paths are implemented but await their hosted CI runs.
+- Validation: CMake build passed, CTest passed 16/16, both HTTP certifications passed, bytes, stream, CP6 cancellation and CP7 process-cancellation certifications passed, native FFI linkage passed, and the independent regression suite passed 161/161.
