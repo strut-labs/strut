@@ -64,6 +64,7 @@ struct IRStmt {
     TypeId alias_target_id;
     std::vector<TypeSyntax> error_types;
     std::string owner;
+    std::string source_owner;
     bool has_body = false;
     bool explicit_type = false;
     bool is_async = false;

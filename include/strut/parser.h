@@ -51,6 +51,7 @@ private:
     StmtPtr parse_struct(ParseResult& result);
     StmtPtr parse_enum(ParseResult& result);
     StmtPtr parse_include(ParseResult& result);
+    StmtPtr parse_export(ParseResult& result);
     TypeSyntax parse_type(ParseResult& result);
     StmtPtr parse_declaration_or_assignment(ParseResult& result);
 

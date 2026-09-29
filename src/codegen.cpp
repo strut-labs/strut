@@ -165,10 +165,17 @@ std::string compile_embed_dir(const std::string& quoted){
 }
 
 thread_local std::string strut_codegen_source_path;
+thread_local bool strut_codegen_namespace_initializer=false;
 std::string escaped_line_path(const std::string& value){std::string out;for(char c:value){if(c=='\\'||c=='"')out.push_back('\\');out.push_back(c);}return out;}
 void emit_source_line(std::ostringstream& o,const IRStmt& s){if(!strut_codegen_source_path.empty()&&s.span.begin.line>0)o<<"#line "<<s.span.begin.line<<" \""<<escaped_line_path(strut_codegen_source_path)<<"\"\n";}
 std::string expr(const IRExpr& e);
 void stmt(std::ostringstream& o,const IRStmt& s,int n);
+
+std::string struct_literal_expr(const IRExpr& e,bool capture) {
+    std::string out=capture?"[&](){":"[](){";out+=e.text+" __strut_value{};";
+    for(std::size_t i=0;i<e.names.size();++i)out+="__strut_value."+e.names[i]+"="+expr(*e.arguments[i])+";";
+    return out+"return __strut_value;}()";
+}
 
 std::string call_argument(const IRExpr& e) {
     if (e.kind == IRExpr::Kind::array_literal && e.type_name == "bytes") return "strut_bytes" + expr(e);
@@ -195,8 +202,8 @@ std::string function_param_cpp(const IRStmt& fn,const Parameter& p){
 }
 std::string json_expr(const IRExpr& e){
     switch(e.kind){
-        case IRExpr::Kind::json_object:{std::string out="[&](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+cpp_string_literal(e.arguments[i]->text)+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
-        case IRExpr::Kind::array_literal:{std::string out="[&](){json::Document d=json::Document::make_array();";for(const auto& a:e.arguments)out+="d.push_back("+json_expr(*a)+");";return out+="return d;}()";}
+        case IRExpr::Kind::json_object:{std::string out=strut_codegen_namespace_initializer?"[](){json::Document d=json::Document::make_object();":"[&](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+cpp_string_literal(e.arguments[i]->text)+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
+        case IRExpr::Kind::array_literal:{std::string out=strut_codegen_namespace_initializer?"[](){json::Document d=json::Document::make_array();":"[&](){json::Document d=json::Document::make_array();";for(const auto& a:e.arguments)out+="d.push_back("+json_expr(*a)+");";return out+="return d;}()";}
         case IRExpr::Kind::string_literal:return "json::Document(std::string("+cpp_string_literal(e.text)+"))";
         case IRExpr::Kind::integer_literal:return "json::Document(static_cast<int>("+e.text+"))";
         case IRExpr::Kind::floating_literal:return "json::Document(static_cast<double>("+e.text+"))";
@@ -216,7 +223,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::map_literal:{std::string out="{";for(size_t i=0;i+1<e.arguments.size();i+=2){if(i)out+=",";out+="{"+expr(*e.arguments[i])+","+expr(*e.arguments[i+1])+"}";}return out+"}";}
         case IRExpr::Kind::tuple_literal:{std::string out="std::make_tuple(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
         case IRExpr::Kind::json_object:return json_expr(e);
-        case IRExpr::Kind::struct_literal:{std::string out="[&](){"+e.text+" __strut_value{};";for(std::size_t i=0;i<e.names.size();++i)out+="__strut_value."+e.names[i]+"="+expr(*e.arguments[i])+";";return out+"return __strut_value;}()";}
+        case IRExpr::Kind::struct_literal:return struct_literal_expr(e,!strut_codegen_namespace_initializer);
         case IRExpr::Kind::grouping:return "("+expr(*e.left)+")";
         case IRExpr::Kind::unary:if(e.text=="await")return "strut_await("+expr(*e.right)+")";if(e.text=="*"&&e.right&&e.right->type_name.rfind("ptr<",0)==0)return "strut_deref("+expr(*e.right)+",\""+escaped_line_path(strut_codegen_source_path)+"\","+std::to_string(e.span.begin.line)+")";return e.text+expr(*e.right);
         case IRExpr::Kind::postfix:return expr(*e.left)+e.text;
@@ -256,9 +263,10 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<"[=](";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<"[[maybe_unused]] "<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}return o.str();}
     } return {};
 }
+std::string declaration_initializer(const IRExpr& expression,bool namespace_scope) {const bool previous=strut_codegen_namespace_initializer;strut_codegen_namespace_initializer=namespace_scope;auto value=expr(expression);strut_codegen_namespace_initializer=previous;return value;}
 void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');emit_source_line(o,s);
     switch(s.kind){
-        case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name;if(s.value){o<<" = ";if(!s.overload_name.empty())o<<s.overload_name<<"("<<expr(*s.value)<<")";else o<<expr(*s.value);}else o<<"{}";o<<";\n";break;
+        case IRStmt::Kind::declaration:o<<pad<<(s.is_const?"const ":"")<<cpp_type(s.type_name)<<" "<<s.name;if(s.value){o<<" = ";if(!s.overload_name.empty())o<<s.overload_name<<"("<<declaration_initializer(*s.value,n==0)<<")";else o<<declaration_initializer(*s.value,n==0);}else o<<"{}";o<<";\n";break;
         case IRStmt::Kind::assignment:{
             std::string target=s.name;
             if(s.target){
@@ -300,7 +308,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
                 else{o<<"void "<<helper<<"("<<cpp_type(dest)<<"& "<<s.parameters[0].name<<","<<operator_param_cpp(s.parameters[1].type.name,s.parameters[1].name)<<") {\n";if(s.value&&s.value->kind==IRExpr::Kind::lambda){if(s.value->lambda_expression)o<<"    (void)"<<expr(*s.value->lambda_expression)<<";\n";else for(const auto& c:s.value->lambda_body)stmt(o,*c,4);}else for(const auto& c:s.body)stmt(o,*c,4);o<<"}\n";}break;
             }
             if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}o<<operator_return_cpp(s.return_type)<<" operator"<<s.op<<"(";for(std::size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<operator_param_cpp(s.parameters[i].type.name,s.parameters[i].name);}if(s.operator_fixity==OperatorFixity::postfix)o<<", int";o<<")";if(!s.has_body){o<<";\n";break;}o<<" {\n";if(s.value&&s.value->kind==IRExpr::Kind::lambda){if(s.value->lambda_expression)o<<std::string(n+4,' ')<<"return "<<expr(*s.value->lambda_expression)<<";\n";else for(const auto& c:s.value->lambda_body)stmt(o,*c,n+4);}else for(const auto& c:s.body)stmt(o,*c,n+4);o<<"}\n";break;}
-        case IRStmt::Kind::function_decl:{if(s.is_extern_c)o<<"extern \"C\" ";if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}const bool native_main=s.name=="main"&&s.owner.empty()&&!s.is_async;const bool main_void=native_main&&s.return_type=="void";if(native_main)o<<"#ifdef _WIN32\nint wmain(int argc,wchar_t** argv)\n#else\nint main(int argc,char** argv)\n#endif\n";else{o<<(s.is_async?("strut_future<"+cpp_type(s.return_type)+">"):cpp_type(s.return_type))<<" ";if(!s.owner.empty())o<<s.owner<<"::";o<<s.name<<"(";for(size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<function_param_cpp(s,s.parameters[i]);}o<<")";}if(!s.has_body){o<<";\n";break;}o<<" {\n";if(native_main){if(s.parameters.size()==2){o<<"    strut_string "<<s.parameters[0].name<<"(argc > 0 ? strut_native_arg(argv[0]) : std::string());\n    std::vector<strut_string> "<<s.parameters[1].name<<";\n    "<<s.parameters[1].name<<".reserve(argc > 1 ? static_cast<std::size_t>(argc - 1) : 0);\n    for(int strut_i=1;strut_i<argc;++strut_i) "<<s.parameters[1].name<<".emplace_back(strut_native_arg(argv[strut_i]));\n";}else o<<"    (void)argc; (void)argv;\n";}if(s.is_async){o<<"    return strut_async([=]() mutable -> "<<cpp_type(s.return_type)<<" {\n";for(auto&c:s.body)stmt(o,*c,n+8);o<<"    });\n";}else{for(auto&c:s.body){if(main_void&&c->kind==IRStmt::Kind::return_stmt&&!c->value){o<<std::string(n+4,' ')<<"return 0;\n";}else stmt(o,*c,n+4);}}o<<"}\n";break;}
+        case IRStmt::Kind::function_decl:{if(s.is_extern_c)o<<"extern \"C\" ";if(!s.generic_parameters.empty()){o<<"template<";for(std::size_t i=0;i<s.generic_parameters.size();++i){if(i)o<<",";o<<"class "<<s.generic_parameters[i];}o<<">\n";}const bool native_main=s.name=="main"&&s.owner.empty()&&s.source_owner.empty()&&!s.is_async;const bool main_void=native_main&&s.return_type=="void";if(native_main)o<<"#ifdef _WIN32\nint wmain(int argc,wchar_t** argv)\n#else\nint main(int argc,char** argv)\n#endif\n";else{o<<(s.is_async?("strut_future<"+cpp_type(s.return_type)+">"):cpp_type(s.return_type))<<" ";if(!s.owner.empty())o<<s.owner<<"::";o<<s.name<<"(";for(size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<function_param_cpp(s,s.parameters[i]);}o<<")";}if(!s.has_body){o<<";\n";break;}o<<" {\n";if(native_main){if(s.parameters.size()==2){o<<"    strut_string "<<s.parameters[0].name<<"(argc > 0 ? strut_native_arg(argv[0]) : std::string());\n    std::vector<strut_string> "<<s.parameters[1].name<<";\n    "<<s.parameters[1].name<<".reserve(argc > 1 ? static_cast<std::size_t>(argc - 1) : 0);\n    for(int strut_i=1;strut_i<argc;++strut_i) "<<s.parameters[1].name<<".emplace_back(strut_native_arg(argv[strut_i]));\n";}else o<<"    (void)argc; (void)argv;\n";}if(s.is_async){o<<"    return strut_async([=]() mutable -> "<<cpp_type(s.return_type)<<" {\n";for(auto&c:s.body)stmt(o,*c,n+8);o<<"    });\n";}else{for(auto&c:s.body){if(main_void&&c->kind==IRStmt::Kind::return_stmt&&!c->value){o<<std::string(n+4,' ')<<"return 0;\n";}else stmt(o,*c,n+4);}}o<<"}\n";break;}
         default:break;
     }}
 }

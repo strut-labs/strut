@@ -389,6 +389,17 @@ StmtPtr Parser::parse_include(ParseResult& result) {
     match(";"); st->span = join(begin.span, previous().span); return st;
 }
 
+StmtPtr Parser::parse_export(ParseResult& result) {
+    const Token begin = previous();
+    auto st = std::make_unique<Stmt>(); st->kind = Stmt::Kind::export_stmt;
+    if (!check(";")) {
+        if (peek().kind != TokenKind::identifier) { error(result, peek(), "expected symbol name or ';' after export"); return nullptr; }
+        st->name = advance().lexeme;
+    }
+    if (!match(";")) { error(result, peek(), "expected ';' after export directive"); return nullptr; }
+    st->span = join(begin.span, previous().span); return st;
+}
+
 StmtPtr Parser::parse_enum(ParseResult& result) {
     const Token begin=previous(); if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected enum name");return nullptr;}
     const Token name=advance(); if(!match("{")){error(result,peek(),"expected '{' after enum name");return nullptr;}
@@ -509,6 +520,7 @@ StmtPtr Parser::parse_try(ParseResult& result){
 
 StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("include")) return parse_include(result);
+    if (peek().kind==TokenKind::identifier && peek().lexeme=="export" && (peek(1).kind==TokenKind::identifier || peek(1).lexeme==";")) { advance(); return parse_export(result); }
     if (match("type")) return parse_type_alias(result);
     if (match("error")) { auto st=parse_struct(result);if(st)st->is_error=true;return st; }
     if (match("struct")) return parse_struct(result);

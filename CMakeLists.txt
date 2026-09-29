@@ -123,6 +123,10 @@ add_executable(strut_package_tests tests/unit/package_test.cpp)
 target_link_libraries(strut_package_tests PRIVATE strut_compiler)
 add_test(NAME strut_package_tests COMMAND strut_package_tests)
 
+add_executable(strut_package_encapsulation_tests tests/unit/package_encapsulation_test.cpp)
+target_link_libraries(strut_package_encapsulation_tests PRIVATE strut_compiler)
+add_test(NAME strut_package_encapsulation_tests COMMAND strut_package_encapsulation_tests)
+
 add_executable(strut_project_tests tests/unit/project_test.cpp)
 target_link_libraries(strut_project_tests PRIVATE strut_compiler)
 add_test(NAME strut_project_tests COMMAND strut_project_tests)

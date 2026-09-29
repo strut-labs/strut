@@ -67,6 +67,8 @@ std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& 
 void SemanticAnalyzer::push_scope() { scopes_.push_back(Scope{}); }
 void SemanticAnalyzer::pop_scope() { scopes_.pop_back(); }
 bool SemanticAnalyzer::declare(SemanticResult& result, Symbol symbol) {
+    symbol.source_owner=current_source_owner_;
+    if(symbol.name.rfind("__strut_pkg_",0)==0){auto internal=owner_internal_symbols_.find(current_source_owner_);if(internal==owner_internal_symbols_.end()||!internal->second.count(symbol.name)){result.diagnostics.push_back(Diagnostic{symbol.span,"names beginning with '__strut_pkg_' are reserved for package identities"});return false;}}
     const bool callable_binding=symbol.name_space==SymbolNamespace::function||symbol.type_name=="function"||symbol.type_name=="async_function"||type_is(intern_type(symbol.type_name),TypeNodeKind::function);
     if(callable_binding){if(const auto* builtin=api_callable(symbol.name);builtin&&builtin->owner.empty()&&(builtin->module=="crypto"||builtin->module=="encoding")){result.diagnostics.push_back(Diagnostic{symbol.span,"callable name '"+symbol.name+"' is reserved by standard module <"+builtin->module+">"});return false;}}
     auto& map = namespace_map(scopes_.back(), symbol.name_space);
@@ -81,9 +83,22 @@ Symbol* SemanticAnalyzer::lookup(std::string_view name, SymbolNamespace ns) {
     for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
         auto& map = namespace_map(*it, ns);
         auto found = map.find(std::string(name));
-        if (found != map.end()) return &found->second;
+        if (found != map.end() && can_access(found->second.source_owner,found->second.name)) return &found->second;
     }
     return nullptr;
+}
+
+bool SemanticAnalyzer::can_access(std::string_view owner) const {
+    if(owner==current_source_owner_)return true;
+    auto imports=owner_package_imports_.find(current_source_owner_);
+    return imports!=owner_package_imports_.end()&&imports->second.count(std::string(owner));
+}
+
+bool SemanticAnalyzer::can_access(std::string_view owner, std::string_view symbol) const {
+    if(owner==current_source_owner_)return true;
+    auto private_symbols=owner_private_symbols_.find(std::string(owner));
+    if(private_symbols!=owner_private_symbols_.end()&&private_symbols->second.count(std::string(symbol)))return false;
+    return can_access(owner);
 }
 
 std::string SemanticAnalyzer::resolved_type_name(std::string_view name) const {
@@ -91,6 +106,7 @@ std::string SemanticAnalyzer::resolved_type_name(std::string_view name) const {
     std::string current = strip_nullable(name);
     std::unordered_set<std::string> seen;
     while (aliases_.find(current) != aliases_.end() && seen.find(current) == seen.end()) {
+        auto owner=type_owners_.find(current);if(owner!=type_owners_.end()&&!can_access(owner->second,current))break;
         seen.insert(current);
         current = aliases_.at(current);
     }
@@ -103,7 +119,7 @@ TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
     if (type.valid()) return type;
     if (resolved == "null") return {TypeKind::null_type, 0, "null",intern_type("null")};
     if (resolved == "opaque") return {TypeKind::named, 0, "opaque",intern_type("opaque")};
-    if (named_types_.find(resolved) != named_types_.end()) return {TypeKind::named,0,resolved,intern_type(resolved)};
+    if (named_types_.find(resolved) != named_types_.end()) {auto owner=type_owners_.find(resolved);if(owner==type_owners_.end()||can_access(owner->second,resolved))return {TypeKind::named,0,resolved,intern_type(resolved)};}
     if (resolved.find('<') != std::string::npos || resolved.find('[') != std::string::npos ||
         (!resolved.empty() && std::all_of(resolved.begin(), resolved.end(), [](unsigned char c){ return !std::islower(c); }))) {
         return {TypeKind::named, 0, resolved,intern_type(resolved)};
@@ -132,7 +148,7 @@ void SemanticAnalyzer::require_module(SemanticResult& result, std::string_view m
 
 void SemanticAnalyzer::require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const {
     auto key_supported=[&](TypeId key){if(type_is(key,TypeNodeKind::const_type))key=type_element(key);const auto& n=type_node(key);auto b=builtin_type(type_spelling(key));if(b.valid()&&b.kind!=TypeKind::void_type&&b.kind!=TypeKind::json_type)return true;if(n.kind==TypeNodeKind::named&&enum_members_.find(n.name)!=enum_members_.end())return true;return n.kind==TypeNodeKind::safe_pointer||n.kind==TypeNodeKind::raw_pointer;};
-    std::function<void(TypeId)> visit=[&](TypeId id){const auto& n=type_node(id);if(n.kind==TypeNodeKind::tuple)require_module(result,"tuple",span,type_name);if(n.kind==TypeNodeKind::generic){const auto& head=n.name;if(head=="prique")result.diagnostics.push_back(Diagnostic{span,"'prique' was renamed to 'priority_queue'; use priority_queue<T> or priority_queue<T,min>"});if(head=="map"||head=="ordered_map"||head=="set"||head=="ordered_set"||head=="queue"||head=="stack"||head=="deque"||head=="list"||head=="priority_queue")require_module(result,head=="prique"?"priority_queue":head,span,type_name);if(head=="atomic"&&(n.children.size()!=1||!(builtin_type(type_spelling(n.children.front())).kind==TypeKind::signed_int||builtin_type(type_spelling(n.children.front())).kind==TypeKind::unsigned_int||builtin_type(type_spelling(n.children.front())).kind==TypeKind::bool_type)))result.diagnostics.push_back(Diagnostic{span,"atomic<T> requires one integer or bool scalar type"});if(!n.children.empty()&&(head=="map"||head=="set"||head=="ordered_map"||head=="ordered_set")&&!key_supported(n.children.front())){const auto key=type_spelling(n.children.front());if(head=="map")result.diagnostics.push_back(Diagnostic{span,"map key type '"+key+"' is not hashable; use a built-in/hashable key or ordered_map"});else if(head=="set")result.diagnostics.push_back(Diagnostic{span,"set element type '"+key+"' is not hashable; use a built-in/hashable element or ordered_set"});else result.diagnostics.push_back(Diagnostic{span,head+" key/element type '"+key+"' is not orderable by the standard library"});}}for(auto child:n.children)visit(child);};
+    std::function<void(TypeId)> visit=[&](TypeId id){const auto& n=type_node(id);if(n.kind==TypeNodeKind::named||n.kind==TypeNodeKind::generic){auto owner=type_owners_.find(n.name);if(owner!=type_owners_.end()&&!can_access(owner->second,n.name))result.diagnostics.push_back(Diagnostic{span,"private package type '"+n.name+"' is not accessible"});}if(n.kind==TypeNodeKind::tuple)require_module(result,"tuple",span,type_name);if(n.kind==TypeNodeKind::generic){const auto& head=n.name;if(head=="prique")result.diagnostics.push_back(Diagnostic{span,"'prique' was renamed to 'priority_queue'; use priority_queue<T> or priority_queue<T,min>"});if(head=="map"||head=="ordered_map"||head=="set"||head=="ordered_set"||head=="queue"||head=="stack"||head=="deque"||head=="list"||head=="priority_queue")require_module(result,head=="prique"?"priority_queue":head,span,type_name);if(head=="atomic"&&(n.children.size()!=1||!(builtin_type(type_spelling(n.children.front())).kind==TypeKind::signed_int||builtin_type(type_spelling(n.children.front())).kind==TypeKind::unsigned_int||builtin_type(type_spelling(n.children.front())).kind==TypeKind::bool_type)))result.diagnostics.push_back(Diagnostic{span,"atomic<T> requires one integer or bool scalar type"});if(!n.children.empty()&&(head=="map"||head=="set"||head=="ordered_map"||head=="ordered_set")&&!key_supported(n.children.front())){const auto key=type_spelling(n.children.front());if(head=="map")result.diagnostics.push_back(Diagnostic{span,"map key type '"+key+"' is not hashable; use a built-in/hashable key or ordered_map"});else if(head=="set")result.diagnostics.push_back(Diagnostic{span,"set element type '"+key+"' is not hashable; use a built-in/hashable element or ordered_set"});else result.diagnostics.push_back(Diagnostic{span,head+" key/element type '"+key+"' is not orderable by the standard library"});}}for(auto child:n.children)visit(child);};
     visit(intern_type(type_name));
 }
 
@@ -188,11 +204,12 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::unary:
         case Expr::Kind::postfix: {
             auto operand = expr.right ? infer_expression(result, *expr.right) : (expr.left ? infer_expression(result, *expr.left) : TypeInfo{});
-            if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
             if(expr.text=="await"){const auto& node=type_node(operand.id);auto inner=node.kind==TypeNodeKind::generic&&node.name=="future"&&!node.children.empty()?node.children.front():TypeId{};if(!inner)result.diagnostics.push_back(Diagnostic{expr.span,"await requires a future<T>"});return resolve_type(inner?type_spelling(inner):"opaque");}
             if(expr.text=="*"){const auto kind=type_node(operand.id).kind;if(kind==TypeNodeKind::raw_pointer&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> dereference requires unsafe block"});if(kind==TypeNodeKind::safe_pointer||kind==TypeNodeKind::raw_pointer||kind==TypeNodeKind::reference)return resolve_type(type_spelling(type_element(operand.id)));}
             const auto fixity=expr.kind==Expr::Kind::postfix?OperatorFixity::postfix:OperatorFixity::prefix;
-            auto oit=operator_returns_.find(operator_key(fixity,expr.text)+"|"+normalize_operator_type(operand.name));if(oit!=operator_returns_.end())return resolve_type(oit->second);
+            auto oit=operator_returns_.find(current_source_owner_+"|"+operator_key(fixity,expr.text)+"|"+normalize_operator_type(operand.name));if(oit!=operator_returns_.end())return resolve_type(oit->second);
+            if(struct_fields_.count(normalize_operator_type(operand.name))){result.diagnostics.push_back(Diagnostic{expr.span,"no "+std::string(operator_fixity_name(fixity))+" "+expr.text+" overload exists for '"+operand.name+"'"});return {};}
+            if (expr.text == "!") return {TypeKind::bool_type, 0, "bool"};
             if((expr.text=="++"||expr.text=="--")&&!operand.numeric()&&operand.name!="opaque")result.diagnostics.push_back(Diagnostic{expr.span,"no "+std::string(operator_fixity_name(fixity))+" "+expr.text+" overload exists for '"+operand.name+"'"});
             return operand;
         }
@@ -205,6 +222,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (right.valid() && inner.valid() && !compatible(right, inner)) result.diagnostics.push_back(Diagnostic{expr.right->span, "fallback value is incompatible with nullable type"});
                 return inner;
             }
+            const bool user_type=struct_fields_.count(normalize_operator_type(left.name))||struct_fields_.count(normalize_operator_type(right.name));
+            if(user_type){auto oit=operator_returns_.find(current_source_owner_+"|infix:"+expr.text+"|"+normalize_operator_type(left.name)+","+normalize_operator_type(right.name));if(oit!=operator_returns_.end())return resolve_type(oit->second);result.diagnostics.push_back(Diagnostic{expr.span,"no infix "+expr.text+" overload exists for '"+left.name+"' and '"+right.name+"'"});return {};}
             if (expr.text == "==" || expr.text == "!=" || expr.text == "<" || expr.text == "<=" || expr.text == ">" || expr.text == ">=" || expr.text == "&&" || expr.text == "||") {
                 if((left.name=="bytes"||right.name=="bytes")&&left.name!=right.name)result.diagnostics.push_back(Diagnostic{expr.span,"bytes equality requires two bytes values"});
                 return {TypeKind::bool_type, 0, "bool"};
@@ -216,14 +235,16 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (left.kind == right.kind) return left.bits >= right.bits ? left : right;
                 return left.bits > right.bits ? left : right;
             }
-            auto oit=operator_returns_.find("infix:"+expr.text+"|"+left.name+","+right.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
+            if(expr.text=="+"&&left.name=="string"&&right.name=="string")return builtin_type("string");
+            auto oit=operator_returns_.find(current_source_owner_+"|infix:"+expr.text+"|"+left.name+","+right.name);if(oit!=operator_returns_.end())return resolve_type(oit->second);
+            if(left.valid()&&right.valid()&&left.name!="opaque"&&right.name!="opaque")result.diagnostics.push_back(Diagnostic{expr.span,"no infix "+expr.text+" overload exists for '"+left.name+"' and '"+right.name+"'"});
             return {};
         }
         case Expr::Kind::call: {
-            const Stmt* selected=nullptr;TypeBindings selected_bindings;std::unordered_set<std::string> selected_generics;
+            const Stmt* selected=nullptr;TypeBindings selected_bindings;std::unordered_set<std::string> selected_generics;bool inaccessible_candidate=false;
             if(expr.left&&expr.left->kind==Expr::Kind::identifier){auto found=function_candidates_.find(expr.left->text);if(found!=function_candidates_.end()){
                 std::vector<std::tuple<const Stmt*,TypeBindings,std::unordered_set<std::string>,int>> viable;
-                for(const auto* candidate:found->second){if(candidate->parameters.size()!=expr.arguments.size())continue;std::unordered_set<std::string> generics(candidate->generic_parameters.begin(),candidate->generic_parameters.end());TypeBindings bindings;int rank=generics.empty()?0:1;bool ok=true;
+                for(const auto* candidate:found->second){if(!can_access(candidate->source_owner,candidate->name)){inaccessible_candidate=true;continue;}if(candidate->parameters.size()!=expr.arguments.size())continue;std::unordered_set<std::string> generics(candidate->generic_parameters.begin(),candidate->generic_parameters.end());TypeBindings bindings;int rank=generics.empty()?0:1;bool ok=true;
                     if(expected&&candidate->return_type&&type_node(expected).kind!=TypeNodeKind::nullable&&!unify_type(candidate->return_type->type_id,expected,generics,bindings))ok=false;
                     for(std::size_t i=0;ok&&i<expr.arguments.size();++i){auto parameter=substitute_type(candidate->parameters[i].type.type_id,generics,bindings);auto argument=infer_expression(result,*expr.arguments[i],parameter);if(argument.name=="opaque[]")continue;if(!unify_type(candidate->parameters[i].type.type_id,argument.id,generics,bindings)){auto resolved=resolve_type(type_spelling(parameter));if(!compatible(argument,resolved))ok=false;else ++rank;}}
                     for(const auto& generic:generics)if(bindings.find(generic)==bindings.end())ok=false;
@@ -313,7 +334,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(selected&&selected->return_type){auto inferred=type_spelling(substitute_type(selected->return_type->type_id,selected_generics,selected_bindings));auto resolved=resolve_type(selected->is_async?"future<"+inferred+">":inferred);expr.inferred_type=resolved.id;return resolved;}
                 if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
                 if (auto* value = lookup(name, SymbolNamespace::value)) { if(value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name)); if(value->type_name=="async_function") return {TypeKind::named,0,"future<opaque>"}; }
+                auto constructed=resolve_type(name);if(constructed.valid()&&named_types_.count(name))return constructed;
             }
+            if(inaccessible_candidate)result.diagnostics.push_back(Diagnostic{expr.span,"symbol '"+expr.left->text+"' is not exported by a directly included package"});
+            else if(expr.left&&expr.left->kind==Expr::Kind::identifier)result.diagnostics.push_back(Diagnostic{expr.span,"unknown callable '"+expr.left->text+"'"});
             return {TypeKind::named, 0, "opaque"};
         }
         case Expr::Kind::lambda: {
@@ -370,6 +394,9 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
     if (st.return_type) require_type_module(result, st.return_type->name, st.return_type->span);
     for (const auto& p : st.parameters) require_type_module(result, p.type.name, p.type.span);
     for (const auto& f : st.fields) require_type_module(result, f.type.name, f.type.span);
+    for (const auto& base : st.bases) require_type_module(result, base, st.span);
+    for (const auto& error : st.error_types) require_type_module(result, error.name, error.span);
+    for (const auto& clause : st.catches) if(clause.type) require_type_module(result, clause.type->name, clause.type->span);
     switch (st.kind) {
         case Stmt::Kind::declaration: {
             const TypeId destination_context=st.declared_type?st.declared_type->type_id:TypeId{};
@@ -405,7 +432,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 }
                 const bool atomic_init=type_node(destination.id).kind==TypeNodeKind::generic&&type_node(destination.id).name=="atomic"&&!type_arguments(destination.id).empty()&&compatible(value_type,resolve_type(type_spelling(type_arguments(destination.id).front())));
                 if (!literal_integer_ok && !reference_bind_ok && !atomic_init && destination.valid() && value_type.valid() && !compatible(value_type, destination)) {
-                    const auto init_key="infix::=|"+normalize_operator_type(resolved_type_name(st.declared_type->name))+","+normalize_operator_type(value_type.name);
+                    const auto init_key=current_source_owner_+"|infix::=|"+normalize_operator_type(resolved_type_name(st.declared_type->name))+","+normalize_operator_type(value_type.name);
                     if(operator_returns_.find(init_key)==operator_returns_.end()) result.diagnostics.push_back(Diagnostic{st.value->span, "cannot initialize '" + st.name + "' of type " + st.declared_type->name + " from incompatible value"});
                 }
             } else {
@@ -434,12 +461,12 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 if (target->type_name.rfind("ref<",0)==0) result.diagnostics.push_back(Diagnostic{st.span,"T& bindings cannot be reassigned"});
                 lhs=resolve_type(target->type_name);
             }
-            if (st.value) { auto rhs=infer_expression(result,*st.value,lhs.id);const bool fitting_integer=st.value->kind==Expr::Kind::integer_literal&&(lhs.kind==TypeKind::signed_int||lhs.kind==TypeKind::unsigned_int)&&integer_literal_fits(st.value->text,lhs);if(type_node(lhs.id).kind==TypeNodeKind::generic&&type_node(lhs.id).name=="atomic"&&rhs.id==lhs.id)result.diagnostics.push_back(Diagnostic{st.value->span,"atomic values cannot be assigned; use store(value.load()) explicitly"});else if(!fitting_integer&&rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key="infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
+            if (st.value) { auto rhs=infer_expression(result,*st.value,lhs.id);const bool fitting_integer=st.value->kind==Expr::Kind::integer_literal&&(lhs.kind==TypeKind::signed_int||lhs.kind==TypeKind::unsigned_int)&&integer_literal_fits(st.value->text,lhs);if(type_node(lhs.id).kind==TypeNodeKind::generic&&type_node(lhs.id).name=="atomic"&&rhs.id==lhs.id)result.diagnostics.push_back(Diagnostic{st.value->span,"atomic values cannot be assigned; use store(value.load()) explicitly"});else if(!fitting_integer&&rhs.valid()&&lhs.valid()&&!compatible(rhs,lhs)){const auto assign_key=current_source_owner_+"|infix:=|"+normalize_operator_type(lhs.name)+","+normalize_operator_type(rhs.name);if(operator_returns_.find(assign_key)==operator_returns_.end())result.diagnostics.push_back(Diagnostic{st.value->span,"incompatible assignment to '"+label+"'"});} }
             break;
         }
         case Stmt::Kind::type_alias:
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, {}});
-            if (st.alias_target) aliases_[st.name] = st.alias_target->name;
+            type_owners_[st.name]=current_source_owner_;if (st.alias_target) aliases_[st.name] = st.alias_target->name;
             break;
         case Stmt::Kind::enum_decl: {
             declare(result,Symbol{st.name,SymbolNamespace::type,st.span,true,st.name});auto& set=enum_members_[st.name];for(const auto& n:st.enum_names)if(!set.insert(n).second)result.diagnostics.push_back(Diagnostic{st.span,"duplicate enum member '"+n+"'"});break;
@@ -457,14 +484,17 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         }
         case Stmt::Kind::operator_decl: {
             std::string signature;for(std::size_t i=0;i<st.parameters.size();++i){if(i)signature+=",";signature+=normalize_operator_type(resolved_type_name(st.parameters[i].type.name));}
-            const std::string key=operator_key(st.operator_fixity,st.op);
+            const std::string key=st.source_owner+"|"+operator_key(st.operator_fixity,st.op);
             auto& seen=operator_signatures_[key];if(!seen.insert(signature).second)result.diagnostics.push_back(Diagnostic{st.span,"ambiguous duplicate operator overload for '"+st.op+"' with signature ("+signature+")"});
             if(st.has_body){const auto previous_return=current_function_return_type_;current_function_return_type_=st.return_type?st.return_type->name:"void";push_scope();for(const auto& p:st.parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,p.type.is_const,resolved_type_name(p.type.name)});if(st.value)infer_expression(result,*st.value);else analyze_statements(result,st.body,false);pop_scope();current_function_return_type_=previous_return;}
             break;
         }
         case Stmt::Kind::function_decl: {
-            if(!lookup(st.name,SymbolNamespace::function))declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
-            if(st.name=="main"&&st.owner.empty()){
+            if(st.owner.empty()&&!lookup(st.name,SymbolNamespace::function)){
+                const bool repeated_extern=st.is_extern_c&&!scopes_.empty()&&namespace_map(scopes_.back(),SymbolNamespace::function).count(st.name);
+                if(!repeated_extern)declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
+            }
+            if(st.name=="main"&&st.owner.empty()&&st.source_owner.empty()){
                 const std::string result_type=st.return_type?resolved_type_name(st.return_type->name):"void";
                 const bool params_ok=st.parameters.empty()||(st.parameters.size()==2&&resolved_type_name(st.parameters[0].type.name)=="string"&&resolved_type_name(st.parameters[1].type.name)=="string[]");
                 if(st.is_async||!params_ok||(result_type!="int_32"&&result_type!="void"))result.diagnostics.push_back(Diagnostic{st.span,"main must have signature function main() -> int or function main(string cmd, string[] args) -> int"});
@@ -480,7 +510,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             }
             break;
         }
-        case Stmt::Kind::include_stmt: break;
+        case Stmt::Kind::include_stmt: case Stmt::Kind::export_stmt: break;
         case Stmt::Kind::unsafe_stmt: ++unsafe_depth_; analyze_statements(result,st.body,true); --unsafe_depth_; break;
         case Stmt::Kind::block: analyze_statements(result, st.body, true); break;
         case Stmt::Kind::if_stmt: {
@@ -559,7 +589,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
     auto it = aliases_.find(name); if (it == aliases_.end()) return builtin_type(name).valid();
     if (visiting.find(name) != visiting.end()) { result.diagnostics.push_back(Diagnostic{{}, "cyclic type alias involving '" + name + "'"}); return false; }
     visiting.insert(name); const std::string target = it->second;
-    bool ok = builtin_type(target).valid() || aliases_.find(target) != aliases_.end();
+    bool ok = builtin_type(target).valid() || named_types_.find(target) != named_types_.end() || aliases_.find(target) != aliases_.end();
     if (aliases_.find(target) != aliases_.end()) ok = resolve_alias(result, target, visiting);
     if (!ok && (target.find('<') != std::string::npos || target.find('[') != std::string::npos || target.rfind("function",0)==0)) ok = true;
     if (!ok) result.diagnostics.push_back(Diagnostic{{}, "unknown type '" + target + "' in alias '" + name + "'"});
@@ -567,7 +597,7 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); checked_error_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); function_candidates_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); type_owners_.clear(); checked_error_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); function_candidates_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); owner_package_imports_.clear();owner_private_symbols_.clear();owner_internal_symbols_.clear();current_source_owner_.clear();for(const auto& imports:program.owner_package_imports)owner_package_imports_[imports.first]={imports.second.begin(),imports.second.end()};for(const auto& symbols:program.owner_private_symbols)owner_private_symbols_[symbols.first]={symbols.second.begin(),symbols.second.end()};for(const auto& symbols:program.owner_internal_symbols)owner_internal_symbols_[symbols.first]={symbols.second.begin(),symbols.second.end()};unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
     named_types_.insert(api_named_types().begin(),api_named_types().end());
     for(const auto& field:api_fields())struct_fields_[field.owner][field.name]=type_spelling(field.type);
     checked_error_types_.insert("Error");
@@ -575,16 +605,25 @@ SemanticResult SemanticAnalyzer::analyze(const Program& program) {
     checked_error_types_.insert("ParseError");
     for(const auto& name:api_named_types())if(name.size()>=5&&name.compare(name.size()-5,5,"Error")==0)checked_error_types_.insert(name);
     for(const auto& callable:api_callables())for(const auto& error:callable.checked_errors){checked_error_types_.insert(error);if(callable.owner.empty())function_errors_[callable.name].insert(error);}
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);if(st->is_error)checked_error_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl)named_types_.insert(st->name);
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){named_types_.insert(st->name);type_owners_[st->name]=st->source_owner;if(st->is_error)checked_error_types_.insert(st->name);struct_bases_[st->name]=st->bases;for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&!m->has_body)abstract_methods_[st->name].insert(m->name);for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::enum_decl){named_types_.insert(st->name);type_owners_[st->name]=st->source_owner;}
     for(std::size_t pass=0;pass<program.statements.size()+1;++pass)for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl){for(const auto& base:st->bases){auto it=abstract_methods_.find(base);if(it!=abstract_methods_.end())abstract_methods_[st->name].insert(it->second.begin(),it->second.end());}for(const auto& m:st->body)if(m->kind==Stmt::Kind::function_decl&&m->has_body)abstract_methods_[st->name].erase(m->name);}
     for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&!st->owner.empty()&&st->has_body)abstract_methods_[st->owner].erase(st->name);
     aliases_["int"]="int_32"; aliases_["uint"]="uint_32"; aliases_["double"]="double_32";
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl){function_candidates_[st->name].push_back(st.get());if(st->is_extern_c)extern_c_functions_.insert(st->name);auto& errs=function_errors_[st->name];for(const auto& e:st->error_types){auto name=resolved_type_name(e.name);if(checked_error_types_.find(name)==checked_error_types_.end())result.diagnostics.push_back(Diagnostic{e.span,"'"+name+"' is not a declared checked-error type\nhelp: declare it with `error "+name+" { string message; }`"});errs.insert(std::move(name));}}
-    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=normalize_operator_type(resolved_type_name(st->parameters[i].type.name));}operator_returns_[operator_key(st->operator_fixity,st->op)+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&st->owner.empty()){function_candidates_[st->name].push_back(st.get());if(st->is_extern_c)extern_c_functions_.insert(st->name);auto& errs=function_errors_[st->name];for(const auto& e:st->error_types){auto name=resolved_type_name(e.name);if(checked_error_types_.find(name)==checked_error_types_.end())result.diagnostics.push_back(Diagnostic{e.span,"'"+name+"' is not a declared checked-error type\nhelp: declare it with `error "+name+" { string message; }`"});errs.insert(std::move(name));}}
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::operator_decl){std::string signature;for(std::size_t i=0;i<st->parameters.size();++i){if(i)signature+=",";signature+=normalize_operator_type(resolved_type_name(st->parameters[i].type.name));}operator_returns_[st->source_owner+"|"+operator_key(st->operator_fixity,st->op)+"|"+signature]=st->return_type?resolved_type_name(st->return_type->name):"void";}
     push_scope();
     for (const auto& [name,target] : aliases_) { (void)target; declare(result, Symbol{name,SymbolNamespace::type,{},true,{}}); }
-    analyze_statements(result, program.statements, false);
+    for (const auto& st : program.statements) {
+        current_source_owner_=st->source_owner;
+        auto modules = program.owner_standard_modules.find(st->source_owner);
+        if (modules == program.owner_standard_modules.end()) {
+            standard_modules_.clear();
+            if (program.owner_standard_modules.empty()) standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end());
+        }
+        else standard_modules_ = {modules->second.begin(), modules->second.end()};
+        analyze_statement(result, *st);
+    }
     for (const auto& [name,target] : aliases_) { (void)target; std::unordered_set<std::string> visiting; resolve_alias(result,name,visiting); }
     std::unordered_map<std::string,const Stmt*> structs; for(const auto& st:program.statements)if(st->kind==Stmt::Kind::struct_decl)structs[st->name]=st.get();
     std::unordered_set<std::string> warned;

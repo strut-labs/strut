@@ -1,8 +1,8 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <optional>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,7 +49,7 @@ struct SwitchCase { ExprPtr value; bool is_default = false; SourceSpan span; std
 struct CatchClause { std::optional<TypeSyntax> type; std::string name; SourceSpan span; std::vector<StmtPtr> body; };
 
 struct Stmt {
-    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, switch_stmt, match_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, throw_stmt, try_stmt, operator_decl, function_decl, type_alias, struct_decl, enum_decl, unsafe_stmt, include_stmt };
+    enum class Kind { declaration, assignment, expression, block, if_stmt, while_stmt, switch_stmt, match_stmt, for_stmt, range_for, break_stmt, continue_stmt, return_stmt, throw_stmt, try_stmt, operator_decl, function_decl, type_alias, struct_decl, enum_decl, unsafe_stmt, include_stmt, export_stmt };
     Kind kind;
     SourceSpan span;
     std::string name;
@@ -75,6 +75,7 @@ struct Stmt {
     std::optional<TypeSyntax> return_type;
     std::vector<TypeSyntax> error_types;
     std::string owner;
+    std::string source_owner;
     std::optional<TypeSyntax> alias_target;
     bool has_body = false;
     bool include_is_package = false;
@@ -96,6 +97,10 @@ struct LambdaData {
 struct Program {
     std::vector<StmtPtr> statements;
     std::vector<std::string> standard_modules;
+    std::map<std::string, std::vector<std::string>> owner_standard_modules;
+    std::map<std::string, std::vector<std::string>> owner_package_imports;
+    std::map<std::string, std::vector<std::string>> owner_private_symbols;
+    std::map<std::string, std::vector<std::string>> owner_internal_symbols;
     bool enforce_standard_modules = false;
 };
 
