@@ -123,6 +123,8 @@ def main():
 
             write_client = socket.create_connection(("127.0.0.1", port), timeout=5)
             write_client.sendall(request("/write"))
+            if not write_client.recv(1):
+                raise RuntimeError("write handler closed before streaming began")
             write_client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, abortive_linger())
             write_client.close()
             wait_for(port, "/write-state", b"cancelled")
