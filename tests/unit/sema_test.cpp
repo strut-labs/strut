@@ -28,6 +28,17 @@ struct RegistryApiTests{RegistryApiTests(){
     req(sema("function main() -> void : ExecError { child := process(\"tool\", []); }").ok(),"process contextually types empty arguments");
     req(!sema("function main() -> void : ExecError { child := process(\"tool\"); }").ok(),"process cancellation overload preserves constructor arity checks");
     req(!sema("function main() -> void : StreamError { ifstream input; input.read_bytes(\"bad\"); }").ok(),"binary stream argument types checked");
+    req(sema("include <encoding>; function main() -> void : EncodingError { bytes raw := [0, 255]; string text := base64_encode(raw); bytes decoded := base64_decode(text); string safe := base64url_encode(decoded); base64url_decode(safe); }").ok(),"binary Base64 APIs type check");
+    req(!sema("include <encoding>; function main() -> void : EncodingError { base64_encode(\"text\"); }").ok(),"Base64 encoding rejects text input");
+    req(!sema("include <encoding>; function main() -> void { base64_decode(\"bad\"); }").ok(),"Base64 decoding checked error enforced");
+    req(sema("include <crypto>; function main() -> void : CryptoError { bytes data := [0, 255]; bytes digest := sha256(data); bytes mac := hmac_sha256([], data); bytes random := secure_random_bytes(32); bool equal := constant_time_equal(digest, mac); }").ok(),"binary crypto APIs type check");
+    req(!sema("include <crypto>; function main() -> void : CryptoError { sha256(\"text\"); }").ok(),"SHA-256 rejects text input");
+    req(!sema("include <crypto>; function main() -> void { secure_random_bytes(32); }").ok(),"secure random checked error enforced");
+    req(!sema("function sha256(int value) -> int { return value; }").ok(),"crypto builtin names are reserved");
+    req(!sema("function main() -> void { function<(bytes)->bytes> sha256 := (bytes value) => value; }").ok(),"crypto builtin names are reserved for callable values");
+    req(!sema("function apply(function<(bytes)->string> base64_encode) -> string { return base64_encode([]); }").ok(),"encoding builtin names are reserved for callable parameters");
+    req(!sema("function[T]<(T, T) -> T> sha256 := (a, b) => a;").ok(),"crypto builtin names are reserved for generic callable values");
+    req(!sema("include <vector>; function apply(vector<function<(bytes)->bytes>> callbacks) -> bytes { for (sha256 : callbacks) { return sha256([]); } return []; }").ok(),"crypto builtin names are reserved for callable range bindings");
     req(sema("include <filesystem>; function main() -> void : FilesystemError { write_file(\"empty.bin\", []); }").ok(),"empty bytes infer through filesystem overload");
     req(sema("function main() -> void : CancellationError { cancellation_source source; cancellation_token token := source.token(); cancellation_token copy := token; bool before := copy.cancelled(); source.cancel(); source.cancel(); copy.wait(); token.throw_if_cancelled(); }").ok(),"unified cancellation source and token contract");
     req(!sema("function main() -> void { cancellation_source source; source.token().throw_if_cancelled(); }").ok(),"cancellation checked error enforced");

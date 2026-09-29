@@ -33,6 +33,70 @@ private:
 )STRUT_BYTES";
 }
 
+void emit_encoding(std::ostream& out) {
+    out << R"STRUT_ENCODING(
+inline int strut_base64_value(unsigned char c,bool url) noexcept{
+    if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;
+    if(url){if(c=='-')return 62;if(c=='_')return 63;}else{if(c=='+')return 62;if(c=='/')return 63;}return -1;
+}
+inline strut_string strut_base64_encode(const strut_bytes& value,bool url){
+    static constexpr char standard[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    static constexpr char safe[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const char* alphabet=url?safe:standard;std::string result;result.reserve(((value.native_size()+2)/3)*4);
+    std::size_t i=0;while(i+3<=value.native_size()){const unsigned a=value.data()[i++],b=value.data()[i++],c=value.data()[i++];result.push_back(alphabet[a>>2]);result.push_back(alphabet[((a&3)<<4)|(b>>4)]);result.push_back(alphabet[((b&15)<<2)|(c>>6)]);result.push_back(alphabet[c&63]);}
+    const auto remaining=value.native_size()-i;if(remaining==1){const unsigned a=value.data()[i];result.push_back(alphabet[a>>2]);result.push_back(alphabet[(a&3)<<4]);if(!url)result+="==";}else if(remaining==2){const unsigned a=value.data()[i],b=value.data()[i+1];result.push_back(alphabet[a>>2]);result.push_back(alphabet[((a&3)<<4)|(b>>4)]);result.push_back(alphabet[(b&15)<<2]);if(!url)result.push_back('=');}
+    return strut_string(std::move(result));
+}
+[[noreturn]] inline void strut_base64_error(bool url){throw strut_checked_error("EncodingError",url?"invalid canonical Base64url":"invalid canonical Base64");}
+inline strut_bytes strut_base64_decode(const strut_string& text,bool url){
+    const auto& input=text.v;strut_bytes result;if(url){if(input.size()%4==1)strut_base64_error(true);}else if(input.size()%4!=0)strut_base64_error(false);
+    const auto append=[&](unsigned value){const auto old=result.native_size();result.resize_native(old+1);result.data()[old]=static_cast<std::uint8_t>(value);};
+    std::size_t i=0;while(i+4<=input.size()){
+        const bool final=i+4==input.size();const int a=strut_base64_value(static_cast<unsigned char>(input[i]),url),b=strut_base64_value(static_cast<unsigned char>(input[i+1]),url);if(a<0||b<0)strut_base64_error(url);
+        const unsigned char cch=static_cast<unsigned char>(input[i+2]),dch=static_cast<unsigned char>(input[i+3]);
+        if(!url&&cch=='='){if(!final||dch!='='||(b&15)!=0)strut_base64_error(false);append((static_cast<unsigned>(a)<<2)|(static_cast<unsigned>(b)>>4));i+=4;continue;}
+        const int c=strut_base64_value(cch,url);if(c<0)strut_base64_error(url);append((static_cast<unsigned>(a)<<2)|(static_cast<unsigned>(b)>>4));
+        if(!url&&dch=='='){if(!final||(c&3)!=0)strut_base64_error(false);append(((static_cast<unsigned>(b)&15)<<4)|(static_cast<unsigned>(c)>>2));i+=4;continue;}
+        const int d=strut_base64_value(dch,url);if(d<0)strut_base64_error(url);append(((static_cast<unsigned>(b)&15)<<4)|(static_cast<unsigned>(c)>>2));append(((static_cast<unsigned>(c)&3)<<6)|static_cast<unsigned>(d));i+=4;
+    }
+    if(url){const auto remaining=input.size()-i;if(remaining==2){const int a=strut_base64_value(static_cast<unsigned char>(input[i]),true),b=strut_base64_value(static_cast<unsigned char>(input[i+1]),true);if(a<0||b<0||(b&15)!=0)strut_base64_error(true);append((static_cast<unsigned>(a)<<2)|(static_cast<unsigned>(b)>>4));}else if(remaining==3){const int a=strut_base64_value(static_cast<unsigned char>(input[i]),true),b=strut_base64_value(static_cast<unsigned char>(input[i+1]),true),c=strut_base64_value(static_cast<unsigned char>(input[i+2]),true);if(a<0||b<0||c<0||(c&3)!=0)strut_base64_error(true);append((static_cast<unsigned>(a)<<2)|(static_cast<unsigned>(b)>>4));append(((static_cast<unsigned>(b)&15)<<4)|(static_cast<unsigned>(c)>>2));}else if(remaining!=0)strut_base64_error(true);}
+    return result;
+}
+inline strut_string base64_encode(const strut_bytes& value){return strut_base64_encode(value,false);}
+inline strut_bytes base64_decode(const strut_string& value){return strut_base64_decode(value,false);}
+inline strut_string base64url_encode(const strut_bytes& value){return strut_base64_encode(value,true);}
+inline strut_bytes base64url_decode(const strut_string& value){return strut_base64_decode(value,true);}
+)STRUT_ENCODING";
+}
+
+void emit_crypto(std::ostream& out) {
+    out << R"STRUT_CRYPTO(
+#include <climits>
+#include <algorithm>
+#include <memory>
+#include <openssl/core_names.h>
+#include <openssl/crypto.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/params.h>
+#include <openssl/rand.h>
+[[noreturn]] inline void strut_crypto_error(const char* operation){ERR_clear_error();throw strut_checked_error("CryptoError",std::string(operation)+" failed");}
+inline strut_bytes secure_random_bytes(std::int64_t count){
+    if(count<0||static_cast<std::uint64_t>(count)>SIZE_MAX)throw strut_checked_error("CryptoError","secure random byte count is out of range");strut_bytes result;try{result.resize_native(static_cast<std::size_t>(count));}catch(const std::exception&){throw strut_checked_error("CryptoError","secure random byte allocation failed");}
+    std::size_t offset=0;while(offset<result.native_size()){const auto chunk=static_cast<int>(std::min<std::size_t>(result.native_size()-offset,static_cast<std::size_t>(INT_MAX)));if(RAND_bytes(result.data()+offset,chunk)!=1)strut_crypto_error("secure random generation");offset+=static_cast<std::size_t>(chunk);}return result;
+}
+inline strut_bytes sha256(const strut_bytes& value){
+    strut_bytes result(32);std::unique_ptr<EVP_MD_CTX,decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(),EVP_MD_CTX_free);if(!context)strut_crypto_error("SHA-256 context allocation");
+    if(EVP_DigestInit_ex(context.get(),EVP_sha256(),nullptr)!=1||(!value.empty()&&EVP_DigestUpdate(context.get(),value.data(),value.native_size())!=1))strut_crypto_error("SHA-256");unsigned int length=0;if(EVP_DigestFinal_ex(context.get(),result.data(),&length)!=1||length!=32)strut_crypto_error("SHA-256");return result;
+}
+inline strut_bytes hmac_sha256(const strut_bytes& key,const strut_bytes& value){
+    std::unique_ptr<EVP_MAC,decltype(&EVP_MAC_free)> algorithm(EVP_MAC_fetch(nullptr,"HMAC",nullptr),EVP_MAC_free);if(!algorithm)strut_crypto_error("HMAC-SHA-256 algorithm selection");std::unique_ptr<EVP_MAC_CTX,decltype(&EVP_MAC_CTX_free)> context(EVP_MAC_CTX_new(algorithm.get()),EVP_MAC_CTX_free);if(!context)strut_crypto_error("HMAC-SHA-256 context allocation");
+    char digest[]="SHA256";OSSL_PARAM parameters[]={OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,digest,0),OSSL_PARAM_construct_end()};const unsigned char empty=0;const auto* key_data=key.empty()?&empty:key.data();if(EVP_MAC_init(context.get(),key_data,key.native_size(),parameters)!=1||(!value.empty()&&EVP_MAC_update(context.get(),value.data(),value.native_size())!=1))strut_crypto_error("HMAC-SHA-256");strut_bytes result(32);std::size_t length=0;if(EVP_MAC_final(context.get(),result.data(),&length,result.native_size())!=1||length!=32)strut_crypto_error("HMAC-SHA-256");return result;
+}
+inline bool constant_time_equal(const strut_bytes& left,const strut_bytes& right) noexcept{return left.native_size()==right.native_size()&&(left.empty()||CRYPTO_memcmp(left.data(),right.data(),left.native_size())==0);}
+)STRUT_CRYPTO";
+}
+
 void emit_streams(std::ostream& out) {
     out << R"STRUT_STREAMS(
 #include <algorithm>

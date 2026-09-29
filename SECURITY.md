@@ -12,6 +12,12 @@ These guarantees do not turn unsynchronised shared mutation into safe concurrent
 
 The approved embedded third-party dependencies are JSONIC, libcurl, and OpenSSL. No additional library should be vendored/embedded without explicit project approval. SQLite support may use the external/system SQLite library.
 
+## Cryptographic primitives
+
+Public cryptographic operations are intentionally narrow and binary-first. `secure_random_bytes` uses OpenSSL `RAND_bytes` and never substitutes a non-cryptographic generator. SHA-256 and HMAC-SHA-256 return raw bytes; OpenSSL failures become `CryptoError` without exposing the native error queue. Equal-length secret comparisons use `CRYPTO_memcmp`, while differing public lengths may return false immediately.
+
+Base64 and unpadded Base64url decoding are strict and canonical. They reject whitespace, mixed alphabets, misplaced padding and non-zero unused trailing bits. Encoding-only programs do not link OpenSSL; cryptographic programs link `libcrypto` without `libssl`. SHA-1, password hashing, key management, certificate APIs and general encryption are not exposed by this foundation.
+
 ## Parser/input hardening
 
 The frontend has a deterministic malformed-source fuzz smoke test covering lexer, parser, and typechecker. Invalid source must diagnose or reject rather than crash/hang. Release hardening should continue adding corpus inputs for every parser bug discovered in real use.
@@ -60,7 +66,7 @@ Release-candidate certification should include, at minimum:
 - clean documentation build;
 - benchmark/regression checks for material performance-sensitive changes.
 
-The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. Cross-platform CI additionally runs the high-risk generated HTTP suites under GCC ASan/UBSan and the worker/shutdown suite under GCC ThreadSanitizer. Release certification also runs bytes, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
+The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. Cross-platform CI additionally runs the high-risk generated HTTP suites and the crypto/encoding certification under GCC ASan/UBSan, plus the worker/shutdown suite under GCC ThreadSanitizer. Release certification also runs bytes, crypto/encoding, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
 
 ## Current limitations
 

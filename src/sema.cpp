@@ -67,6 +67,8 @@ std::unordered_map<std::string, Symbol>& SemanticAnalyzer::namespace_map(Scope& 
 void SemanticAnalyzer::push_scope() { scopes_.push_back(Scope{}); }
 void SemanticAnalyzer::pop_scope() { scopes_.pop_back(); }
 bool SemanticAnalyzer::declare(SemanticResult& result, Symbol symbol) {
+    const bool callable_binding=symbol.name_space==SymbolNamespace::function||symbol.type_name=="function"||symbol.type_name=="async_function"||type_is(intern_type(symbol.type_name),TypeNodeKind::function);
+    if(callable_binding){if(const auto* builtin=api_callable(symbol.name);builtin&&builtin->owner.empty()&&(builtin->module=="crypto"||builtin->module=="encoding")){result.diagnostics.push_back(Diagnostic{symbol.span,"callable name '"+symbol.name+"' is reserved by standard module <"+builtin->module+">"});return false;}}
     auto& map = namespace_map(scopes_.back(), symbol.name_space);
     if (map.find(symbol.name) != map.end()) {
         result.diagnostics.push_back(Diagnostic{symbol.span, "duplicate definition of '" + symbol.name + "' in the same scope"});
@@ -246,7 +248,8 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             }
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function\nhelp: handle "+e+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
             if(builtin_owner=="atomic<bool>"&&expr.left&&(expr.left->text=="fetch_add"||expr.left->text=="fetch_sub"))result.diagnostics.push_back(Diagnostic{expr.span,expr.left->text+" is only available on integer atomic values"});
-            if(builtin&&(!builtin->owner.empty()||builtin->module=="http")&&builtin->generic_parameters.empty()){
+            if(builtin&&(!builtin->owner.empty()||builtin->module=="http"||builtin->module=="crypto"||builtin->module=="encoding")&&builtin->generic_parameters.empty()){
+                if(builtin->owner.empty()&&(builtin->module=="crypto"||builtin->module=="encoding"))require_module(result,builtin->module,expr.span,builtin->name);
                 const ApiOverload* signature=nullptr;for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()){signature=&candidate;break;}}
                 const auto leaf=builtin->owner.empty()?builtin->name:builtin->name.substr(builtin->name.find('.')+1);
                 if(!signature){std::size_t least=builtin->overloads.front().parameters.size(),most=0;for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;least=std::min(least,required);most=std::max(most,candidate.parameters.size());}result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+leaf+"' expects "+(least==most?std::to_string(least):std::to_string(least)+" to "+std::to_string(most))+" argument(s), found "+std::to_string(expr.arguments.size())});}
@@ -511,9 +514,10 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         }
         case Stmt::Kind::for_stmt:
             push_scope(); if (st.initializer) analyze_statement(result, *st.initializer); if (st.condition) infer_expression(result,*st.condition); if(st.increment) infer_expression(result,*st.increment); analyze_statements(result, st.body, false); pop_scope(); break;
-        case Stmt::Kind::range_for:
-            if (st.value) infer_expression(result, *st.value);
-            push_scope(); declare(result, Symbol{st.name, SymbolNamespace::value, st.span, false, "opaque"}); analyze_statements(result, st.body, false); pop_scope(); break;
+        case Stmt::Kind::range_for: {
+            const auto iterable=st.value?infer_expression(result,*st.value):TypeInfo{};const auto element=iterable_element(iterable.name);
+            push_scope();declare(result,Symbol{st.name,SymbolNamespace::value,st.span,false,element.empty()?"opaque":element});analyze_statements(result,st.body,false);pop_scope();break;
+        }
         case Stmt::Kind::expression: if (st.value) infer_expression(result, *st.value); break;
         case Stmt::Kind::return_stmt: if (st.value) {
             auto returned = infer_expression(result,*st.value,intern_type(current_function_return_type_));

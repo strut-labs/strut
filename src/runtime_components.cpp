@@ -16,6 +16,9 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::strings,"strings",{Id::core},{"string","charconv","algorithm","cctype"},{}},
         {Id::collections,"collections",{Id::core},{"vector","array","map","unordered_map","set","unordered_set","queue","stack","deque","list","tuple"},{}},
         {Id::bytes,"bytes",{Id::strings,Id::collections},{},{}},
+        {Id::encoding,"encoding",{Id::bytes},{},{}},
+        {Id::openssl_crypto,"openssl_crypto",{Id::core},{"algorithm","climits","memory","openssl/core_names.h","openssl/crypto.h","openssl/err.h","openssl/evp.h","openssl/params.h","openssl/rand.h"},{"crypto"}},
+        {Id::crypto,"crypto",{Id::bytes,Id::openssl_crypto},{},{}},
         {Id::io,"io",{Id::strings,Id::bytes},{"fstream","sstream"},{}},
         {Id::cancellation,"cancellation",{Id::core},{"atomic","condition_variable","functional","memory","mutex","thread","unordered_map","vector"},{}},
         {Id::json,"json",{Id::strings,Id::collections},{"json.h"},{}},
@@ -88,8 +91,8 @@ void request_expr(std::vector<Id>& out,const IRExpr* e) {
             {"thread",Id::threading},{"mutex",Id::mutex},
         };
         if(auto it=operations.find(e->text);it!=operations.end())out.push_back(it->second);
-        if(const auto* callable=api_callable(e->text))out.insert(out.end(),callable->runtime_components.begin(),callable->runtime_components.end());
     }
+    if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::identifier)if(const auto* callable=api_callable(e->left->text))out.insert(out.end(),callable->runtime_components.begin(),callable->runtime_components.end());
     if(e->kind==IRExpr::Kind::member&&e->left){if(const auto* callable=api_callable(e->text,e->left->type_name))out.insert(out.end(),callable->runtime_components.begin(),callable->runtime_components.end());}
     request_expr(out,e->left.get());request_expr(out,e->right.get());request_expr(out,e->lambda_expression.get());for(const auto& a:e->arguments)request_expr(out,a.get());for(const auto& s:e->lambda_body)request_stmt(out,s.get());
 }
@@ -97,7 +100,7 @@ void request_expr(std::vector<Id>& out,const IRExpr* e) {
 
 const RuntimeComponent* runtime_component(RuntimeComponentId id){for(const auto& c:registry())if(c.id==id)return &c;return nullptr;}
 bool RuntimeResolution::contains(RuntimeComponentId id) const{return std::find(ordered.begin(),ordered.end(),id)!=ordered.end();}
-std::vector<std::string> RuntimeResolution::link_libraries() const{std::vector<std::string> out;for(auto id:ordered)if(auto c=runtime_component(id))for(auto lib:c->link_libraries)if(std::find(out.begin(),out.end(),lib)==out.end())out.emplace_back(lib);return out;}
+std::vector<std::string> RuntimeResolution::link_libraries() const{std::vector<std::string> out;for(auto id:ordered)if(auto c=runtime_component(id))for(auto lib:c->link_libraries)if(std::find(out.begin(),out.end(),lib)==out.end())out.emplace_back(lib);const auto rank=[](const std::string& lib){if(lib=="curl")return 1;if(lib=="ssl")return 2;if(lib=="crypto")return 3;return 0;};std::stable_sort(out.begin(),out.end(),[&](const auto& left,const auto& right){return rank(left)<rank(right);});return out;}
 std::string RuntimeResolution::describe() const{std::ostringstream o;for(std::size_t i=0;i<ordered.size();++i){if(i)o<<',';if(auto c=runtime_component(ordered[i]))o<<c->name;}return o.str();}
 RuntimeResolution resolve_runtime_component_graph(const std::vector<RuntimeComponent>& graph,const std::vector<RuntimeComponentId>& requested){
     RuntimeResolution r;std::unordered_map<Id,unsigned> state;state.reserve(graph.size());auto find=[&](Id id)->const RuntimeComponent*{for(const auto& c:graph)if(c.id==id)return &c;return nullptr;};

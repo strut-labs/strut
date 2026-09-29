@@ -116,7 +116,8 @@ json::Document api_index(std::string_view query) {
         json::Document signatures=json::Document::make_array();for(const auto& overload:callable.overloads)signatures.array.emplace_back(api_signature(callable,overload));item["signatures"]=signatures;if(!callable.overloads.empty())item["signature"]=api_signature(callable,callable.overloads.front());
         json::Document errors=json::Document::make_array();for(const auto& error:callable.checked_errors)errors.array.emplace_back(error);item["checked_errors"]=errors;
         json::Document components=json::Document::make_array();json::Document dependencies=json::Document::make_array();
-        for(auto id:callable.runtime_components)if(const auto* component=runtime_component(id)){components.array.emplace_back(std::string(component->name));for(auto lib:component->link_libraries){std::string dependency(lib);if(dependency=="curl")dependency="libcurl";else if(dependency=="sqlite3")dependency="SQLite3";dependencies.array.emplace_back(dependency);}}
+        for(auto id:callable.runtime_components)if(const auto* component=runtime_component(id))components.array.emplace_back(std::string(component->name));
+        for(auto lib:resolve_runtime_components(callable.runtime_components).link_libraries()){std::string dependency(lib);if(dependency=="curl")dependency="libcurl";else if(dependency=="sqlite3")dependency="SQLite3";else if(dependency=="crypto")dependency="OpenSSL libcrypto";else if(dependency=="ssl")dependency="OpenSSL libssl";dependencies.array.emplace_back(dependency);}
         item["runtime_components"]=components;item["native_dependencies"]=dependencies;
         (callable.owner.empty()?functions:methods).array.push_back(std::move(item));
     }

@@ -59,6 +59,12 @@ int main(){
     require(api_callable("slice","bytes")&&type_spelling(api_callable("slice","bytes")->overloads[0].return_type)=="bytes","bytes slice is registered");
     require(api_callable("from_string","bytes")&&api_callable("to_string","bytes"),"explicit bytes string conversions are registered");
     require(api_callable("bytes")&&api_callable("bytes")->overloads.size()==2,"bytes constructors are registered");
+    require(api_callable("base64_encode")&&api_callable("base64_decode")&&api_callable("base64url_encode")&&api_callable("base64url_decode"),"Base64 encoding APIs are registered");
+    require(api_callable("base64_decode")->checked_errors==std::vector<std::string>{"EncodingError"},"Base64 decoding has a checked error");
+    require(api_callable("secure_random_bytes")&&api_callable("sha256")&&api_callable("hmac_sha256")&&api_callable("constant_time_equal"),"crypto APIs are registered");
+    require(api_callable("sha256")->checked_errors==std::vector<std::string>{"CryptoError"}&&type_spelling(api_callable("sha256")->overloads[0].return_type)=="bytes","SHA-256 has a binary checked API");
+    require(api_callable("constant_time_equal")->checked_errors.empty(),"constant-time comparison cannot fail");
+    require(std::find(standard_modules().begin(),standard_modules().end(),"crypto")!=standard_modules().end()&&std::find(standard_modules().begin(),standard_modules().end(),"encoding")!=standard_modules().end(),"crypto and encoding modules are registered");
     require(api_callable("write_file")->overloads.size()==2&&type_spelling(api_callable("write_file")->overloads[1].parameters[1].type)=="bytes","filesystem bytes overload is registered");
     require(api_callable("read_bytes","istream")&&type_spelling(api_callable("read_bytes","istream")->overloads[0].return_type)=="bytes","binary input contract is registered");
     require(api_callable("write_bytes","ostream")&&api_callable("write_bytes","ofstream"),"binary output contract and file adapter are registered");
@@ -71,6 +77,7 @@ int main(){
     require(api_callable("cancel","cancellation_source")->runtime_components==std::vector<RuntimeComponentId>{RuntimeComponentId::cancellation},"cancellation methods request their runtime component");
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
+    require(api_matches(*api_callable("sha256"),"crypto"),"crypto module filtering");
     require(overloadable_operator("++",OperatorFixity::prefix),"prefix increment metadata");
     require(overloadable_operator("++",OperatorFixity::postfix),"postfix increment metadata");
     require(overloadable_operator("--",OperatorFixity::prefix)&&overloadable_operator("--",OperatorFixity::postfix),"decrement fixity metadata");

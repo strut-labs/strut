@@ -1,5 +1,7 @@
 # Building Strut
 
+Generated programs that use `<crypto>` require OpenSSL 3.0 or newer development headers and `libcrypto`. TLS server programs additionally require `libssl`. Programs that use only `<encoding>` do not require OpenSSL.
+
 ## Bootstrap requirements
 
 - CMake 3.20 or newer

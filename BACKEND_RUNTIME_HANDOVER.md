@@ -127,6 +127,20 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP15: cancellation-aware NDJSON streaming complete.
 - Review Gate 5 approved.
 
+## Production backend campaign
+
+- P1: crypto and encoding primitives complete.
+
+P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time comparison, and strict RFC 4648 Base64/Base64url. Encoding is dependency-free; crypto is implemented by OpenSSL `libcrypto` and does not pull in `libssl`. SHA-1 remains internal-only future WebSocket work.
+
+## P1 crypto and encoding result
+
+- `<crypto>` provides `secure_random_bytes`, `sha256`, `hmac_sha256` and `constant_time_equal`; `<encoding>` provides canonical padded Base64 and unpadded Base64url encoding and strict decoding. Cryptographic inputs and outputs remain binary-first, and OpenSSL failures use checked `CryptoError` values.
+- Runtime slicing keeps encoding free of native dependencies and links crypto through OpenSSL 3 `libcrypto` without `libssl`. Mixed HTTP client, TLS server and crypto programs preserve static dependency order as `curl`, `ssl`, `crypto`.
+- The canonical API registry drives semantic checks, runtime components, native-dependency metadata and LSP data. New builtin callable names are reserved against function-valued shadowing, while non-callable values with the same spelling do not select runtime code.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16; GCC ASan/UBSan passed CTest 16/16; all three builds passed known-answer, binary, random-length, strict-decoder and malformed-input certification; and the independent pinned regression suite passed 171/171.
+- Final independent architecture/API, cryptographic security, generated-runtime/resource and test/portability reviews found no remaining actionable defect. Hosted CI remains the execution gate for Linux ARM64, macOS ARM64 AppleClang/Homebrew OpenSSL and Windows x64 MSVC/vcpkg.
+
 ## CP1 validation result
 
 - CMake build: passed.

@@ -1,3 +1,12 @@
+# Unreleased
+
+## Highlights
+
+- Binary-first `<crypto>` APIs provide secure random bytes, SHA-256,
+  HMAC-SHA-256 and constant-time comparison through OpenSSL 3.0 or newer.
+- Dependency-free `<encoding>` APIs provide strict canonical Base64 and
+  unpadded Base64url encoding and decoding.
+
 # Strut 0.0.3
 
 Strut 0.0.3 is a focused compiler, generated-code performance, and HTTP runtime

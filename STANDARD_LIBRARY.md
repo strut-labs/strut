@@ -26,6 +26,31 @@ Modules are named after the Strut surface type: `vector`, `deque`, `list`, `map`
 
 Index and slice bounds are checked at runtime. Lengths and indexes use `int_64`; the addressable limit is the smaller of the platform container limit and `int_64` maximum. `bytes.from_string(text)` and `value.to_string()` are explicit, lossless copies of string code units. They do not validate, decode, or imply UTF-8, and there is no implicit string/bytes conversion.
 
+## Cryptography and binary encoding
+
+Enable cryptographic primitives with `include <crypto>;` and Base64 encoding with `include <encoding>;`. These APIs are binary-first: applications convert text explicitly with `bytes.from_string` when text code units are the intended input.
+
+```strut
+include <crypto>;
+include <encoding>;
+
+function main() -> void : (CryptoError, EncodingError) {
+    bytes nonce := secure_random_bytes(32);
+    bytes digest := sha256(nonce);
+    bytes authenticator := hmac_sha256(bytes.from_string("key"), digest);
+    string token := base64url_encode(authenticator);
+    bytes decoded := base64url_decode(token);
+    print(constant_time_equal(authenticator, decoded));
+    return;
+}
+```
+
+`secure_random_bytes(count)` uses OpenSSL's cryptographically secure random generator and has no weak fallback. A zero count returns empty bytes; negative or unrepresentable counts raise `CryptoError`. `sha256(data)` and `hmac_sha256(key, data)` return raw 32-byte values and may raise `CryptoError` on native cryptographic failure.
+
+`base64_encode` emits canonical padded RFC 4648 Base64. `base64url_encode` emits the URL-safe alphabet without padding. Their decoders reject whitespace, mixed alphabets, misplaced or noncanonical padding, noncanonical trailing bits, and malformed lengths through `EncodingError`.
+
+`constant_time_equal(left, right)` compares equal-length contents with OpenSSL's constant-time comparison. Length is not secret and unequal lengths return false immediately. SHA-1 is not a public API.
+
 ## Binary streams
 
 The existing `istream` and `ostream` types are the generic input and output contracts; there is no second reader/writer type family. `ifstream` and `ofstream` implement those contracts, while retaining their existing text and formatted operations. Process `in`, `out`, and `err` pipes expose the same binary method semantics structurally without becoming nominal file/console stream subtypes.

@@ -104,6 +104,11 @@ int main() {
         require(out.str().find("\"http_get\"")==std::string::npos,"filtered API excludes non-match");
     }
     {
+        char arg0[]="strut";char arg1[]="api";char arg2[]="--json";char arg3[]="crypto";char* argv[]={arg0,arg1,arg2,arg3};
+        std::ostringstream out;std::ostringstream err;require(strut::run_cli(4,argv,out,err)==0,"crypto API JSON status");
+        require(out.str().find("\"sha256\"")!=std::string::npos&&out.str().find("OpenSSL libcrypto")!=std::string::npos,"crypto API exposes transitive native dependency");
+    }
+    {
         char arg0[]="strut";char arg1[]="api";char arg2[]="checked-errors";char* argv[]={arg0,arg1,arg2};
         std::ostringstream out;std::ostringstream err;require(strut::run_cli(3,argv,out,err)==0,"human API status");
         require(out.str().find("throws HttpError")!=std::string::npos,"human API exposes checked errors");

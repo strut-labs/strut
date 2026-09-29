@@ -29,6 +29,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Checkout certified regression suite
+        uses: actions/checkout@v5
+        with:
+          repository: strut-labs/strut-regression-suite
+          ref: 062fe1ae2ccbcb3f3b39853ce14bad6e45832f63
+          path: strut-regression-suite
       - name: Validate tag and release metadata (POSIX)
         if: runner.os != 'Windows'
         run: python3 tools/check_release.py "${GITHUB_REF_NAME}"
@@ -42,13 +48,13 @@ jobs:
       - name: Install generated-program dependencies (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev libsqlite3-dev
-      - name: Install current LLVM toolchain (macOS)
+      - name: Install generated-program dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           test "$(uname -m)" = arm64
-          brew install llvm openssl@3
-          echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
-          echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
+          brew install openssl@3
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
           echo "CPATH=$(brew --prefix openssl@3)/include" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
       - name: Install generated-program dependencies (Windows)
@@ -69,6 +75,13 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Run independent regressions (POSIX)
+        if: runner.os != 'Windows'
+        run: python3 strut-regression-suite/runner.py --compiler build/strut --jobs 2
+      - name: Run independent regressions (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python strut-regression-suite/runner.py --compiler build/Release/strut.exe --jobs 1
       - name: Certify release runtime (POSIX)
         if: runner.os != 'Windows'
         env:
@@ -87,6 +100,7 @@ jobs:
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/bytes_certification.py build/strut
+          python3 dogfood/crypto_certification.py build/strut
           python3 dogfood/stream_contract_certification.py build/strut
           python3 dogfood/cancellation_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
@@ -112,6 +126,7 @@ jobs:
           python dogfood/http_lifecycle_certification.py build/Release/strut.exe
           python dogfood/backend_baseline_certification.py build/Release/strut.exe
           python dogfood/bytes_certification.py build/Release/strut.exe
+          python dogfood/crypto_certification.py build/Release/strut.exe
           python dogfood/stream_contract_certification.py build/Release/strut.exe
           python dogfood/cancellation_certification.py build/Release/strut.exe
           python dogfood/process_cancellation_certification.py build/Release/strut.exe

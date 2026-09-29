@@ -5,6 +5,8 @@
 namespace strut::generated_runtime {
 
 void emit_bytes(std::ostream& out);
+void emit_encoding(std::ostream& out);
+void emit_crypto(std::ostream& out);
 void emit_streams(std::ostream& out);
 void emit_cancellation(std::ostream& out);
 void emit_executor(std::ostream& out);

@@ -56,6 +56,8 @@ int main(){
     require(s.find("\"label\": \"package_symbol\"")!=std::string::npos,"package completion",s);
     require(s.find("function package_symbol(string value) -> int")!=std::string::npos,"package hover and signature",s);
     require(s.find("additionalTextEdits")!=std::string::npos,"module import edit",s);
+    require(s.find("\"label\": \"sha256\"")!=std::string::npos&&s.find("Compute a raw 32-byte SHA-256 digest.")!=std::string::npos,"crypto registry completion",s);
+    require(s.find("\"label\": \"base64_decode\"")!=std::string::npos&&s.find("Decode strict canonical padded RFC 4648 Base64.")!=std::string::npos,"encoding registry completion",s);
     require(s.find("\"code\":")!=std::string::npos,"structured diagnostics",s);
     require(s.find("\"label\": \"print\"")!=std::string::npos,"incomplete source recovery",s);
     require(s.find("\"diagnostics\": []")!=std::string::npos,"didClose clears diagnostics",s);

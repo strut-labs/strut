@@ -391,6 +391,8 @@ struct MinimalRuntimeFeatures {
     bool http_file=false;
     bool strings=false;
     bool bytes=false;
+    bool encoding=false;
+    bool crypto=false;
     bool streams=false;
     bool cancellation=false;
     bool atomics=false;
@@ -472,7 +474,7 @@ void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
     for(const auto& c:s->else_body) collect_minimal_stmt_features(c.get(),f);
     for(const auto& c:s->switch_cases){collect_minimal_expr_features(c.value.get(),f);for(const auto& statement:c.body)collect_minimal_stmt_features(statement.get(),f);}
 }
-MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);f.http_file=analyze_runtime_components(p).contains(RuntimeComponentId::http_file_response);return f;}
+MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);const auto components=analyze_runtime_components(p);f.http_file=components.contains(RuntimeComponentId::http_file_response);f.encoding=components.contains(RuntimeComponentId::encoding);f.crypto=components.contains(RuntimeComponentId::crypto);return f;}
 void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
     o << "#include <cstdint>\n#include <iostream>\n#include <string>\n";
     if(f.vector||f.map||f.filter||f.reduce||f.any||f.all||f.find||f.count||f.sort||f.priority_queue_min)o << "#include <vector>\n";
@@ -537,9 +539,11 @@ inline bool operator<(const strut_string& a,const strut_string& b){return a.v<b.
 namespace std { template<> struct hash<strut_string>{size_t operator()(const strut_string& s) const noexcept{return std::hash<std::string>{}(s.v);}}; }
 )CPP";}
     if(f.bytes)generated_runtime::emit_bytes(o);
-    if(f.streams||f.cancellation)o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";
+    if(f.streams||f.cancellation||f.encoding||f.crypto)o << "struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };\n";
     if(f.streams){o << "#include <fstream>\n#include <sstream>\n";generated_runtime::emit_streams(o);}
     if(f.cancellation)generated_runtime::emit_cancellation(o);
+    if(f.encoding)generated_runtime::emit_encoding(o);
+    if(f.crypto)generated_runtime::emit_crypto(o);
     if(f.nullable){o << R"CPP(
 struct strut_null_t {
     template<class T> operator std::optional<T>() const{return std::nullopt;}
@@ -643,7 +647,7 @@ bool light_sqlite_stmt_ok(const IRStmt* st){
 }
 bool program_uses_light_sqlite_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
+    if(!components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::cancellation)||components.contains(RuntimeComponentId::encoding)||components.contains(RuntimeComponentId::crypto)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(!light_sqlite_stmt_ok(st.get()))return false;
     return true;
@@ -715,7 +719,7 @@ bool light_json_stmt_ok(const IRStmt* st,bool& found){
 }
 bool program_uses_light_json_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
+    if(components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::cancellation)||components.contains(RuntimeComponentId::encoding)||components.contains(RuntimeComponentId::crypto)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_json_stmt_ok(st.get(),found))return false;return found;
 }
@@ -827,7 +831,7 @@ bool expr_uses_non_http_client_runtime(const IRExpr* e){
 bool stmt_uses_non_http_client_runtime(const IRStmt* s){if(!s)return false;if(expr_uses_non_http_client_runtime(s->value.get())||expr_uses_non_http_client_runtime(s->target.get())||expr_uses_non_http_client_runtime(s->condition.get())||expr_uses_non_http_client_runtime(s->increment.get()))return true;if(s->initializer&&stmt_uses_non_http_client_runtime(s->initializer.get()))return true;for(const auto& c:s->body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->else_body)if(stmt_uses_non_http_client_runtime(c.get()))return true;for(const auto& c:s->switch_cases){if(expr_uses_non_http_client_runtime(c.value.get()))return true;for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;}for(const auto& c:s->catches)for(const auto& st:c.body)if(stmt_uses_non_http_client_runtime(st.get()))return true;return false;}
 bool program_uses_light_http_client_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(!components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::cancellation)||program_uses_stream_runtime(p))return false;
+    if(!components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::cancellation)||components.contains(RuntimeComponentId::encoding)||components.contains(RuntimeComponentId::crypto)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     for(const auto& st:p.statements)if(stmt_uses_async_http_client(st.get())||stmt_uses_non_http_client_runtime(st.get()))return false;
     return true;
@@ -872,7 +876,7 @@ bool light_http_stmt_ok(const IRStmt* st,bool& found){
 }
 bool program_uses_light_http_runtime(const IRProgram& p){
     const auto components=analyze_runtime_components(p);
-    if(components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||program_uses_stream_runtime(p))return false;
+    if(components.contains(RuntimeComponentId::json)||components.contains(RuntimeComponentId::sqlite)||components.contains(RuntimeComponentId::http_client)||components.contains(RuntimeComponentId::time)||components.contains(RuntimeComponentId::filesystem)||components.contains(RuntimeComponentId::process)||components.contains(RuntimeComponentId::async)||components.contains(RuntimeComponentId::encoding)||components.contains(RuntimeComponentId::crypto)||program_uses_stream_runtime(p))return false;
     for(const auto& m:p.standard_modules)if(m=="filesystem")return false;
     bool found=false;for(const auto& st:p.statements)if(!light_http_stmt_ok(st.get(),found))return false;return found;
 }
@@ -1140,7 +1144,7 @@ inline bool operator==(const strut_string&a,const strut_string&b){return a.v==b.
 inline bool operator!=(const strut_string&a,const strut_string&b){return !(a==b);}
 namespace std { template<> struct hash<strut_string> { size_t operator()(const strut_string& s) const noexcept { return std::hash<std::string>{}(s.v); } }; }
 inline bool operator<(const strut_string&a,const strut_string&b){return a.v<b.v;}
-)CPP";generated_runtime::emit_bytes(o);generated_runtime::emit_streams(o);if(has(RuntimeComponentId::cancellation))generated_runtime::emit_cancellation(o);o<<R"CPP(
+)CPP";generated_runtime::emit_bytes(o);generated_runtime::emit_streams(o);if(has(RuntimeComponentId::cancellation))generated_runtime::emit_cancellation(o);if(has(RuntimeComponentId::encoding))generated_runtime::emit_encoding(o);if(has(RuntimeComponentId::crypto))generated_runtime::emit_crypto(o);o<<R"CPP(
 inline json::Document strut_json_value(const json::Document& d){return d;}
 inline json::Document strut_json_value(const strut_string& s){return json::Document(s.v);}
 inline json::Document strut_json_value(const std::string& s){return json::Document(s);}
@@ -1598,7 +1602,7 @@ std::string native_failure(const IRProgram& program,std::string_view phase) {
         out << " and ensure its headers and linker path are visible to the configured C++ toolchain";
 #if defined(__linux__)
         out << "\nhelp: on Debian/Ubuntu install ";
-        bool first=true;for(const auto& library:libraries){if(!first)out<<" ";first=false;if(library=="curl")out<<"libcurl4-openssl-dev";else if(library=="sqlite3")out<<"libsqlite3-dev";else out<<library<<" development files";}
+        bool first=true;for(const auto& library:libraries){if(!first)out<<" ";first=false;if(library=="curl")out<<"libcurl4-openssl-dev";else if(library=="sqlite3")out<<"libsqlite3-dev";else if(library=="ssl"||library=="crypto")out<<"libssl-dev";else out<<library<<" development files";}
 #elif defined(__APPLE__)
         out << "\nhelp: on macOS install the dependency with Homebrew if it is not provided by the SDK";
 #elif defined(_WIN32)

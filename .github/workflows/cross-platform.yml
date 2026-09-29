@@ -67,13 +67,13 @@ jobs:
       - name: Install generated-program dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libcurl4-openssl-dev libssl-dev libsqlite3-dev
-      - name: Install current LLVM toolchain (macOS)
+      - name: Install generated-program dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           test "$(uname -m)" = arm64
-          brew install llvm openssl@3
-          echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
-          echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
+          brew install openssl@3
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
           echo "CPATH=$(brew --prefix openssl@3)/include" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
       - name: Install generated-program dependencies (Windows)
@@ -94,7 +94,7 @@ jobs:
       - name: Configure (POSIX)
         if: runner.os == 'Linux'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSTRUT_WARNINGS_AS_ERRORS=ON
-      - name: Configure (macOS with current libc++)
+      - name: Configure (macOS AppleClang)
         if: runner.os == 'macOS'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER="$CXX" -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Configure (Windows)
@@ -122,6 +122,7 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
+          python3 dogfood/crypto_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/http_framing_certification.py build/strut
           python3 dogfood/http_response_certification.py build/strut
@@ -150,6 +151,7 @@ jobs:
           python3 dogfood/http_persistence_certification.py build/strut
           python3 dogfood/http_request_cancellation_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
+          python3 dogfood/crypto_certification.py build/strut
       - name: Certify generated HTTP worker concurrency
         if: matrix.name == 'linux-x64-gcc'
         env:
@@ -168,6 +170,7 @@ jobs:
           python dogfood/check.py build/Release/strut.exe
           python dogfood/diagnostics.py build/Release/strut.exe
           python dogfood/package_certification.py build/Release/strut.exe
+          python dogfood/crypto_certification.py build/Release/strut.exe
           python dogfood/http_lifecycle_certification.py build/Release/strut.exe
           python dogfood/http_framing_certification.py build/Release/strut.exe
           python dogfood/http_response_certification.py build/Release/strut.exe
@@ -211,6 +214,7 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
+          python3 dogfood/crypto_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/http_framing_certification.py build/strut
           python3 dogfood/http_response_certification.py build/strut

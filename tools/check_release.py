@@ -21,7 +21,4 @@ failed = [name for (name, pattern), text in zip(checks.items(), texts)
 if failed:
     print("release version mismatch: " + ", ".join(failed), file=sys.stderr)
     raise SystemExit(1)
-if expected != "0.0.3":
-    print(f"release version mismatch: current release line is 0.0.3, not {expected}", file=sys.stderr)
-    raise SystemExit(1)
 print(f"release metadata is consistent for {expected}")
