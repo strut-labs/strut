@@ -132,8 +132,18 @@ cancellation contracts must not prevent a future event-driven backend.
 - P1: crypto and encoding primitives complete.
 - P2: buffered outbound HTTP hardening complete.
 - P3: outbound HTTP streaming and cancellation complete.
+- P4: WebSocket upgrade ownership complete.
+- P5: WebSocket server frame/message runtime complete.
 
 P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time comparison, and strict RFC 4648 Base64/Base64url. Encoding is dependency-free; crypto is implemented by OpenSSL `libcrypto` and does not pull in `libssl`. SHA-1 remains internal-only future WebSocket work.
+
+## P5 WebSocket frame/message result
+
+- The P4 request-scoped upgrade handle now owns incremental RFC 6455 frame parsing and bounded text/binary reassembly over the sole HTTP worker transport. The public tagged `websocket_message`, convenience reads, text/bytes writes, ping and close APIs are registry-, sema-, LSP- and codegen-visible. Protocol/state/UTF-8 failures use `WebSocketError`; transport failures remain `NetworkError`.
+- `http_server.websocket_limits(frame_bytes, message_bytes)` configures only the stopped server and defaults to 1 MiB/4 MiB. The frame value is a data-frame payload limit of at least 125 bytes; control frames retain RFC 6455's independent 125-byte ceiling. Client masking, RSV/opcodes, canonical extended lengths, 64-bit high-bit rejection, fragmentation transitions, close codes and incremental UTF-8 are enforced before delivery or oversized allocation.
+- One reader is permitted. All writes are serialized and synchronous, a bounded one-message slot preserves convenience-read mismatches, and TCP/TLS transport operations use a documented one-operation-at-a-time contract. Teardown performs a bounded one-second closing handshake when it can acquire the parser, answers Ping after local Close, then stops admission, interrupts I/O, drains admitted parser/writer/accept operations and only then releases callbacks and worker-owned transport. Competing escaped readers skip the graceful wait and are interrupted. Blocked read/write/close release through input, configured timeout or interruption; ordinary reads retain the documented per-I/O byte-drip occupancy limitation.
+- `http_websocket` composes HTTP server plus bytes without OpenSSL. Plain HTTP omits SHA-1 and all frame/message code; plaintext WebSocket adds no native library; TLS adds the existing server TLS stack.
+- Deterministic local certification covers plaintext/TLS text and binary messages, accepted and emitted canonical 16/64-bit lengths, carry bytes, partial framing and partial disconnects, exact and over-limit boundaries, fragmented UTF-8 with interleaved ping, server-initiated close response waits, Ping after local Close, 1010 rejection, malformed frame/control/close/UTF-8 cases, concurrent writes, timeout-released blocked write/close, handler-return overlap with an admitted escaped reader, blocked-read invalidation, and 100 repeated handshakes. Resource checks sample the live generated server's RSS, descriptors/handles and worker count where the host exposes them. This is practical protocol/resource certification, not production soak or internet-scale long-lived-connection evidence; hosted platform CI remains required.
 
 ## P1 crypto and encoding result
 

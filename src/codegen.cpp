@@ -122,6 +122,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="http_response_writer") return "strut_http_response_writer";
     if(t=="http_server") return "strut_http_server";
     if(t=="websocket") return "strut_websocket";
+    if(t=="websocket_message") return "strut_websocket_message";
     if(t=="sqlite_db") return "strut_sqlite_db";
     if(t=="mutex") return "strut_mutex";
     if(t.rfind("future<",0)==0&&t.back()=='>') return "strut_future<"+cpp_type(t.substr(7,t.size()-8))+">";
@@ -451,9 +452,11 @@ void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f);
 void collect_minimal_expr_features(const IRExpr* e,MinimalRuntimeFeatures& f){
     if(!e) return;
     collect_minimal_type_features(e->type_name,f);
+    if(e->type_id)collect_minimal_type_features(type_spelling(e->type_id),f);
     if(e->kind==IRExpr::Kind::string_literal)f.strings=true;
     if(e->kind==IRExpr::Kind::identifier&&(e->text=="in"||e->text=="out"||e->text=="err"||e->text=="endl"||e->text=="input"||e->text=="istream"||e->text=="ostream"||e->text=="sstream"||e->text=="ifstream"||e->text=="ofstream")){f.streams=true;f.bytes=true;f.strings=true;f.vector=true;}
     if(e->kind==IRExpr::Kind::null_literal)f.nullable=true;
+    if(e->kind==IRExpr::Kind::binary&&e->text=="??")f.nullable=true;
     if(e->kind==IRExpr::Kind::array_literal)f.vector=true;
     if(e->kind==IRExpr::Kind::map_literal)f.hash_map=true;
     if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::identifier&&(e->left->text=="ptr"||e->left->text=="ref"))f.pointers=true;
@@ -554,9 +557,15 @@ struct strut_null_t {
 )CPP"; if(f.pointers)o << "    template<class T> operator std::shared_ptr<T>() const{return {};}\n"; o << R"CPP(
 };
 [[maybe_unused]] constexpr strut_null_t strut_null{};
+template<class T> bool operator==(const std::optional<T>& value,strut_null_t){return !value;}
+template<class T> bool operator!=(const std::optional<T>& value,strut_null_t){return static_cast<bool>(value);}
+template<class T> bool operator==(strut_null_t,const std::optional<T>& value){return !value;}
+template<class T> bool operator!=(strut_null_t,const std::optional<T>& value){return static_cast<bool>(value);}
 )CPP";}
     if(f.nullable)o << R"CPP(
-template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f)->std::optional<typename std::decay<decltype(f(*value))>::type>{if(!value)return std::nullopt;return f(*value);}
+template<class T> struct strut_optional_result{using type=std::optional<T>;};
+template<class T> struct strut_optional_result<std::optional<T>>{using type=std::optional<T>;};
+template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f)->typename strut_optional_result<typename std::decay<decltype(f(*value))>::type>::type{using R=typename strut_optional_result<typename std::decay<decltype(f(*value))>::type>::type;if(!value)return R{};return f(*value);}
 )CPP";
     if(f.nullable||f.find)o << "template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback); }\n";
     if(f.map)o << R"CPP(
@@ -1128,7 +1137,9 @@ inline void strut_print_stack_trace(){
 }
 [[noreturn]] inline void strut_panic(const std::string& message){std::cerr<<"Strut panic: "<<message<<"\n";strut_print_stack_trace();throw std::runtime_error(message);}
 template<class T> T& strut_deref(const std::shared_ptr<T>& value,const char* file,std::size_t line){if(!value) [[unlikely]] {std::cerr<<"at "<<file<<":"<<line<<"\n";strut_panic("null safe-pointer dereference");}return *value;}
-template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f) -> std::optional<typename std::decay<decltype(f(*value))>::type> { if(!value)return std::nullopt; return f(*value); }
+template<class T> struct strut_optional_result{using type=std::optional<T>;};
+template<class T> struct strut_optional_result<std::optional<T>>{using type=std::optional<T>;};
+template<class T,class F> auto strut_safe_member(const std::optional<T>& value,F f)->typename strut_optional_result<typename std::decay<decltype(f(*value))>::type>::type{using R=typename strut_optional_result<typename std::decay<decltype(f(*value))>::type>::type;if(!value)return R{};return f(*value);}
 template<class T> T strut_coalesce(const std::optional<T>& value,T fallback){return value?*value:std::move(fallback);}
 
 struct strut_string {

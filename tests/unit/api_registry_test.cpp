@@ -35,6 +35,13 @@ int main(){
     require(api_callable("websocket","http_server")->runtime_components==std::vector<RuntimeComponentId>{RuntimeComponentId::http_websocket},"WebSocket route owns its sliced runtime component");
     require(api_callable("accept","websocket")&&api_callable("accept","websocket")->overloads[0].parameters[0].optional,"WebSocket acceptance has an optional subprotocol");
     require(api_callable("accept","websocket")->checked_errors==std::vector<std::string>{"NetworkError"},"WebSocket acceptance uses the network checked error");
+    require(api_callable("read","websocket")&&type_spelling(api_callable("read","websocket")->overloads[0].return_type)=="websocket_message?","WebSocket message read is nullable");
+    require(api_callable("write_text","websocket")&&api_callable("write_bytes","websocket")&&api_callable("ping","websocket")&&api_callable("close","websocket"),"WebSocket frame methods are registered");
+    require(api_callable("read","websocket")->checked_errors==std::vector<std::string>({"WebSocketError","NetworkError"}),"WebSocket protocol and transport errors are distinct");
+    require(api_callable("close","websocket")->overloads.size()==3&&api_callable("ping","websocket")->overloads.size()==2,"WebSocket control overloads are registered");
+    require(api_callable("websocket_limits","http_server")&&api_callable("websocket_limits","http_server")->checked_errors==std::vector<std::string>{"NetworkError"},"WebSocket limits are registered");
+    require(api_field("kind","websocket_message")&&!api_field("kind","websocket_message")->writable&&api_field("text","websocket_message")->type==intern_type("string?")&&api_field("data","websocket_message")->type==intern_type("bytes?"),"WebSocket message tag and payloads are read-only");
+    require(std::find(api_named_types().begin(),api_named_types().end(),"WebSocketError")!=api_named_types().end(),"WebSocketError is a named checked error");
     require(api_callable("get_async","http_server")!=nullptr&&api_callable("post_async","http_server")!=nullptr,"async HTTP routes are registered");
     require(type_spelling(api_callable("get_async","http_server")->overloads[0].parameters[1].type)=="function<(http_request)->future<http_server_response>>","async HTTP handler signature");
     require(api_callable("get_stream","http_server")&&api_callable("post_stream","http_server"),"streaming HTTP routes are registered");

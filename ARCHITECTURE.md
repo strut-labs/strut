@@ -93,7 +93,7 @@ the same resolved result now drives both source selection and native linking.
 Runtime source bodies are physically grouped into proven slices and a full
 compatibility body. Shared component emitters in `generated_runtime.cpp` provide
 the owned bytes value, generic streams, cancellation, executor, TCP, HTTP client, HTTP
-request/response helpers and active HTTP server to both paths, so those
+request/response helpers, active HTTP server and optional WebSocket runtime to both paths, so those
 facilities have one maintained implementation.
 Outbound HTTP uses one emitted libcurl easy-handle core. Buffered bodies are adapters
 that append to or read from owned memory; P3 streaming substitutes bounded `bytes`
@@ -154,8 +154,19 @@ input; there is no second persistence parser. HTTP/1.1 persists by default and
 HTTP/1.0 only by explicit keep-alive. Reuse requires both body EOF and a finished,
 self-delimited response. Pipelined requests therefore preserve wire order without
 concurrent handlers. Idle publication and shutdown are linearized under the
-listener-generation lock, and upgrade detection is an explicit future ownership
-seam that currently rejects the request.
+listener-generation lock. Matched WebSocket routes transfer that same worker-owned
+transport into one request-scoped RFC 6455 state. Its parser consumes HTTP carry
+bytes first, retains only one bounded reassembly buffer and one convenience-read
+mismatch slot, and serializes frame writes directly to the transport. A separate
+transport-I/O lock keeps TCP/TLS operations serial and prevents concurrent entry
+into one OpenSSL object. Teardown first attempts a one-second server-side closing
+handshake when it can acquire parser ownership without competing with an escaped
+reader. Its cancellable deadline interrupts the socket through the shutdown path,
+and Ping remains serviceable until peer Close. Request invalidation then atomically stops operation admission,
+interrupts the transport, drains active and queued parser/writer/accept operations,
+then clears callbacks before the worker closes or frees the transport. Stop marks
+upgraded connections for immediate socket interruption; no detached reader,
+writer queue or second connection lifecycle is introduced.
 
 Every dispatch owns one internal cancellation source and publishes only its token
 through `http_request`. Normal completion and every terminal request path cancel

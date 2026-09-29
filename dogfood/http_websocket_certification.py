@@ -98,7 +98,7 @@ def require_switch(response, protocol=None):
     if protocol is not None:
         expected += f"Sec-WebSocket-Protocol: {protocol}\r\n"
     expected = (expected + "\r\n").encode()
-    if response != expected:
+    if not response.startswith(expected):
         raise RuntimeError(f"unexpected WebSocket upgrade response: {response!r}")
 
 

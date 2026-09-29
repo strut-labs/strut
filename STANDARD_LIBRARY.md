@@ -95,6 +95,12 @@ The first write or flush commits metadata. Metadata cannot change afterward, wri
 
 `http_write_ndjson(request, writer, value) -> void : (HttpError, NetworkError)` validates finite UTF-8 JSON through JSONIC's 512-level validation boundary, writes its compact representation followed by one LF, selects `application/x-ndjson`, checks request cancellation around serialization, and flushes the shared response writer before returning. Each call buffers only its record. Empty streams set the content type directly on the writer.
 
+## WebSockets
+
+`http_server.websocket(route, handler)` supplies a request-scoped `websocket`. Call `accept(subprotocol?)` before frame operations. `read() -> websocket_message?` returns a tagged message whose read-only `kind`, `text` and `data` fields distinguish UTF-8 text from opaque bytes. `read_text()` and `read_bytes()` retain one mismatched message and raise `WebSocketError` rather than losing it. Peer close produces null.
+
+`write_text(string)`, `write_bytes(bytes)`, `ping(bytes?)` and `close(code?, reason?)` are synchronous and raise `WebSocketError` for protocol, state, limit or UTF-8 violations and `NetworkError` for transport failure. Server close rejects code 1010. `http_server.websocket_limits(frame_bytes, message_bytes)` changes the stopped-server defaults of 1 MiB per data frame and 4 MiB per message; the data-frame limit is at least 125 bytes and RFC control frames retain their independent 125-byte maximum. One reader is allowed; writes are serialized without an unbounded queue. TCP/TLS transport operations are conservative and serial: a write or close behind a blocked read is released by input, configured read timeout, or interruption. Handler teardown waits at most one second for a peer Close when it can own the parser, answering Ping meanwhile; an escaped reader is interrupted and drained instead.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.
