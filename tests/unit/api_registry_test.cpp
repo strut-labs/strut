@@ -45,6 +45,8 @@ int main(){
     require(api_callable("http_serve_file")&&api_callable("http_serve_file")->overloads[0].parameters.back().optional,"HTTP file response content type is optional");
     require(api_callable("http_serve_file")->checked_errors==std::vector<std::string>({"FilesystemError","NetworkError"}),"HTTP file response checked errors are registered");
     require(api_callable("http_serve_file")->runtime_components==std::vector<strut::RuntimeComponentId>({strut::RuntimeComponentId::http_file_response}),"HTTP file response owns its runtime capability");
+    require(api_callable("http_write_ndjson")&&api_callable("http_write_ndjson")->checked_errors==std::vector<std::string>({"HttpError","NetworkError"}),"NDJSON record helper and checked errors are registered");
+    require(api_callable("http_write_ndjson")->runtime_components==std::vector<strut::RuntimeComponentId>({strut::RuntimeComponentId::http_ndjson}),"NDJSON helper owns its runtime capability");
     require(api_callable("static","http_server")!=nullptr,"source-level HTTP static method is registered");
     require(api_callable("receive","channel<int>")!=nullptr&&type_spelling(api_callable("receive","channel<int>")->overloads[0].return_type)=="T?","generic method lookup");
     require(api_callable("accept_async","tcp_listener")!=nullptr&&api_callable("transaction","sqlite_db")!=nullptr,"backend methods are registered");

@@ -128,11 +128,19 @@ jobs:
           python3 dogfood/http_request_stream_certification.py build/strut
           python3 dogfood/http_application_helpers_certification.py build/strut
           python3 dogfood/http_static_file_certification.py build/strut
+          python3 dogfood/http_ndjson_certification.py build/strut
           python3 dogfood/http_persistence_certification.py build/strut
           python3 dogfood/http_request_cancellation_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
           python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
+      - name: Certify sanitized generated NDJSON runtime
+        if: matrix.name == 'linux-x64-gcc'
+        env:
+          STRUT_CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: python3 dogfood/http_ndjson_certification.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -152,6 +160,7 @@ jobs:
           python dogfood/http_request_stream_certification.py build/Release/strut.exe
           python dogfood/http_application_helpers_certification.py build/Release/strut.exe
           python dogfood/http_static_file_certification.py build/Release/strut.exe
+          python dogfood/http_ndjson_certification.py build/Release/strut.exe
           python dogfood/http_persistence_certification.py build/Release/strut.exe
           python dogfood/http_request_cancellation_certification.py build/Release/strut.exe
           python dogfood/http_worker_certification.py build/Release/strut.exe
@@ -194,6 +203,7 @@ jobs:
           python3 dogfood/http_request_stream_certification.py build/strut
           python3 dogfood/http_application_helpers_certification.py build/strut
           python3 dogfood/http_static_file_certification.py build/strut
+          python3 dogfood/http_ndjson_certification.py build/strut
           python3 dogfood/http_persistence_certification.py build/strut
           python3 dogfood/http_request_cancellation_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut

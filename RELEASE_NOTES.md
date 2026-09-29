@@ -1,7 +1,8 @@
 # Strut 0.0.3
 
-Strut 0.0.3 is a focused compiler and generated-code performance release. It
-does not change the language contract established by 0.0.2.
+Strut 0.0.3 is a focused compiler, generated-code performance, and HTTP runtime
+release. It does not change the core language syntax contract established by
+0.0.2.
 
 ## Highlights
 
@@ -18,6 +19,12 @@ does not change the language contract established by 0.0.2.
   universal latency guarantees.
 - Structural code-size guards prevent the focused string, thread, and atomic
   paths from silently regressing to the complete runtime.
+- HTTP servers now provide lossless repeated query/form/cookie values, bounded
+  buffered body helpers, structured response cookies, and validated redirects.
+- Explicit application-owned files can be streamed with bounded reads and
+  single byte-range support through the existing response writer.
+- Cancellation-aware NDJSON records use compact JSONIC serialization and the
+  existing writer's flush, framing, backpressure, TLS, and failure behavior.
 - Compiler, generated C++, package, HTTP/TLS, sanitizer, regression, and
   cross-platform certification continue to cover GCC, Clang/AppleClang, and
   MSVC targets.

@@ -123,6 +123,8 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP11: streaming request bodies complete.
 - CP12: HTTP/1 connection persistence and request-scoped cancellation complete.
 - CP13: HTTP application request and response helpers complete.
+- CP14: static file and single-range responses complete.
+- CP15: cancellation-aware NDJSON streaming complete.
 
 ## CP1 validation result
 
@@ -262,3 +264,11 @@ cancellation contracts must not prevent a future event-driven backend.
 - File and range responses retain the CP10/CP12 response state, framing, backpressure, cancellation, persistence, TLS and postcommit-failure behavior. The helper does not map or authorize URL paths, enforce filesystem containment, or add a plaintext/TLS/sendfile path.
 - Static-file certification covers binary and empty files, multi-chunk reads, inferred and explicit media types, range forms and boundaries, overflow, malformed/multipart fallback, 206/416 metadata, HEAD, persistence, missing files and TLS parity. Cross-platform and release workflows execute it.
 - Validation: warning-clean GCC and Clang builds passed CTest 16/16, the GCC ASan/UBSan build passed CTest 16/16 and pointer/thread stress, and the complete serial HTTP certification chain through backend baseline passed with the new static-file suite. Final protocol/security and architecture/API/resource reviews found no remaining actionable CP14 defects under the documented trusted immutable-path boundary. Hosted CI remains the execution gate for Windows UTF-8 path handling, macOS and ARM64 paths.
+
+## CP15 NDJSON streaming result
+
+- `http_write_ndjson(request, writer, value)` checks the request cancellation token, rejects non-finite numbers, invalid UTF-8, non-canonical exact numbers and more than 512 nested levels through `HttpError`, uses JSONIC's compact serializer for one complete value, appends exactly one LF and synchronously writes and flushes that record through the CP10 writer. The first record selects `application/x-ndjson`; each call retains only its own serialized record.
+- JSON escaping prevents data from injecting record delimiters. HTTP/1.1 chunking and HTTP/1.0 close delimitation remain transport framing owned by CP10, independent of NDJSON records. Precommit failure can produce the safe 500; cancellation, disconnect or failure after a record commits closes without a synthetic terminal record or second response.
+- The dedicated `http_ndjson` runtime capability composes JSON and the HTTP server only when referenced. Existing response writers and JSON output remain source compatible; applications migrate streaming JSON loops by replacing manual `dump + newline + write + flush` code with the helper, while empty streams set the NDJSON content type explicitly.
+- NDJSON certification covers compact parseable records, escaped embedded newlines, invalid UTF-8 and non-finite rejection, exact LF framing, content type, prompt first-record delivery, HTTP/1.0 and HTTP/1.1 framing, persistent reuse, explicit shutdown cancellation, disconnect recovery and plaintext/TLS parity. Cross-platform and release workflows execute it, with generated ASan/UBSan execution on Linux GCC.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16, the GCC ASan/UBSan build passed CTest 16/16 and pointer/thread stress, generated NDJSON plaintext/TLS execution passed ASan/UBSan, all serial HTTP certifications through backend baseline passed, and the independent regression suite passed 167/167. Final protocol/security, architecture/API/compiler, and resource/test/portability reviews found no remaining actionable CP15 defects. Hosted CI remains the execution gate for Windows, macOS, and ARM64 paths.

@@ -35,6 +35,7 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::http_client,"http_client",{Id::networking,Id::json},{"curl/curl.h"},{"curl"}},
         {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io,Id::threading,Id::mutex,Id::cancellation},{},{}},
         {Id::http_file_response,"http_file_response",{Id::http_server},{"filesystem"},{}},
+        {Id::http_ndjson,"http_ndjson",{Id::http_server,Id::json},{},{}},
         {Id::http_server_tls,"http_server_tls",{Id::http_server},{"openssl/ssl.h","openssl/err.h"},{"ssl","crypto"}},
         {Id::sqlite,"sqlite",{Id::json,Id::safe_pointer},{"sqlite3.h"},{"sqlite3"}},
         {Id::embedded_assets,"embedded_assets",{Id::filesystem,Id::collections},{},{}},

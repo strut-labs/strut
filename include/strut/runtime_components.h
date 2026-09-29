@@ -32,6 +32,7 @@ enum class RuntimeComponentId {
     http_client,
     http_server,
     http_file_response,
+    http_ndjson,
     http_server_tls,
     sqlite,
     embedded_assets,

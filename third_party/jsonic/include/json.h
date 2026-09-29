@@ -276,6 +276,12 @@ public:
         return out;
     }
 
+    std::string dump_compact() const { return dump(-1); }
+
+    bool is_valid(std::size_t max_depth = 512) const {
+        return valid_value(*this, 0, max_depth);
+    }
+
     // Appends a JSON string payload without surrounding quotes. Useful for
     // efficient streaming writers that still want the library's escaping rules.
     static void append_escaped_string(std::string& out, const std::string& value) {
@@ -681,6 +687,55 @@ private:
         out.append(static_cast<std::size_t>(indent * level), ' ');
     }
 
+    static bool valid_utf8(const std::string& value) {
+        for (std::size_t i = 0; i < value.size();) {
+            const unsigned char c = static_cast<unsigned char>(value[i]);
+            std::size_t count = 0;
+            if (c < 0x80) count = 1;
+            else if (c >= 0xc2 && c <= 0xdf) count = 2;
+            else if (c >= 0xe0 && c <= 0xef) count = 3;
+            else if (c >= 0xf0 && c <= 0xf4) count = 4;
+            else return false;
+            if (i + count > value.size()) return false;
+            for (std::size_t j = 1; j < count; ++j)
+                if ((static_cast<unsigned char>(value[i + j]) & 0xc0) != 0x80) return false;
+            if ((c == 0xe0 && static_cast<unsigned char>(value[i + 1]) < 0xa0) ||
+                (c == 0xed && static_cast<unsigned char>(value[i + 1]) >= 0xa0) ||
+                (c == 0xf0 && static_cast<unsigned char>(value[i + 1]) < 0x90) ||
+                (c == 0xf4 && static_cast<unsigned char>(value[i + 1]) >= 0x90)) return false;
+            i += count;
+        }
+        return true;
+    }
+
+    static bool valid_value(const Document& value, std::size_t depth, std::size_t max_depth) {
+        if (depth > max_depth) return false;
+        switch (value.type) {
+            case Type::Null:
+            case Type::Boolean:
+                return true;
+            case Type::Number:
+                return std::isfinite(value.num);
+            case Type::StrNumber: {
+                Document parsed;
+                ParseDiagnostic diagnostic;
+                return parse(value.string, parsed, diagnostic) && parsed.is_number() &&
+                       parsed.dump_compact() == value.string;
+            }
+            case Type::String:
+                return valid_utf8(value.string);
+            case Type::Array:
+                for (const auto& item : value.array)
+                    if (!valid_value(item, depth + 1, max_depth)) return false;
+                return true;
+            case Type::Object:
+                for (const auto& item : value.object)
+                    if (!valid_utf8(item.first) || !valid_value(item.second, depth + 1, max_depth)) return false;
+                return true;
+        }
+        return false;
+    }
+
     static void write(std::string& out, const Document& value, int indent, int level) {
         switch (value.type) {
             case Type::Null:
@@ -707,31 +762,33 @@ private:
             case Type::Array:
                 out.push_back('[');
                 if (!value.array.empty()) {
-                    out.push_back('\n');
+                    const bool pretty = indent >= 0;
+                    if (pretty) out.push_back('\n');
                     for (std::size_t i = 0; i < value.array.size(); ++i) {
-                        append_indent(out, indent, level + 1);
+                        if (pretty) append_indent(out, indent, level + 1);
                         write(out, value.array[i], indent, level + 1);
                         if (i + 1 != value.array.size()) out.push_back(',');
-                        out.push_back('\n');
+                        if (pretty) out.push_back('\n');
                     }
-                    append_indent(out, indent, level);
+                    if (pretty) append_indent(out, indent, level);
                 }
                 out.push_back(']');
                 break;
             case Type::Object:
                 out.push_back('{');
                 if (!value.object.empty()) {
-                    out.push_back('\n');
+                    const bool pretty = indent >= 0;
+                    if (pretty) out.push_back('\n');
                     for (std::size_t i = 0; i < value.object.size(); ++i) {
-                        append_indent(out, indent, level + 1);
+                        if (pretty) append_indent(out, indent, level + 1);
                         out.push_back('"');
                         append_escaped(out, value.object[i].first);
-                        out += "\": ";
+                        out += pretty ? "\": " : "\":";
                         write(out, value.object[i].second, indent, level + 1);
                         if (i + 1 != value.object.size()) out.push_back(',');
-                        out.push_back('\n');
+                        if (pretty) out.push_back('\n');
                     }
-                    append_indent(out, indent, level);
+                    if (pretty) append_indent(out, indent, level);
                 }
                 out.push_back('}');
                 break;

@@ -115,6 +115,11 @@ response writer. Single-range selection changes only status, metadata, seek
 offset and exact byte count; plaintext/TLS output, HEAD suppression, framing,
 backpressure, cancellation, persistence and postcommit failure remain owned by
 the shared writer and connection lifecycle.
+NDJSON is another producer above that writer: JSONIC owns compact JSON escaping
+and formatting, the helper owns one trailing LF per call, and CP10 continues to
+own HTTP chunking, flush/commit state, backpressure and transport failure. It
+does not introduce an NDJSON socket, queue, response serializer or connection
+lifecycle.
 Decoded bytes and framing overhead have independent bounds. Reader invalidation
 interrupts an escaped active read before transport lifetime ends. Response
 commitment excludes active and future request-body reads, so one TLS transport

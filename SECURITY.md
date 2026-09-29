@@ -36,6 +36,8 @@ The built-in server supports strict HTTP/1.0 and HTTP/1.1 plus OpenSSL-backed HT
 
 File responses parse decimal byte ranges with overflow checks, support only one range, and stream bounded chunks through the same response writer. Paths require valid UTF-8 without NUL and an initial regular-file check. Their explicit path is trusted, immutable application input: the helper does not turn request paths into safe filesystem paths, enforce root/symlink containment, or defend a checked path from concurrent local replacement.
 
+NDJSON records use JSONIC's canonical validator to reject non-finite numbers, non-UTF-8 strings or keys, non-canonical exact-number spellings, and more than 512 nested levels before commitment. They then use JSONIC's compact serializer and append one LF after complete serialization, so untrusted strings cannot inject record delimiters. The helper checks request cancellation before and after serialization and keeps only one record in memory. Once any record commits the response, cancellation, disconnect, or write failure closes the stream without a synthetic terminal record or second HTTP response.
+
 ## Concurrency
 
 Native threads, mutexes, channels and the async executor have stress fixtures. `T*` protects object lifetime, not arbitrary mutation. Non-owning `T&` is rejected at direct thread boundaries where lifetime cannot be established safely. ThreadSanitizer should be part of CI where the runner/toolchain supports a working runtime; the current local Swift-Clang TSAN runtime is not usable because of its libdispatch linkage issue.
@@ -58,7 +60,7 @@ Release-candidate certification should include, at minimum:
 - clean documentation build;
 - benchmark/regression checks for material performance-sensitive changes.
 
-The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. It also runs bytes, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
+The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. It also runs bytes, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
 
 ## Current limitations
 
