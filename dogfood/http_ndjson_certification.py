@@ -60,7 +60,8 @@ def source(port, tls=False):
         catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
     }});
     app.get_stream("/invalid-number", (http_request request, http_response_writer writer) => {{
-        try {{ http_write_ndjson(request, writer, {{"value": 0.0 / 0.0}}); }}
+        zero := 0.0;
+        try {{ http_write_ndjson(request, writer, {{"value": 0.0 / zero}}); }}
         catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
     }});
     app.get_stream("/cancel", (http_request request, http_response_writer writer) => {{

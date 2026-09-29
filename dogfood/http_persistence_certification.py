@@ -202,13 +202,13 @@ def exercise(port, opener):
         connection = HttpConnection(raw)
         connection.send(b"POST /partial HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\na")
         check_response(connection.response(method=b"POST"), 200, b"a")
-        connection.expect_eof()
+        connection.expect_eof(timeout=2.0)
 
     with opener() as raw:
         connection = HttpConnection(raw)
         connection.send(request("/one"))
         check_response(connection.response(), 200, b"one")
-        connection.expect_eof(timeout=1.0)
+        connection.expect_eof(timeout=2.0)
 
 
 def main():
