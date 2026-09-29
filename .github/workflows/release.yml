@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: strut-labs/strut-regression-suite
-          ref: 062fe1ae2ccbcb3f3b39853ce14bad6e45832f63
+          ref: 6a4c72e71d8ce5f47e8243815ff67ecca13f7eab
           path: strut-regression-suite
       - name: Validate tag and release metadata (POSIX)
         if: runner.os != 'Windows'
@@ -88,6 +88,7 @@ jobs:
           STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
         run: |
           python3 dogfood/http_framing_certification.py build/strut
+          python3 dogfood/http_client_certification.py build/strut
           python3 dogfood/http_response_certification.py build/strut
           python3 dogfood/http_response_stream_certification.py build/strut
           python3 dogfood/http_request_stream_certification.py build/strut
@@ -114,6 +115,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           python dogfood/http_framing_certification.py build/Release/strut.exe
+          python dogfood/http_client_certification.py build/Release/strut.exe
           python dogfood/http_response_certification.py build/Release/strut.exe
           python dogfood/http_response_stream_certification.py build/Release/strut.exe
           python dogfood/http_request_stream_certification.py build/Release/strut.exe

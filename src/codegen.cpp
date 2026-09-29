@@ -1541,8 +1541,7 @@ inline strut_exec_result strut_pipe_exec(const strut_string& first,const std::ve
 
 )CPP";if(has(RuntimeComponentId::networking))generated_runtime::emit_tcp(o,true,true);o<<R"CPP(
 #ifdef STRUT_USE_CURL
-struct strut_curl_global{strut_curl_global(){if(curl_global_init(CURL_GLOBAL_DEFAULT)!=CURLE_OK)throw strut_checked_error("TlsError","libcurl global initialization failed");}~strut_curl_global(){curl_global_cleanup();}};
-inline void strut_curl_init(){static strut_curl_global g;(void)g;}
+inline void strut_curl_init(const char* error_type="TlsError"){static const CURLcode initialized=curl_global_init(CURL_GLOBAL_DEFAULT);if(initialized!=CURLE_OK)throw strut_checked_error(error_type,"libcurl global initialization failed",static_cast<std::int32_t>(initialized));}
 class strut_tls_stream {
 public:
     strut_tls_stream()=default;
@@ -1705,6 +1704,7 @@ bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string 
 
 bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesystem::path>& objects,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {
  if(objects.empty()){error="no object files to link";return false;}
+ if(link.fully_static){const auto libraries=analyze_runtime_components(p).link_libraries();if(std::find(libraries.begin(),libraries.end(),"curl")!=libraries.end()){error="fully static linking with libcurl is not supported; use --dynamic";return false;}}
 bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd="\""+cxx+"\"";
  if(msvc){
  cmd+=" /nologo "+std::string(link.fully_static?"/MT ":"/MD ");for(const auto&o:objects)cmd+=" \""+o.string()+"\"";cmd+=" /Fe:\""+output.string()+"\"";bool ls=false;for(const auto&d:link.search_paths){if(!ls){cmd+=" /link";ls=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}for(const auto&lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}if(!ls)cmd+=" /link";cmd+=" ws2_32.lib";if(link.release)cmd+=" /OPT:REF /OPT:ICF /LTCG";else cmd+=" /DEBUG";
@@ -1739,7 +1739,7 @@ bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string 
  if(run_native_command(cmd)!=0){error=native_failure(p,"linking");return false;}return true;
 }
 
-bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {if(link.target!="native"){auto obj=output;obj += ".strut.o";auto gen=output;gen += ".strut.cpp";if(!compile_object(p,obj,gen,error,link))return false;bool ok=link_objects(p,{obj},output,error,link);std::error_code ec;std::filesystem::remove(obj,ec);std::filesystem::remove(gen,ec);return ok;}auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
+bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {if(link.fully_static){const auto libraries=analyze_runtime_components(p).link_libraries();if(std::find(libraries.begin(),libraries.end(),"curl")!=libraries.end()){error="fully static linking with libcurl is not supported; use --dynamic";return false;}}if(link.target!="native"){auto obj=output;obj += ".strut.o";auto gen=output;gen += ".strut.cpp";if(!compile_object(p,obj,gen,error,link))return false;bool ok=link_objects(p,{obj},output,error,link);std::error_code ec;std::filesystem::remove(obj,ec);std::filesystem::remove(gen,ec);return ok;}auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
 const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;std::string cmd;const auto jsonic=jsonic_include_dir().string();
 #ifdef _WIN32
  cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX "+(link.fully_static?"/MT ":"/MD ")+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\""+jsonic+"\" \""+tmp.string()+"\" /Fe:\""+output.string()+"\"";

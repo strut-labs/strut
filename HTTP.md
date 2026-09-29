@@ -1,6 +1,6 @@
 # Official HTTP client
 
-The CP76 client is backed by libcurl and keeps safe TLS verification enabled. Response bodies are buffered in this first version; streaming is deliberately deferred until a streaming API can be designed without complicating the basic client.
+The HTTP client is backed only by libcurl and keeps certificate and hostname verification enabled. Responses remain buffered, but body and header memory is bounded. Streaming and transfer cancellation are separate APIs rather than hidden behavior in the buffered client.
 
 ```strut
 function main() -> void : HttpError {
@@ -11,9 +11,15 @@ function main() -> void : HttpError {
 }
 ```
 
-Custom requests use a JSON options object for headers, body, timeouts and redirect policy. `http_get_json(url)` and `response.json()` parse through core JSON/JSONIC support. `http_get_async` and `http_request_async` run on Strut's shared executor.
+Custom requests use a strict JSON options object. Supported keys are `headers`, `body`, `timeout_ms`, `follow_redirects`, `max_redirects`, `max_request_body_bytes`, `max_response_body_bytes`, `max_response_header_bytes` and `max_response_header_count`; unknown keys and invalid types or ranges raise `HttpError`. Defaults are a 30-second total deadline, 10 redirects, 16 MiB request and response bodies, 64 KiB cumulative request and response headers, and 100 request or response fields. The timeout covers resolution, connection, TLS, redirects and response receipt as one operation. `http_get_json(url)` and `response.json()` parse through core JSON/JSONIC support. `http_get_async` and `http_request_async` run the same bounded implementation on Strut's shared executor.
 
-Redirects are followed by default with a maximum of 10 hops. The default timeout is 30 seconds. Response streaming is explicitly not part of CP76.
+Methods and request header metadata are validated before libcurl use. Content-Length, Transfer-Encoding, Connection and Host remain transport-owned. Bodies preserve embedded NUL bytes and an explicit empty body remains distinct from no body. Response header names are lowercase, only the final redirect response is exposed, and case-insensitive duplicate final fields or trailers are rejected because `http_response.headers` is single-valued.
+
+Only absolute HTTP and HTTPS URLs are accepted. HTTPS redirects cannot downgrade to HTTP, and explicit-CA requests require HTTPS. Redirects are followed by default: POST changes to GET under libcurl's standard 301/302/303 handling, while 307/308 preserve method and body. Custom destination-bound headers should be used with redirects disabled unless replay to redirect targets is intended.
+
+Protocol restriction is not destination authorization. Loopback, private, link-local, proxy-routed and DNS-rebound destinations are not blocked; applications accepting untrusted URLs must enforce their own destination policy. HTTP 4xx/5xx statuses remain ordinary `http_response` values. Configuration, policy, limit and transport failures raise `HttpError`; native libcurl failures retain their numeric `CURLcode`.
+
+Fully static final linking with libcurl is rejected with an actionable compiler error because libcurl's transitive static dependency set is platform-specific. Use the default dynamic link mode for HTTP clients.
 
 ## Server lifecycle
 

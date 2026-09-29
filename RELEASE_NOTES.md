@@ -6,6 +6,9 @@
   HMAC-SHA-256 and constant-time comparison through OpenSSL 3.0 or newer.
 - Dependency-free `<encoding>` APIs provide strict canonical Base64 and
   unpadded Base64url encoding and decoding.
+- Buffered outbound HTTP now has strict metadata and option validation,
+  bounded request/response memory, HTTP(S)-only redirect policy, normalized
+  errors, and shared synchronous/asynchronous libcurl ownership.
 
 # Strut 0.0.3
 

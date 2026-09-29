@@ -130,6 +130,7 @@ cancellation contracts must not prevent a future event-driven backend.
 ## Production backend campaign
 
 - P1: crypto and encoding primitives complete.
+- P2: buffered outbound HTTP hardening complete.
 
 P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time comparison, and strict RFC 4648 Base64/Base64url. Encoding is dependency-free; crypto is implemented by OpenSSL `libcrypto` and does not pull in `libssl`. SHA-1 remains internal-only future WebSocket work.
 
@@ -140,6 +141,15 @@ P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time c
 - The canonical API registry drives semantic checks, runtime components, native-dependency metadata and LSP data. New builtin callable names are reserved against function-valued shadowing, while non-callable values with the same spelling do not select runtime code.
 - Validation: warning-clean GCC and Clang builds passed CTest 16/16; GCC ASan/UBSan passed CTest 16/16; all three builds passed known-answer, binary, random-length, strict-decoder and malformed-input certification; and the independent pinned regression suite passed 171/171.
 - Final independent architecture/API, cryptographic security, generated-runtime/resource and test/portability reviews found no remaining actionable defect. Hosted CI remains the execution gate for Linux ARM64, macOS ARM64 AppleClang/Homebrew OpenSSL and Windows x64 MSVC/vcpkg.
+
+## P2 buffered outbound HTTP result
+
+- The existing libcurl client remains the sole outbound implementation. `http_get`, `http_request`, `http_get_ca` and the asynchronous wrappers share one bounded buffered engine; no streaming or public transfer-cancellation API was introduced.
+- Requests validate absolute HTTP(S) URLs, methods, headers, strict JSON options and native ranges. Framing metadata remains transport-owned, explicit empty and embedded-NUL bodies retain exact lengths, TLS verification stays mandatory, HTTPS redirects cannot downgrade, and fully static libcurl links fail early rather than producing unresolved native dependencies.
+- Responses enforce configurable body, cumulative header-byte and header-count limits. Only the final redirect block is exposed, names are lowercase, malformed status/header syntax, trailers and case-insensitive duplicates fail closed, and HTTP status errors remain ordinary responses. Native transport failures retain their `CURLcode` through `HttpError.code`.
+- The process-lifetime libcurl initializer avoids cleanup racing asynchronous executor drain. Easy handles and request header lists use RAII, all native option/status results are checked, and allocation failures cannot unwind through libcurl callbacks.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16; GCC ASan/UBSan passed CTest 16/16 and the generated client certification; the deterministic peer suite covered binary bodies, strict metadata/options, limits, redirect state/method policy, timeout and async/shutdown behavior; TLS lifecycle covered rejection and an explicit CA path containing spaces; and the pinned independent suite passed 173/173.
+- Final independent architecture/API, protocol-security, generated-runtime/resource and test/portability reviews found no remaining actionable defect. Hosted CI remains the execution gate for Linux ARM64, macOS ARM64, Windows x64, alternate supported libcurl versions and real proxy/TLS combinations.
 
 ## CP1 validation result
 

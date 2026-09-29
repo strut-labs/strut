@@ -123,6 +123,7 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/crypto_certification.py build/strut
+          python3 dogfood/http_client_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/http_framing_certification.py build/strut
           python3 dogfood/http_response_certification.py build/strut
@@ -152,6 +153,7 @@ jobs:
           python3 dogfood/http_request_cancellation_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
           python3 dogfood/crypto_certification.py build/strut
+          python3 dogfood/http_client_certification.py build/strut
       - name: Certify generated HTTP worker concurrency
         if: matrix.name == 'linux-x64-gcc'
         env:
@@ -171,6 +173,7 @@ jobs:
           python dogfood/diagnostics.py build/Release/strut.exe
           python dogfood/package_certification.py build/Release/strut.exe
           python dogfood/crypto_certification.py build/Release/strut.exe
+          python dogfood/http_client_certification.py build/Release/strut.exe
           python dogfood/http_lifecycle_certification.py build/Release/strut.exe
           python dogfood/http_framing_certification.py build/Release/strut.exe
           python dogfood/http_response_certification.py build/Release/strut.exe
@@ -215,6 +218,7 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/crypto_certification.py build/strut
+          python3 dogfood/http_client_certification.py build/strut
           python3 dogfood/http_lifecycle_certification.py build/strut
           python3 dogfood/http_framing_certification.py build/strut
           python3 dogfood/http_response_certification.py build/strut

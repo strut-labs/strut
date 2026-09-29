@@ -6,6 +6,7 @@ These programs exercise Strut as an application language rather than isolated sy
 - `fs/source_index.p` — recursive source-file counting and byte totals.
 - `json/transform.p` — JSON parsing, omission, deep merge and serialization.
 - `http/endpoint_check.p` — configurable HTTP client status/body check.
+- `http_client_certification.py` — bounded buffered libcurl behavior against a deterministic local peer.
 - `service/concurrent_service.p` — native threads, mutexes, typed channels and async futures.
 - `web/app.p` — SQLite, async HTTP routing and compile-time embedded static assets in one executable.
 - `package-app` — a manifest-backed multi-file project with SQLite and process execution.

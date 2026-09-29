@@ -3,6 +3,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import http.client
+import os
 from pathlib import Path
 import ssl
 import socket
@@ -135,6 +136,8 @@ def main():
         subprocess.run([compiler, client_program, "-o", client_executable], check=True, cwd=root)
         fixture = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "tls"
         certificate, private_key = fixture / "localhost-cert.pem", fixture / "localhost-key.pem"
+        trusted_ca = root / "trusted ca.pem"
+        trusted_ca.write_bytes(certificate.read_bytes())
         tls_server = subprocess.Popen([tls_executable, certificate, private_key, root / "service.db"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.monotonic() + 5
@@ -150,13 +153,16 @@ def main():
                     if time.monotonic() >= deadline:
                         raise RuntimeError("TLS server did not start")
                     time.sleep(0.03)
-            rejected = subprocess.run([client_executable], cwd=root, text=True, capture_output=True)
+            client_environment = os.environ.copy()
+            client_environment["NO_PROXY"] = "127.0.0.1,localhost"
+            client_environment["no_proxy"] = "127.0.0.1,localhost"
+            rejected = subprocess.run([client_executable], cwd=root, text=True, capture_output=True, env=client_environment)
             if rejected.returncode == 0:
                 raise RuntimeError("untrusted TLS certificate was accepted")
             if tls_server.poll() is not None:
                 stdout, stderr = tls_server.communicate()
                 raise RuntimeError(f"TLS server exited before trusted client ({tls_server.returncode})\n{stdout}\n{stderr}")
-            trusted = subprocess.run([client_executable, certificate], cwd=root, text=True, capture_output=True, timeout=5)
+            trusted = subprocess.run([client_executable, trusted_ca], cwd=root, text=True, capture_output=True, timeout=5, env=client_environment)
             if trusted.returncode != 0 or "secure" not in trusted.stdout:
                 raise RuntimeError(f"trusted Strut TLS client failed ({trusted.returncode})\n{trusted.stdout}\n{trusted.stderr}")
             stdout, stderr = tls_server.communicate(timeout=20)

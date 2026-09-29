@@ -34,7 +34,7 @@ JSON parsing uses JSONIC. Network/database/file data remains untrusted input and
 
 ## HTTP and TLS
 
-libcurl client TLS keeps certificate and hostname verification enabled by default. Disabling verification must never be an accidental default.
+The libcurl client accepts only absolute HTTP(S) URLs, keeps certificate and hostname verification enabled, prevents HTTPS redirect downgrade, validates request metadata, reserves transport framing headers, and bounds buffered bodies plus cumulative headers. Final response headers are lowercase and duplicate single-valued fields or trailers fail closed. The client protocol policy is not SSRF destination authorization: loopback, private, link-local, proxy-routed and DNS-rebound destinations remain reachable unless the application rejects them.
 
 Query and URL-encoded form decoding reject malformed escapes, encoded NUL and controls while preserving repeated values; `+` has form-style space semantics. Request cookies require token names and strict cookie octets. Response cookies use a structured, bounded representation that validates names, values and attributes before the common response head is committed. Each cookie is emitted as a distinct `Set-Cookie` field. Generic Set-Cookie is reserved, so support for repeatable cookies does not weaken case-insensitive duplicate rejection for arbitrary response headers or permit response splitting.
 
