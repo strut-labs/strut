@@ -142,11 +142,12 @@ std::string cpp_type_legacy(std::string t){
 }
 
 std::string literal_value(const std::string& q){if(q.size()<2)return q;std::string o;for(std::size_t i=1;i+1<q.size();++i){char c=q[i];if(c=='\\'&&i+2<q.size()){char n=q[++i];if(n=='n')o+='\n';else if(n=='r')o+='\r';else if(n=='t')o+='\t';else o+=n;}else o+=c;}return o;}
+std::string cpp_string_literal(const std::string& quoted){if(quoted.size()<=8002)return quoted;std::string out;const std::size_t content_end=quoted.size()-1;std::size_t position=1;while(position<content_end){const std::size_t begin=position;std::size_t size=0;while(position<content_end){const unsigned char c=static_cast<unsigned char>(quoted[position]);std::size_t width=1;if(quoted[position]=='\\')width=2;else{const std::size_t expected=c<0x80?1:(c&0xe0)==0xc0?2:(c&0xf0)==0xe0?3:(c&0xf8)==0xf0?4:1;if(expected<=content_end-position){bool valid=true;for(std::size_t i=1;i<expected;++i)valid=valid&&(static_cast<unsigned char>(quoted[position+i])&0xc0)==0x80;if(valid)width=expected;}}if(size+width>8000)break;position+=width;size+=width;}out+='"';out.append(quoted,begin,position-begin);out+='"';}return out;}
 std::string embedded_string_cpp(const std::string& data){std::ostringstream o;o<<"[&](){const unsigned char d[]={";for(std::size_t i=0;i<data.size();++i){if(i)o<<',';o<<static_cast<unsigned int>(static_cast<unsigned char>(data[i]));}o<<"};return strut_string(std::string(reinterpret_cast<const char*>(d),sizeof(d)));}()";return o.str();}
-std::string compile_embed_file(const std::string& quoted){auto path=std::filesystem::path(literal_value(quoted));std::ifstream f(path,std::ios::binary);if(!f)return "strut_embed_file("+std::string("strut_string(")+quoted+")";std::ostringstream b;b<<f.rdbuf();return embedded_string_cpp(b.str());}
+std::string compile_embed_file(const std::string& quoted){auto path=std::filesystem::path(literal_value(quoted));std::ifstream f(path,std::ios::binary);if(!f)return "strut_embed_file("+std::string("strut_string(")+cpp_string_literal(quoted)+"))";std::ostringstream b;b<<f.rdbuf();return embedded_string_cpp(b.str());}
 std::string compile_embed_dir(const std::string& quoted){
     auto root=std::filesystem::path(literal_value(quoted));
-    if(!std::filesystem::exists(root)) return "strut_embed_dir(strut_string("+quoted+"))";
+    if(!std::filesystem::exists(root)) return "strut_embed_dir(strut_string("+cpp_string_literal(quoted)+"))";
     std::vector<std::filesystem::path> files;
     for(auto& e:std::filesystem::recursive_directory_iterator(root)) if(e.is_regular_file()) files.push_back(e.path());
     std::sort(files.begin(),files.end());
@@ -157,7 +158,7 @@ std::string compile_embed_dir(const std::string& quoted){
         auto rel=std::filesystem::relative(path,root).generic_string();
         std::string esc;
         for(char c:rel){ if(c=='\\' || c=='"') esc.push_back('\\'); esc.push_back(c); }
-        o<<"m[strut_string(\""<<esc<<"\")]="<<embedded_string_cpp(b.str())<<";";
+        o<<"m[strut_string("<<cpp_string_literal("\""+esc+"\"")<<")]="<<embedded_string_cpp(b.str())<<";";
     }
     o<<"return m;}()";
     return o.str();
@@ -194,9 +195,9 @@ std::string function_param_cpp(const IRStmt& fn,const Parameter& p){
 }
 std::string json_expr(const IRExpr& e){
     switch(e.kind){
-        case IRExpr::Kind::json_object:{std::string out="[&](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+e.arguments[i]->text+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
+        case IRExpr::Kind::json_object:{std::string out="[&](){json::Document d=json::Document::make_object();";for(std::size_t i=0;i+1<e.arguments.size();i+=2){out+="d["+cpp_string_literal(e.arguments[i]->text)+"]="+json_expr(*e.arguments[i+1])+";";}return out+="return d;}()";}
         case IRExpr::Kind::array_literal:{std::string out="[&](){json::Document d=json::Document::make_array();";for(const auto& a:e.arguments)out+="d.push_back("+json_expr(*a)+");";return out+="return d;}()";}
-        case IRExpr::Kind::string_literal:return "json::Document(std::string("+e.text+"))";
+        case IRExpr::Kind::string_literal:return "json::Document(std::string("+cpp_string_literal(e.text)+"))";
         case IRExpr::Kind::integer_literal:return "json::Document(static_cast<int>("+e.text+"))";
         case IRExpr::Kind::floating_literal:return "json::Document(static_cast<double>("+e.text+"))";
         case IRExpr::Kind::boolean_literal:return "json::Document("+e.text+")";
@@ -209,7 +210,7 @@ std::string expr(const IRExpr& e){
     switch(e.kind){
         case IRExpr::Kind::identifier: if(e.text=="this") return "(*this)"; return e.text;
         case IRExpr::Kind::integer_literal: case IRExpr::Kind::floating_literal: case IRExpr::Kind::boolean_literal: return e.text;
-        case IRExpr::Kind::string_literal: return "strut_string("+e.text+")";
+        case IRExpr::Kind::string_literal: return "strut_string("+cpp_string_literal(e.text)+")";
         case IRExpr::Kind::null_literal:return "strut_null";
         case IRExpr::Kind::array_literal:{std::string out="{";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+"}";}
         case IRExpr::Kind::map_literal:{std::string out="{";for(size_t i=0;i+1<e.arguments.size();i+=2){if(i)out+=",";out+="{"+expr(*e.arguments[i])+","+expr(*e.arguments[i+1])+"}";}return out+"}";}
@@ -222,7 +223,7 @@ std::string expr(const IRExpr& e){
         case IRExpr::Kind::binary:if(e.text=="??")return "strut_coalesce("+expr(*e.left)+","+expr(*e.right)+")";return "("+expr(*e.left)+" "+e.text+" "+expr(*e.right)+")";
         case IRExpr::Kind::safe_member:return "strut_safe_member("+expr(*e.left)+",[](const auto& value){return value."+e.text+";})";
         case IRExpr::Kind::member:{if(e.text.rfind("::",0)==0)return expr(*e.left)+e.text; if(e.text.rfind("->",0)==0)return expr(*e.left)+e.text; if(e.left && !e.left->type_name.empty() && e.left->type_name.back()=='?') return "(*"+expr(*e.left)+")."+e.text; if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="json"){if(e.text=="parse")return "strut_json_parse";if(e.text=="stringify")return "strut_json_stringify";if(e.text=="pretty")return "strut_json_pretty";if(e.text=="encode")return "strut_json_value";}std::string m=e.text;const std::string bt=e.left?e.left->type_name:std::string();if(e.left&&bt=="http_server"&&m=="static")m="serve_static";const bool seq=(bt.find("[]")!=std::string::npos||bt.rfind("vector<",0)==0||bt.rfind("deque<",0)==0||bt.rfind("list<",0)==0);const bool set_like=(bt.rfind("set<",0)==0||bt.rfind("ordered_set<",0)==0);if(m=="push"&&seq)m="push_back";else if(m=="pop"&&seq)m="pop_back";else if(m=="add"&&set_like)m="insert";else if(m=="remove")m="erase";if(m=="length"){if(e.left&&bt.rfind("ref<",0)==0)return "(*"+expr(*e.left)+").size()";if(e.left&&bt.rfind("ptr<",0)==0)return expr(*e.left)+"->size()";return expr(*e.left)+".size()";}if(e.left&&bt.rfind("ref<",0)==0)return "(*"+expr(*e.left)+")."+m;if(e.left&&bt.rfind("ptr<",0)==0)return expr(*e.left)+"->"+m;return expr(*e.left)+"."+m;}
-        case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?e.right->text:expr(*e.right);return expr(*e.left)+"["+k+"]";}if(e.left->type_name.rfind("tuple<",0)==0)return "std::get<"+e.right->text+">("+expr(*e.left)+")";return expr(*e.left)+".at("+expr(*e.right)+")";}
+        case IRExpr::Kind::index:{if(e.left->type_name=="json"){std::string k=(e.right->kind==IRExpr::Kind::string_literal)?cpp_string_literal(e.right->text):expr(*e.right);return expr(*e.left)+"["+k+"]";}if(e.left->type_name.rfind("tuple<",0)==0)return "std::get<"+e.right->text+">("+expr(*e.left)+")";return expr(*e.left)+".at("+expr(*e.right)+")";}
         case IRExpr::Kind::call:{
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="length" && e.arguments.empty()) return expr(*e.left);
             if(e.left && e.left->kind==IRExpr::Kind::member && e.left->text=="insert" && e.left->left && e.arguments.size()==2){return "strut_map_insert("+expr(*e.left->left)+","+expr(*e.arguments[0])+","+expr(*e.arguments[1])+")";}
@@ -272,7 +273,7 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
         }
         case IRStmt::Kind::expression:o<<pad<<expr(*s.value)<<";\n";break;
         case IRStmt::Kind::return_stmt:o<<pad<<"return"<<(s.value?" "+expr(*s.value):"")<<";\n";break;
-        case IRStmt::Kind::throw_stmt:{std::string en="Error";std::string msg="\"checked error\"",code="0";if(s.value&&s.value->kind==IRExpr::Kind::call&&s.value->left&&s.value->left->kind==IRExpr::Kind::identifier){en=s.value->left->text;if(!s.value->arguments.empty())msg=(s.value->arguments[0]->kind==IRExpr::Kind::string_literal?s.value->arguments[0]->text:expr(*s.value->arguments[0])+".v");if(s.value->arguments.size()>1)code=expr(*s.value->arguments[1]);}else if(s.value&&s.value->kind==IRExpr::Kind::struct_literal){en=s.value->text;for(std::size_t i=0;i<s.value->names.size();++i){if(s.value->names[i]=="message")msg=s.value->arguments[i]->kind==IRExpr::Kind::string_literal?s.value->arguments[i]->text:expr(*s.value->arguments[i])+".v";else if(s.value->names[i]=="code")code=expr(*s.value->arguments[i]);}}o<<pad<<"throw strut_checked_error(\""<<en<<"\","<<msg<<","<<code<<");\n";break;}
+        case IRStmt::Kind::throw_stmt:{std::string en="Error";std::string msg="\"checked error\"",code="0";if(s.value&&s.value->kind==IRExpr::Kind::call&&s.value->left&&s.value->left->kind==IRExpr::Kind::identifier){en=s.value->left->text;if(!s.value->arguments.empty())msg=(s.value->arguments[0]->kind==IRExpr::Kind::string_literal?cpp_string_literal(s.value->arguments[0]->text):expr(*s.value->arguments[0])+".v");if(s.value->arguments.size()>1)code=expr(*s.value->arguments[1]);}else if(s.value&&s.value->kind==IRExpr::Kind::struct_literal){en=s.value->text;for(std::size_t i=0;i<s.value->names.size();++i){if(s.value->names[i]=="message")msg=s.value->arguments[i]->kind==IRExpr::Kind::string_literal?cpp_string_literal(s.value->arguments[i]->text):expr(*s.value->arguments[i])+".v";else if(s.value->names[i]=="code")code=expr(*s.value->arguments[i]);}}o<<pad<<"throw strut_checked_error(\""<<en<<"\","<<msg<<","<<code<<");\n";break;}
         case IRStmt::Kind::try_stmt:{
             o<<pad<<"try {\n";for(const auto& c:s.body)stmt(o,*c,n+4);o<<pad<<"} catch (const strut_checked_error& __strut_error) {\n";
             bool first=true;bool catch_all=false;
