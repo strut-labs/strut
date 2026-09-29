@@ -9,6 +9,9 @@
 - Buffered outbound HTTP now has strict metadata and option validation,
   bounded request/response memory, HTTP(S)-only redirect policy, normalized
   errors, and shared synchronous/asynchronous libcurl ownership.
+- Outbound HTTP adds binary callback streaming, known or unknown-length uploads,
+  final-only downloads, cancellation, conservative redirect replay, bounded
+  executor admission, and 64 MiB constant-memory resource certification.
 
 # Strut 0.0.3
 

@@ -131,6 +131,7 @@ cancellation contracts must not prevent a future event-driven backend.
 
 - P1: crypto and encoding primitives complete.
 - P2: buffered outbound HTTP hardening complete.
+- P3: outbound HTTP streaming and cancellation complete.
 
 P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time comparison, and strict RFC 4648 Base64/Base64url. Encoding is dependency-free; crypto is implemented by OpenSSL `libcrypto` and does not pull in `libssl`. SHA-1 remains internal-only future WebSocket work.
 
@@ -150,6 +151,15 @@ P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time c
 - The process-lifetime libcurl initializer avoids cleanup racing asynchronous executor drain. Easy handles and request header lists use RAII, all native option/status results are checked, and allocation failures cannot unwind through libcurl callbacks.
 - Validation: warning-clean GCC and Clang builds passed CTest 16/16; GCC ASan/UBSan passed CTest 16/16 and the generated client certification; the deterministic peer suite covered binary bodies, strict metadata/options, limits, redirect state/method policy, timeout and async/shutdown behavior; TLS lifecycle covered rejection and an explicit CA path containing spaces; and the pinned independent suite passed 173/173.
 - Final independent architecture/API, protocol-security, generated-runtime/resource and test/portability reviews found no remaining actionable defect. Hosted CI remains the execution gate for Linux ARM64, macOS ARM64, Windows x64, alternate supported libcurl versions and real proxy/TLS combinations.
+
+## P3 outbound HTTP streaming result
+
+- `http_request_stream` and `http_request_stream_async` exchange bounded owned `bytes` chunks through nullable upload/download callbacks, return final `http_response_head` metadata, and optionally bind the existing `cancellation_token`. No transfer handle or new reader/writer family escapes the call.
+- Buffered and streaming calls use one libcurl request core, response-head parser, URL/header/options policy, TLS/proxy/protocol configuration, redirect rules, RAII and error mapping. The streaming runtime component composes the accepted P2 client with bytes and cancellation rather than introducing another engine.
+- Uploads support deliberate known or unknown length without whole-body materialization. Producers are one-shot: 301/302/303 POST conversion is allowed, while 307/308 and other rewind requests fail deterministically. Downloads deliver only final-response binary chunks with synchronous callback backpressure; consumer early-stop is successful prefix consumption.
+- Cancellation is cooperative through libcurl progress callbacks and reports `HttpError` code `-103`; callback failure uses `-104`, and replay refusal uses `-105`. No C++ exception crosses a libcurl callback. Async requests retain blocking easy handles on the shared executor, whose queue is now bounded with caller-runs saturation; a libcurl-multi reactor remains deferred.
+- Deterministic certification covers 64 MiB upload/download transfers with unchanged RSS between 8 MiB and 56 MiB checkpoints, binary chunks, backpressure, limits, redirects, same/cross-origin credentials, callback failures, 20 cancellation-churn cycles, async behavior, proxy isolation, repeated completion, stable descriptors and TLS with an explicit CA. Unix-socket HTTP, client certificates and explicit proxy configuration remain unsupported rather than gaining streaming-only semantics.
+- Validation: warning-clean GCC and Clang builds passed CTest 16/16; GCC ASan/UBSan passed CTest 16/16; generated P1, P2 and P3 programs passed ASan/UBSan; P3 and HTTP worker concurrency passed TSan; the complete accepted HTTP/server, bytes, streams, cancellation, process, package and native-FFI chain passed; and the pinned independent suite passed 176/176. Final protocol/security, architecture/API and resource/portability reviews found no actionable Gate A defect. Hosted Linux ARM64, macOS ARM64 and Windows x64 remain required CI evidence.
 
 ## CP1 validation result
 

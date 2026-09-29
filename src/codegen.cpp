@@ -113,6 +113,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="tcp_listener") return "strut_tcp_listener";
     if(t=="tls_stream") return "strut_tls_stream";
     if(t=="http_response") return "strut_http_response";
+    if(t=="http_response_head") return "strut_http_response_head";
     if(t=="http_request") return "strut_server_request";
     if(t=="http_request_body") return "strut_http_request_body";
     if(t=="http_values") return "strut_http_values";
@@ -809,7 +810,7 @@ void emit_light_async_runtime(std::ostringstream& o,const MinimalRuntimeFeatures
 
 bool expr_uses_async_http_client(const IRExpr* e){
     if(!e)return false;
-    if(e->kind==IRExpr::Kind::identifier&&(e->text=="http_get_async"||e->text=="http_request_async"||e->text.rfind("tls_",0)==0))return true;
+    if(e->kind==IRExpr::Kind::identifier&&(e->text=="http_get_async"||e->text=="http_request_async"||e->text=="http_request_stream_async"||e->text.rfind("tls_",0)==0))return true;
     if(expr_uses_async_http_client(e->left.get())||expr_uses_async_http_client(e->right.get())||expr_uses_async_http_client(e->lambda_expression.get()))return true;
     for(const auto& a:e->arguments)if(expr_uses_async_http_client(a.get()))return true;
     for(const auto& st:e->lambda_body){if(st->is_async||expr_uses_async_http_client(st->value.get())||expr_uses_async_http_client(st->condition.get()))return true;}
@@ -1541,7 +1542,7 @@ inline strut_exec_result strut_pipe_exec(const strut_string& first,const std::ve
 
 )CPP";if(has(RuntimeComponentId::networking))generated_runtime::emit_tcp(o,true,true);o<<R"CPP(
 #ifdef STRUT_USE_CURL
-inline void strut_curl_init(const char* error_type="TlsError"){static const CURLcode initialized=curl_global_init(CURL_GLOBAL_DEFAULT);if(initialized!=CURLE_OK)throw strut_checked_error(error_type,"libcurl global initialization failed",static_cast<std::int32_t>(initialized));}
+inline void strut_curl_init(const char* error_type="TlsError"){static const CURLcode initialized=curl_global_init(CURL_GLOBAL_DEFAULT);if(initialized!=CURLE_OK)throw strut_checked_error(error_type,"libcurl global initialization failed",static_cast<std::int32_t>(initialized));static const bool supported=[](){const auto* info=curl_version_info(CURLVERSION_NOW);return info&&info->version_num>=0x074000;}();if(!supported)throw strut_checked_error(error_type,"libcurl 7.64.0 or newer is required",-101);}
 class strut_tls_stream {
 public:
     strut_tls_stream()=default;
@@ -1556,7 +1557,7 @@ private:CURL* curl_=nullptr;
 };
 )CPP" << R"CPP(inline strut_tls_stream tls_connect(const strut_string& host,std::int32_t port){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("TlsError","curl_easy_init failed");const std::string url="https://"+host.v+":"+std::to_string(port)+"/";curl_easy_setopt(c,CURLOPT_URL,url.c_str());curl_easy_setopt(c,CURLOPT_CONNECT_ONLY,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_CONNECTTIMEOUT_MS,30000L);auto rc=curl_easy_perform(c);if(rc!=CURLE_OK){curl_easy_cleanup(c);throw strut_checked_error("TlsError",curl_easy_strerror(rc));}return strut_tls_stream(c);}
 #endif
-)CPP";if(use_curl)generated_runtime::emit_http_client(o,true,false);if(has(RuntimeComponentId::http_server))generated_runtime::emit_http_server_types(o,true,has(RuntimeComponentId::http_file_response),has(RuntimeComponentId::http_ndjson));o<<R"CPP(
+)CPP";if(use_curl)generated_runtime::emit_http_client(o,true,has(RuntimeComponentId::http_client_streaming),false);if(has(RuntimeComponentId::http_server))generated_runtime::emit_http_server_types(o,true,has(RuntimeComponentId::http_file_response),has(RuntimeComponentId::http_ndjson));o<<R"CPP(
 #ifdef STRUT_USE_SQLITE
 inline void strut_sqlite_bind(sqlite3_stmt* st,const json::Document& params){if(params.type!=json::Type::Array)return;for(std::size_t i=0;i<params.array.size();++i){const auto& v=params.array[i];int n=static_cast<int>(i+1);switch(v.type){case json::Type::Null:sqlite3_bind_null(st,n);break;case json::Type::Boolean:sqlite3_bind_int(st,n,v.boolean?1:0);break;case json::Type::Number:case json::Type::StrNumber:sqlite3_bind_double(st,n,v.is_number()?std::strtod(v.type==json::Type::StrNumber?v.string.c_str():v.dump().c_str(),nullptr):0.0);break;case json::Type::String:sqlite3_bind_text(st,n,v.string.c_str(),-1,SQLITE_TRANSIENT);break;default:{auto text=v.dump();sqlite3_bind_text(st,n,text.c_str(),-1,SQLITE_TRANSIENT);break;}}}}
 struct strut_sqlite_state{sqlite3* db=nullptr;~strut_sqlite_state(){if(db)sqlite3_close(db);}};

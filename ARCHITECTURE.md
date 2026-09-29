@@ -95,6 +95,13 @@ compatibility body. Shared component emitters in `generated_runtime.cpp` provide
 the owned bytes value, generic streams, cancellation, executor, TCP, HTTP client, HTTP
 request/response helpers and active HTTP server to both paths, so those
 facilities have one maintained implementation.
+Outbound HTTP uses one emitted libcurl easy-handle core. Buffered bodies are adapters
+that append to or read from owned memory; P3 streaming substitutes bounded `bytes`
+producer/consumer callbacks and an optional existing cancellation token without
+duplicating URL/header validation, response-head parsing, TLS/proxy/protocol setup,
+redirect policy, RAII or error normalization. The streaming component depends on
+the buffered client, bytes and cancellation components, while buffered-only programs
+do not select those additional public facilities.
 Component requirements choose among the bodies; remaining slice eligibility
 predicates are safety assertions while core, JSON, SQLite, filesystem and thread
 helpers are separated further. Mixed component sets conservatively use the full
@@ -105,6 +112,13 @@ The process component depends on cancellation because each process pipe owns a
 copied token context. That ownership is explicit at process construction; pipe
 read/write signatures remain transport-neutral. Native wake objects and handle
 lifetime synchronization stay inside the generated process implementation.
+
+The shared async executor has two to 32 native workers and a queue capped at eight
+jobs per worker. Submission at capacity runs on the submitting thread, while nested
+worker submission always runs inline, bounding queue memory and avoiding self-starvation
+without a second HTTP executor. Outbound
+async HTTP remains blocking `curl_easy_perform` work on this executor; libcurl-multi
+or event-loop-scale client concurrency remains deliberately deferred.
 
 HTTP request intake separates transport acquisition from a pure validated
 request-head/framing result and one socket-backed body reader. Fixed-length and

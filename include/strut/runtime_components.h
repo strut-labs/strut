@@ -33,6 +33,7 @@ enum class RuntimeComponentId {
     async,
     networking,
     http_client,
+    http_client_streaming,
     http_server,
     http_file_response,
     http_ndjson,

@@ -1,6 +1,6 @@
 # Official HTTP client
 
-The HTTP client is backed only by libcurl and keeps certificate and hostname verification enabled. Responses remain buffered, but body and header memory is bounded. Streaming and transfer cancellation are separate APIs rather than hidden behavior in the buffered client.
+The HTTP client is backed only by libcurl and keeps certificate and hostname verification enabled. Buffered and streaming calls share one request-policy, metadata-parser, redirect, TLS and error path.
 
 ```strut
 function main() -> void : HttpError {
@@ -11,15 +11,37 @@ function main() -> void : HttpError {
 }
 ```
 
-Custom requests use a strict JSON options object. Supported keys are `headers`, `body`, `timeout_ms`, `follow_redirects`, `max_redirects`, `max_request_body_bytes`, `max_response_body_bytes`, `max_response_header_bytes` and `max_response_header_count`; unknown keys and invalid types or ranges raise `HttpError`. Defaults are a 30-second total deadline, 10 redirects, 16 MiB request and response bodies, 64 KiB cumulative request and response headers, and 100 request or response fields. The timeout covers resolution, connection, TLS, redirects and response receipt as one operation. `http_get_json(url)` and `response.json()` parse through core JSON/JSONIC support. `http_get_async` and `http_request_async` run the same bounded implementation on Strut's shared executor.
+Custom requests use a strict JSON options object. Supported keys are `headers`, `body`, `timeout_ms`, `follow_redirects`, `max_redirects`, `max_request_body_bytes`, `max_response_body_bytes`, `max_response_header_bytes`, `max_response_header_count`, and `ca_file`; streaming upload additionally accepts `request_body_length`. Unknown keys and invalid types or ranges raise `HttpError`. Defaults are a 30-second total deadline, 10 redirects, 16 MiB request and response bodies, 64 KiB cumulative request and response headers, and 100 request or response fields. The timeout covers resolution, connection, TLS, redirects and response receipt as one operation. `ca_file` requires HTTPS. `http_get_json(url)` and `response.json()` parse through core JSON/JSONIC support. `http_get_async` and `http_request_async` run the same bounded implementation on Strut's shared executor.
 
 Methods and request header metadata are validated before libcurl use. Content-Length, Transfer-Encoding, Connection and Host remain transport-owned. Bodies preserve embedded NUL bytes and an explicit empty body remains distinct from no body. Response header names are lowercase, only the final redirect response is exposed, and case-insensitive duplicate final fields or trailers are rejected because `http_response.headers` is single-valued.
 
-Only absolute HTTP and HTTPS URLs are accepted. HTTPS redirects cannot downgrade to HTTP, and explicit-CA requests require HTTPS. Redirects are followed by default: POST changes to GET under libcurl's standard 301/302/303 handling, while 307/308 preserve method and body. Custom destination-bound headers should be used with redirects disabled unless replay to redirect targets is intended.
+Only absolute HTTP and HTTPS URLs are accepted. A request initially using HTTPS cannot redirect to HTTP, and explicit-CA requests require HTTPS. Redirects are followed by default: POST changes to GET under 301/302/303 handling, while 307/308 preserve method and body. Automatic 301/302/303 redirects for custom methods such as PUT, PATCH, or DELETE fail with `HttpError` code `-105` rather than risking a method override on older libcurl. Custom destination-bound headers should be used with redirects disabled unless replay to redirect targets is intended.
 
-Protocol restriction is not destination authorization. Loopback, private, link-local, proxy-routed and DNS-rebound destinations are not blocked; applications accepting untrusted URLs must enforce their own destination policy. HTTP 4xx/5xx statuses remain ordinary `http_response` values. Configuration, policy, limit and transport failures raise `HttpError`; native libcurl failures retain their numeric `CURLcode`.
+Protocol restriction is not destination authorization. Loopback, private, link-local, proxy-routed and DNS-rebound destinations are not blocked; applications accepting untrusted URLs must enforce their own destination policy. For untrusted URLs, disable automatic redirects and validate each returned Location before issuing the next request. HTTP 4xx/5xx statuses remain ordinary `http_response` values. Configuration, policy, limit and transport failures raise `HttpError`; native libcurl failures retain their numeric `CURLcode`.
 
-Fully static final linking with libcurl is rejected with an actionable compiler error because libcurl's transitive static dependency set is platform-specific. Use the default dynamic link mode for HTTP clients.
+libcurl 7.64.0 or newer is required so cross-origin sensitive-header and proxy-header separation guarantees are consistent. Fully static final linking with libcurl is rejected with an actionable compiler error because libcurl's transitive static dependency set is platform-specific. Use the default dynamic link mode for HTTP clients.
+
+## Outbound streaming
+
+```text
+http_request_stream(string method, string url, json options,
+    function<(int_64)->bytes>? upload,
+    function<(bytes)->bool>? download) -> http_response_head : HttpError
+http_request_stream(..., cancellation_token cancellation) -> http_response_head : HttpError
+http_request_stream_async(...) -> future<http_response_head> : HttpError
+```
+
+`http_response_head` contains the final `status` and lowercase `headers`. Metadata becomes available when the call or future completes; no transfer handle escapes the call. A null upload means no streamed body, and a null download discards body bytes. Upload and download callbacks run serially on the calling thread, or on one shared-executor worker for the async form. They are never invoked concurrently. This synchronous callback boundary supplies backpressure without a body-sized queue. Download chunks are owned, binary-safe `bytes` values bounded by libcurl's callback size. Returning false stops after the delivered prefix and returns the final head successfully. Callback exceptions abort and become `HttpError` code `-104`.
+
+The upload callback receives a positive maximum and must return no more than that many bytes. Empty bytes mean EOF. `request_body_length` declares an exact known length; early EOF fails, while omission deliberately selects unknown-length framing. `max_request_body_bytes` remains cumulative and no complete request body is materialized. `body` and an upload callback are mutually exclusive. Producers are one-shot and cannot be rewound: 307/308 and any other replay request fail with code `-105`. Streamed POST follows normal 301/302/303 conversion to GET without invoking the producer again; custom-method 301/302/303 redirects also fail with `-105`.
+
+Only final-response bytes reach the download callback. Informational and followed-redirect bodies are discarded before delivery; cumulative response and header limits retain the buffered contract. Strut does not enable automatic content decoding, so `max_response_body_bytes` applies to the representation bytes delivered by libcurl. Late metadata, trailer, transport or TLS failure can occur after prefix delivery and raises `HttpError`; delivered application effects are not rolled back.
+
+A copied cancellation token is checked before network I/O and through libcurl's progress callback. Observed cancellation aborts with `HttpError("HTTP transfer cancelled", -103)`. Cancellation is cooperative during platform resolver calls and while application callbacks execute; a producer or consumer doing its own blocking work should also observe its captured token. Timeout remains libcurl code 28, and whichever terminal condition is observed first wins. Easy handles, callback state and sockets are released before the checked error leaves the call.
+
+Redirect protocol restrictions, TLS verification, `ca_file`, environment proxy/no-proxy behavior and sensitive Authorization/Cookie forwarding rules are identical for buffered and streaming calls. libcurl suppresses those sensitive headers across a changed origin; arbitrary custom headers are not destination credentials and may be replayed, so disable redirects when they are destination-bound. Client certificates, explicit proxy options and HTTP over Unix-domain sockets are not currently public client features. Streaming does not add separate semantics for them.
+
+Async streaming is the synchronous transfer submitted to the shared native executor, not a libcurl-multi reactor. The worker count is fixed at process startup between two and 32, and queued work is capped at eight jobs per worker; saturated submission executes on the submitting thread, providing bounded admission. Work submitted recursively by an executor worker also runs inline, so a callback may await nested executor work without filling a queue behind itself. This model supports moderate blocking concurrency, not event-loop-scale transfer counts.
 
 ## Server lifecycle
 

@@ -22,6 +22,10 @@ int main(){
         require(api_callable(leaf,callable.owner)==&callable,"registry lookup is stable");
     }
     require(api_callable("http_get")!=nullptr,"free function lookup");
+    require(api_callable("http_request_stream")&&api_callable("http_request_stream_async"),"outbound HTTP streaming APIs are registered");
+    require(api_callable("http_request_stream")->overloads.size()==2&&type_spelling(api_callable("http_request_stream")->overloads[0].return_type)=="http_response_head","streaming HTTP returns final metadata");
+    require(type_spelling(api_callable("http_request_stream")->overloads[0].parameters[3].type)=="function<(int_64)->bytes>?"&&type_spelling(api_callable("http_request_stream")->overloads[0].parameters[4].type)=="function<(bytes)->bool>?","streaming HTTP uses nullable bytes callbacks");
+    require(api_callable("http_request_stream")->runtime_components==std::vector<RuntimeComponentId>{RuntimeComponentId::http_client_streaming},"streaming HTTP owns its sliced runtime component");
     require(api_callable("query","sqlite_db")!=nullptr,"method lookup");
     require(api_callable("stop","http_server")!=nullptr,"HTTP stop method lookup");
     require(api_callable("running","http_server")!=nullptr,"HTTP running method lookup");
@@ -54,6 +58,7 @@ int main(){
     require(api_callable("listen","http_server")->overloads[0].parameters.back().optional,"HTTP max_requests is optional");
     require(api_callable("listen_tls","http_server")->overloads[0].parameters.back().optional,"HTTPS max_requests is optional");
     require(api_field("status","http_response")&&type_spelling(api_field("status","http_response")->type)=="int_32","HTTP fields are registered");
+    require(api_field("status","http_response_head")&&api_field("headers","http_response_head"),"streaming HTTP response metadata is registered");
     require(api_field("out","process")&&type_spelling(api_field("out","process")->type)=="process_out","process fields are registered");
     require(api_callable("limits","http_server")->checked_errors==std::vector<std::string>{"NetworkError"},"HTTP limits checked error metadata");
     require(api_callable("slice","bytes")&&type_spelling(api_callable("slice","bytes")->overloads[0].return_type)=="bytes","bytes slice is registered");

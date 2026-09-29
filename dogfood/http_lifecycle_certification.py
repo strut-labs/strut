@@ -125,9 +125,16 @@ def main():
         client_executable = root / ("tls-client.exe" if sys.platform == "win32" else "tls-client")
         client_program.write_text(f"""function main(string command, string[] args) -> int : HttpError {{
     if (args.length == 0) {{
-        http_get("https://localhost:{tls_port}/secure");
+        http_request_stream("GET", "https://localhost:{tls_port}/secure", {{}}, null, null);
         return 1;
     }}
+    int_64 initial := 0;
+    streamed_bytes := new(initial);
+    streamed := http_request_stream("GET", "https://localhost:{tls_port}/secure", {{"ca_file": args[0]}}, null, (bytes chunk) => {{
+        *streamed_bytes = *streamed_bytes + chunk.length();
+        return true;
+    }});
+    if (streamed.status != 200 || *streamed_bytes == 0) {{ return 2; }}
     response := http_get_ca("https://localhost:{tls_port}/secure", args[0]);
     println(response.body);
     return 0;

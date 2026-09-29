@@ -7,6 +7,7 @@ These programs exercise Strut as an application language rather than isolated sy
 - `json/transform.p` — JSON parsing, omission, deep merge and serialization.
 - `http/endpoint_check.p` — configurable HTTP client status/body check.
 - `http_client_certification.py` — bounded buffered libcurl behavior against a deterministic local peer.
+- `http_client_streaming_certification.py` — bounded upload/download callbacks, cancellation, redirects, async behavior and resource stability.
 - `service/concurrent_service.p` — native threads, mutexes, typed channels and async futures.
 - `web/app.p` — SQLite, async HTTP routing and compile-time embedded static assets in one executable.
 - `package-app` — a manifest-backed multi-file project with SQLite and process execution.
