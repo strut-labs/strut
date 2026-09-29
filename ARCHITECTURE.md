@@ -140,6 +140,14 @@ the execution context used to identify handler-initiated stop, preventing joined
 child work from waiting on its own request. Peer-disconnect observation remains
 transport-driven rather than a background monitor for CPU-only handlers.
 
+Application helpers remain metadata and producer adapters over this core. Query
+and Cookie decoding populate one small repeated-value type during the accepted
+head parse. Buffered text, JSON and form helpers inspect only the body produced by
+the CP11 adapter and are unavailable to request-stream handlers. Structured
+response cookies enter an ordered side channel on the CP10 writer and are
+validated by the same response-head serializer; generic response headers retain
+case-insensitive duplicate rejection and cannot emit Set-Cookie.
+
 Buffered, static, error and streaming handler output passes through one validated
 response-head serializer and one uncommitted/committed/finished state machine.
 The transport exclusively owns Content-Type, Content-Length, Transfer-Encoding

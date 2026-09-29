@@ -77,6 +77,7 @@ jobs:
           python3 dogfood/http_response_certification.py build/strut
           python3 dogfood/http_response_stream_certification.py build/strut
           python3 dogfood/http_request_stream_certification.py build/strut
+          python3 dogfood/http_application_helpers_certification.py build/strut
           python3 dogfood/http_persistence_certification.py build/strut
           python3 dogfood/http_request_cancellation_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
@@ -99,6 +100,7 @@ jobs:
           python dogfood/http_response_certification.py build/Release/strut.exe
           python dogfood/http_response_stream_certification.py build/Release/strut.exe
           python dogfood/http_request_stream_certification.py build/Release/strut.exe
+          python dogfood/http_application_helpers_certification.py build/Release/strut.exe
           python dogfood/http_persistence_certification.py build/Release/strut.exe
           python dogfood/http_request_cancellation_certification.py build/Release/strut.exe
           python dogfood/http_worker_certification.py build/Release/strut.exe

@@ -48,6 +48,10 @@ Native completion, including EOF, wins when it is observed in the same wake cycl
 
 Each dispatched `http_request` has a read-only `cancellation_token cancellation`. It is fresh for that request, including consecutive requests on one persistent connection, and is cancelled when the request lifetime ends normally or through handler, framing, transport, response, timeout, abort or shutdown failure. Peer disconnect notification is cooperative and may be delayed for CPU-only handlers that perform no transport operation. Binding this token to `process` cancels process-pipe I/O but does not terminate the child.
 
+`http_values` is the small repeated-value representation used by decoded query parameters, request cookies and URL-encoded forms. `get(name)` returns the first value or null, `values(name)` returns every value in wire order, and `has(name)` tests presence. `request.query` remains the raw last-value map for compatibility. Buffered requests add bounded `text`, `json` and `form` helpers; forms accept at most 1024 pairs, while streaming handlers must continue through `http_request_body` and cannot create a second buffered body.
+
+`http_cookie(name, value)` creates a structured response cookie with writable `path`, `domain`, `max_age`, `expires`, `secure`, `http_only` and `same_site` attributes. Path is absolute, Domain follows DNS label syntax, Expires is IMF-fixdate, SameSite accepts Strict, Lax or None, and None requires Secure. Non-positive Max-Age requests immediate expiry. Buffered responses carry an ordered `cookies` array and streaming writers append cookies with `cookie(value)`. Generic response headers cannot emit `Set-Cookie`; this dedicated path validates and serializes each cookie as its own field.
+
 ## HTTP request body
 
 `http_request_body` is the request-scoped binary reader supplied by `http_server.get_request_stream` and `post_request_stream`. It mirrors the input-stream contract with `read_bytes(max_bytes)`, `read_all_bytes(limit?)`, `eof()` and idempotent `close()`, using `NetworkError` for malformed framing, transport failure and invalid operations.
@@ -56,7 +60,7 @@ Fixed-length reads expose exactly the declared payload. HTTP/1.1 chunked reads e
 
 ## HTTP response writer
 
-`http_response_writer` is the request-scoped binary-capable output handle used by `http_server.get_stream` and `post_stream`. It follows the stream vocabulary with `write`, `write_bytes`, `flush` and `finish`, while adding precommit `status`, `header`, `content_type` and transport-owned `content_length` configuration. Operations that can fail raise `NetworkError`.
+`http_response_writer` is the request-scoped binary-capable output handle used by `http_server.get_stream` and `post_stream`. It follows the stream vocabulary with `write`, `write_bytes`, `flush` and `finish`, while adding precommit `status`, `header`, `cookie`, `content_type` and transport-owned `content_length` configuration. Operations that can fail raise `NetworkError`.
 
 The first write or flush commits metadata. Metadata cannot change afterward, writes after finish fail, and finish is idempotent. Known-length writes must exactly match the declaration. Unknown-length HTTP/1.1 output is chunked internally; HTTP/1.0 output is close-delimited. The handle becomes inactive when its handler returns and never exposes raw HTTP chunk framing. A persistent connection is reusable only after the request body reaches validated EOF and the writer finishes a self-delimited response.
 

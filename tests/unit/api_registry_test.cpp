@@ -37,6 +37,11 @@ int main(){
     require(api_callable("read_all_bytes","http_request_body")->overloads[0].parameters[0].optional,"request body read-all limit is optional");
     require(api_field("cancellation","http_request")&&api_field("cancellation","http_request")->type==intern_type("cancellation_token"),"HTTP request cancellation token is registered");
     require(!api_field("cancellation","http_request")->writable,"HTTP request cancellation token is read-only");
+    require(api_field("query_values","http_request")&&api_field("query_values","http_request")->type==intern_type("http_values")&&!api_field("query_values","http_request")->writable,"lossless HTTP query values are registered read-only");
+    require(api_field("cookies","http_request")&&api_field("cookies","http_server_response"),"request and response cookie surfaces are registered");
+    require(api_callable("values","http_values")&&api_callable("form","http_request")&&api_callable("cookie","http_response_writer"),"HTTP application helper methods are registered");
+    require(api_callable("form","http_request")->overloads[0].parameters[0].optional&&api_callable("json","http_request")->overloads[0].parameters[0].optional,"buffered HTTP helper limits are optional");
+    require(api_callable("http_redirect")&&api_callable("http_redirect")->overloads[0].parameters.back().optional,"redirect status is optional");
     require(api_callable("static","http_server")!=nullptr,"source-level HTTP static method is registered");
     require(api_callable("receive","channel<int>")!=nullptr&&type_spelling(api_callable("receive","channel<int>")->overloads[0].return_type)=="T?","generic method lookup");
     require(api_callable("accept_async","tcp_listener")!=nullptr&&api_callable("transaction","sqlite_db")!=nullptr,"backend methods are registered");
