@@ -125,6 +125,7 @@ cancellation contracts must not prevent a future event-driven backend.
 - CP13: HTTP application request and response helpers complete.
 - CP14: static file and single-range responses complete.
 - CP15: cancellation-aware NDJSON streaming complete.
+- Review Gate 5 approved.
 
 ## CP1 validation result
 
@@ -272,3 +273,10 @@ cancellation contracts must not prevent a future event-driven backend.
 - The dedicated `http_ndjson` runtime capability composes JSON and the HTTP server only when referenced. Existing response writers and JSON output remain source compatible; applications migrate streaming JSON loops by replacing manual `dump + newline + write + flush` code with the helper, while empty streams set the NDJSON content type explicitly.
 - NDJSON certification covers compact parseable records, escaped embedded newlines, invalid UTF-8 and non-finite rejection, exact LF framing, content type, prompt first-record delivery, HTTP/1.0 and HTTP/1.1 framing, persistent reuse, explicit shutdown cancellation, disconnect recovery and plaintext/TLS parity. Cross-platform and release workflows execute it, with generated ASan/UBSan execution on Linux GCC.
 - Validation: warning-clean GCC and Clang builds passed CTest 16/16, the GCC ASan/UBSan build passed CTest 16/16 and pointer/thread stress, generated NDJSON plaintext/TLS execution passed ASan/UBSan, all serial HTTP certifications through backend baseline passed, and the independent regression suite passed 167/167. Final protocol/security, architecture/API/compiler, and resource/test/portability reviews found no remaining actionable CP15 defects. Hosted CI remains the execution gate for Windows, macOS, and ARM64 paths.
+
+## Review Gate 5 result
+
+- The integrated CP8-CP15 review found and closed request-target, parser-error, semantic-validation, cancellation, timeout, sanitizer and platform-fixture gaps without introducing a second HTTP pipeline. Percent-encoded controls now fail before dispatch, and recognized HEAD/HTTP versions survive parser and pre-parser failures, including oversized request lines.
+- Canonical registry signatures now validate free HTTP helper arity and argument types. File responses check cancellation before setup as well as during bounded reads, and socket timeout installation fails closed.
+- Windows certification uses native `SO_LINGER` layout and portable generated paths; macOS ARM64 jobs assert their runner architecture. TLS workers release OpenSSL thread-local state, and self-stopping certification handlers use explicit non-owning server references rather than shared-ownership cycles.
+- Final validation passed warning-clean GCC and Clang CTest 16/16, GCC ASan/UBSan CTest 16/16 and pointer/thread stress, 167/167 independent regressions, the complete serial release-runtime/HTTP/FFI chain, generated HTTP ASan/UBSan coverage across framing, request/response streaming, files, NDJSON, persistence, cancellation and workers, and the generated worker suite under GCC ThreadSanitizer. Independent protocol/security, architecture/API/compiler, and resource/test/portability reviews reported no remaining actionable Gate 5 defects. Hosted CI remains the execution gate for Windows x64, macOS ARM64, and Linux ARM64.

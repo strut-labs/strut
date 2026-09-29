@@ -348,8 +348,9 @@ def main():
             compiler,
             root,
             "blocked-stream-server",
-            f'''function main() -> void : NetworkError {{
+    f'''function main() -> void : NetworkError {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(5000, 5000, 5000, 300);
     app.limits(1024, 4096, 16, 2);
     app.get_stream("/blocked", (http_request request, http_response_writer writer) => {{
@@ -357,7 +358,7 @@ def main():
         int index := 0;
         while (index < 10000) {{ writer.write_bytes(block); index++; }}
     }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {blocked_port});
 }}
 ''',
@@ -378,7 +379,10 @@ def main():
                 raise RuntimeError("handler stop response was lost during blocked stream shutdown")
             stdout, stderr = blocked_server.communicate(timeout=5)
             if blocked_server.returncode != 0 or stdout or stderr:
-                raise RuntimeError("blocked streaming shutdown did not exit cleanly")
+                raise RuntimeError(
+                    f"blocked streaming shutdown failed: exit={blocked_server.returncode} "
+                    f"stdout={stdout!r} stderr={stderr!r}"
+                )
         finally:
             if blocked_client is not None:
                 blocked_client.close()

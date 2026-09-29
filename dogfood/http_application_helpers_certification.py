@@ -33,6 +33,7 @@ def source(port, tls=False):
     return f'''{signature} {{
     {prefix}
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(1000, 1000, 1000, 500);
     app.limits(4096, 8192, 64, 8);
     app.get_stream("/inspect", (http_request request, http_response_writer writer) => {{
@@ -146,7 +147,7 @@ def source(port, tls=False):
     }});
     app.get("/health", (http_request request) => {{ return http_text("ok"); }});
     app.get("/cookie-count", (http_request request) => {{ return http_text("ok"); }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     {listen}
     {suffix}
 }}

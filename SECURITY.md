@@ -40,7 +40,7 @@ NDJSON records use JSONIC's canonical validator to reject non-finite numbers, no
 
 ## Concurrency
 
-Native threads, mutexes, channels and the async executor have stress fixtures. `T*` protects object lifetime, not arbitrary mutation. Non-owning `T&` is rejected at direct thread boundaries where lifetime cannot be established safely. ThreadSanitizer should be part of CI where the runner/toolchain supports a working runtime; the current local Swift-Clang TSAN runtime is not usable because of its libdispatch linkage issue.
+Native threads, mutexes, channels and the async executor have stress fixtures. `T*` protects object lifetime, not arbitrary mutation. Non-owning `T&` is rejected at direct thread boundaries where lifetime cannot be established safely. Linux GCC CI runs the generated HTTP worker/shutdown suite under ThreadSanitizer; the local Swift-Clang TSAN runtime remains unusable because of its libdispatch linkage issue.
 
 ## Native linking and processes
 
@@ -60,7 +60,7 @@ Release-candidate certification should include, at minimum:
 - clean documentation build;
 - benchmark/regression checks for material performance-sensitive changes.
 
-The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. It also runs bytes, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
+The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. Cross-platform CI additionally runs the high-risk generated HTTP suites under GCC ASan/UBSan and the worker/shutdown suite under GCC ThreadSanitizer. Release certification also runs bytes, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
 
 ## Current limitations
 

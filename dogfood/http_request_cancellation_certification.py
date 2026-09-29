@@ -13,6 +13,14 @@ from http_persistence_certification import HttpConnection, check_response, reque
 from http_response_stream_certification import available_port, compile_program, wait_until_listening
 
 
+def abortive_linger():
+    return struct.pack("HH" if sys.platform == "win32" else "ii", 1, 0)
+
+
+def strut_path(path):
+    return path.as_posix().replace('"', '\\"')
+
+
 def get(port, path):
     with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
         connection = HttpConnection(raw)
@@ -43,6 +51,7 @@ def main():
         sleeper.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         source = f'''function main() -> void : (NetworkError, ExecError) {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(300, 300, 1000, 1000);
     app.limits(1048576, 8192, 32, 8);
     cancellation_token saved_value;
@@ -82,7 +91,7 @@ def main():
         return http_text("waiting");
     }});
     app.get("/process", (http_request request) => {{
-        child := new(process("{python}", ["{sleeper}"], request.cancellation));
+        child := new(process("{strut_path(python)}", ["{strut_path(sleeper)}"], request.cancellation));
         string result := "not-cancelled";
         try {{ child->out.read_bytes(1); }} catch (ExecError caught) {{
             if (caught.code == 125 && request.cancellation.cancelled()) {{ result = "cancelled"; }}
@@ -90,7 +99,7 @@ def main():
         child->terminate(); child->wait();
         return http_text(result);
     }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {port});
 }}
 '''
@@ -114,7 +123,7 @@ def main():
 
             write_client = socket.create_connection(("127.0.0.1", port), timeout=5)
             write_client.sendall(request("/write"))
-            write_client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+            write_client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, abortive_linger())
             write_client.close()
             wait_for(port, "/write-state", b"cancelled")
 
@@ -139,10 +148,11 @@ def main():
         stop_port = available_port()
         stop_source = f'''function main() -> void : (NetworkError, ThreadError) {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(1000, 1000, 5000, 2000);
     app.get("/one", (http_request request) => {{ return http_text("one"); }});
     app.get("/stop", (http_request request) => {{
-        stopper := thread(() => {{ app.stop(); }});
+        stopper := thread(() => {{ app_ref->stop(); }});
         stopper.join();
         return http_text("stopped");
     }});

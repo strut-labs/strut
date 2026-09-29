@@ -138,10 +138,17 @@ def main():
         ("trailing-request", b"GET /get HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\nGET /get HTTP/1.1\r\nHost: localhost\r\n\r\n", 200, b"get"),
         ("fragment-target", b"GET /get#fragment HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
         ("bad-percent-target", b"GET /bad%2 HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
+        ("encoded-control-target", b"GET /bad%00path HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
+        ("http10-invalid-target", b"GET /bad%00path HTTP/1.0\r\n\r\n", 400, None),
+        ("head-malformed-header", b"HEAD /get HTTP/1.1\r\nHost: localhost\r\nBroken\r\n\r\n", 400, None),
+        ("head-oversized-header", b"HEAD /get HTTP/1.1\r\nHost: localhost\r\nX-Large: " + b"x" * 17000 + b"\r\n\r\n", 431, None),
+        ("http10-premature-head", b"GET /get HTTP/1.0\r\nX-Test: incomplete", 400, None),
         ("backslash-target", b"GET /bad\\path HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
         ("brace-target", b"GET /bad{{path}} HTTP/1.1\r\nHost: localhost\r\n\r\n", 400, None),
         ("control-header", b"GET /get HTTP/1.1\r\nHost: localhost\r\nX-Test: a\x01b\r\n\r\n", 400, None),
         ("long-request-line", b"GET /" + b"x" * 8200 + b" HTTP/1.1\r\nHost: localhost\r\n\r\n", 414, None),
+        ("head-long-request-line", b"HEAD /" + b"x" * 8200 + b" HTTP/1.1\r\nHost: localhost\r\n\r\n", 414, None),
+        ("http10-long-request-line", b"GET /" + b"x" * 8200 + b" HTTP/1.0\r\n\r\n", 414, None),
         ("body-not-header-bytes", b"POST /post HTTP/1.1\r\nHost: localhost\r\nX-A: " + b"x" * 8100 + b"\r\nX-B: " + b"x" * 8100 + b"\r\nContent-Length: 16\r\n\r\n0123456789abcdef", 200, b"0123456789abcdef"),
     ]
     port = available_port()
@@ -174,6 +181,12 @@ def main():
                         raise RuntimeError(f"{name}: body {body!r}, expected {expected_body!r}")
                 if name == "trailing-request" and response.count(b"HTTP/1.1 ") != 1:
                     raise RuntimeError("trailing request was interpreted as a second message")
+                if name in ("http10-invalid-target", "http10-premature-head") and not response.startswith(b"HTTP/1.0 400 "):
+                    raise RuntimeError(f"HTTP/1.0 parser error used the wrong version: {response!r}")
+                if name == "http10-long-request-line" and not response.startswith(b"HTTP/1.0 414 "):
+                    raise RuntimeError(f"HTTP/1.0 long-target error used the wrong version: {response!r}")
+                if name in ("head-malformed-header", "head-oversized-header", "head-long-request-line") and response.split(b"\r\n\r\n", 1)[1]:
+                    raise RuntimeError(f"malformed HEAD response included a body: {response!r}")
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or stdout or stderr:
                 raise RuntimeError(f"server failed: exit={server.returncode} stdout={stdout!r} stderr={stderr!r}")

@@ -45,6 +45,7 @@ jobs:
       - name: Install current LLVM toolchain (macOS)
         if: runner.os == 'macOS'
         run: |
+          test "$(uname -m)" = arm64
           brew install llvm openssl@3
           echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"

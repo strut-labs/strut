@@ -15,6 +15,10 @@ from http_persistence_certification import HttpConnection
 from http_response_stream_certification import available_port, compile_program, split_response, wait_until_listening
 
 
+def abortive_linger():
+    return struct.pack("HH" if sys.platform == "win32" else "ii", 1, 0)
+
+
 def source(port, tls=False):
     signature = (
         "function main(string command, string[] args) -> int : (HttpError, NetworkError, TlsError, TimeError)"
@@ -33,6 +37,7 @@ def source(port, tls=False):
     return f'''{signature} {{
     {prefix}
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(1000, 1000, 1000, 500);
     app.get_stream("/records", (http_request request, http_response_writer writer) => {{
         http_write_ndjson(request, writer, {{"index": 1, "text": "line\\none"}});
@@ -59,12 +64,12 @@ def source(port, tls=False):
         catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
     }});
     app.get_stream("/cancel", (http_request request, http_response_writer writer) => {{
-        app.stop();
+        app_ref->stop();
         try {{ http_write_ndjson(request, writer, {{"unexpected": true}}); }}
         catch (NetworkError err) {{ return; }}
     }});
     app.get("/health", (http_request request) => {{ return http_text("ok"); }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     {listen}
     {suffix}
 }}
@@ -148,7 +153,7 @@ def exercise(opener):
 
     prompt_and_disconnect(opener)
     dropped = opener()
-    dropped.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+    dropped.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, abortive_linger())
     dropped.sendall(request("/many"))
     dropped.recv(512)
     dropped.close()

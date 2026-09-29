@@ -93,7 +93,7 @@ def main():
             compiler,
             root,
             "admission",
-            f'''function main() -> void : NetworkError {{
+             f'''function main() -> void : NetworkError {{
     app := http_server();
     app.timeouts(2000, 2000, 2000, 3000);
     app.limits(1024, 4096, 16, 2);
@@ -146,9 +146,10 @@ def main():
             "handler-stop",
             f'''function main() -> void : NetworkError {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(2000, 2000, 2000, 3000);
     app.get("/stop", (http_request request) => {{
-        app.stop();
+        app_ref->stop();
         return http_text("stopped");
     }});
     app.listen("127.0.0.1", {handler_stop_port});
@@ -176,11 +177,12 @@ def main():
             compiler,
             root,
             "async-handler-stop",
-            f'''function main() -> void : NetworkError {{
+             f'''function main() -> void : NetworkError {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(2000, 2000, 2000, 3000);
     app.get_async("/stop", async (http_request request) => {{
-        app.stop();
+        app_ref->stop();
         return http_text("async-stopped");
     }});
     app.listen("127.0.0.1", {async_stop_port});
@@ -338,13 +340,14 @@ def main():
             compiler,
             root,
             "sustained-workers",
-            f'''function main() -> void : (NetworkError, TimeError) {{
+             f'''function main() -> void : (NetworkError, TimeError) {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(5000, 5000, 5000, 2000);
     app.limits(1024, 4096, 16, 4);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
     app.get("/batch", (http_request request) => {{ sleep_ms(20); return http_text("batch"); }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {sustained_port});
 }}
 ''',

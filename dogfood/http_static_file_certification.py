@@ -28,6 +28,7 @@ def source(port, asset, empty, large, unicode_asset, directory, tls=False):
     return f'''{signature} {{
     {prefix}
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(1000, 1000, 1000, 500);
     app.get_stream("/file", (http_request request, http_response_writer writer) => {{
         http_serve_file(request, writer, "{asset}");
@@ -65,7 +66,9 @@ def source(port, asset, empty, large, unicode_asset, directory, tls=False):
         try {{ http_serve_file(request, writer, "{asset}.missing"); }}
         catch (FilesystemError err) {{ writer.content_length(7); writer.write("missing"); }}
     }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get_stream("/cancel", (http_request request, http_response_writer writer) => {{
+        app_ref->stop(); http_serve_file(request, writer, "{large}");
+    }});
     {listen}
     {suffix}
 }}
@@ -171,6 +174,11 @@ def exercise(opener, data, large_data):
         healthy.send(request("/custom"))
         require(healthy.response(), 200, data, len(data))
 
+    with opener() as raw:
+        cancelled = HttpConnection(raw)
+        cancelled.send(request("/cancel", extra="Connection: close\r\n"))
+        require(cancelled.response(), 500, b"Internal Server Error", 21)
+
 
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
@@ -195,10 +203,6 @@ def main():
         try:
             wait_until_listening(port, process)
             exercise(lambda: socket.create_connection(("127.0.0.1", port), timeout=5), data, large_data)
-            with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
-                connection = HttpConnection(raw)
-                connection.send(request("/stop", extra="Connection: close\r\n"))
-                connection.response()
             process.wait(timeout=10)
         finally:
             if process.poll() is None:
@@ -212,10 +216,6 @@ def main():
         try:
             wait_until_listening(tls_port, tls_process)
             exercise(lambda: context.wrap_socket(socket.create_connection(("127.0.0.1", tls_port), timeout=5), server_hostname="localhost"), data, large_data)
-            with context.wrap_socket(socket.create_connection(("127.0.0.1", tls_port), timeout=5), server_hostname="localhost") as raw:
-                connection = HttpConnection(raw)
-                connection.send(request("/stop", extra="Connection: close\r\n"))
-                connection.response()
             tls_process.wait(timeout=10)
         finally:
             if tls_process.poll() is None:

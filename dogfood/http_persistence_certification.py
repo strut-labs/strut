@@ -101,6 +101,7 @@ def source(port, tls=False):
     return f'''{signature} {{
     {prefix}
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(1000, 1000, 200, 500);
     app.limits(4096, 8192, 32, 8);
     app.get("/one", (http_request request) => {{ return http_text("one"); }});
@@ -115,7 +116,7 @@ def source(port, tls=False):
     app.post_request_stream("/partial", (http_request request, http_request_body body, http_response_writer response) => {{
         response.write_bytes(body.read_bytes(1));
     }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     {listen}
     {suffix}
 }}

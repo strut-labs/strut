@@ -66,6 +66,7 @@ def main():
 
 function main() -> void : (NetworkError, TimeError) {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(2000, 2000, 2000, 500);
     app.limits(32, 4096, 32, 4);
     app.post_request_stream("/echo", (http_request request, http_request_body body, http_response_writer response) => {{
@@ -110,7 +111,7 @@ function main() -> void : (NetworkError, TimeError) {{
     }});
     app.post("/buffered", (http_request request) => {{ return http_text(request.body); }});
     app.get("/health", (http_request request) => {{ return http_text("healthy"); }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {port});
 }}
 ''',
@@ -409,12 +410,13 @@ function main(string command, string[] args) -> int : (NetworkError, TlsError, T
             "request-stream-shutdown-server",
             f'''function main() -> void : NetworkError {{
     app := http_server();
+    app_ref := ref(app);
     app.timeouts(5000, 5000, 5000, 300);
     app.limits(32, 4096, 16, 3);
     app.post_request_stream("/blocked", (http_request request, http_request_body body, http_response_writer response) => {{
         response.write_bytes(body.read_bytes(1));
     }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {shutdown_port});
 }}
 ''',

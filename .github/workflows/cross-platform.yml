@@ -70,6 +70,7 @@ jobs:
       - name: Install current LLVM toolchain (macOS)
         if: runner.os == 'macOS'
         run: |
+          test "$(uname -m)" = arm64
           brew install llvm openssl@3
           echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
@@ -134,13 +135,27 @@ jobs:
           python3 dogfood/http_worker_certification.py build/strut
           python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
-      - name: Certify sanitized generated NDJSON runtime
+      - name: Certify sanitized generated HTTP runtime
         if: matrix.name == 'linux-x64-gcc'
         env:
           STRUT_CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: python3 dogfood/http_ndjson_certification.py build/strut
+        run: |
+          python3 dogfood/http_framing_certification.py build/strut
+          python3 dogfood/http_response_stream_certification.py build/strut
+          python3 dogfood/http_request_stream_certification.py build/strut
+          python3 dogfood/http_static_file_certification.py build/strut
+          python3 dogfood/http_ndjson_certification.py build/strut
+          python3 dogfood/http_persistence_certification.py build/strut
+          python3 dogfood/http_request_cancellation_certification.py build/strut
+          python3 dogfood/http_worker_certification.py build/strut
+      - name: Certify generated HTTP worker concurrency
+        if: matrix.name == 'linux-x64-gcc'
+        env:
+          STRUT_CXXFLAGS: -fsanitize=thread -fno-omit-frame-pointer
+          TSAN_OPTIONS: halt_on_error=1
+        run: python3 dogfood/http_worker_certification.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh

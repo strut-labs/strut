@@ -131,7 +131,8 @@ shutdown are linearized under the generation lock and share one monotonic
 deadline. Native socket operations pin handle ownership; shutdown wakes blocked
 operations before final close so a descriptor cannot be reused underneath them.
 TLS handshakes use nonblocking OpenSSL progress with platform polling against an
-absolute deadline before entering the shared HTTP parser.
+absolute deadline before entering the shared HTTP parser. TLS connection workers
+release OpenSSL thread-local state when their connection task ends.
 
 Each admitted HTTP connection runs one sequential request loop. The body reader
 returns only validated post-body carry bytes, which become the next head parser's
@@ -157,6 +158,8 @@ the CP11 adapter and are unavailable to request-stream handlers. Structured
 response cookies enter an ordered side channel on the CP10 writer and are
 validated by the same response-head serializer; generic response headers retain
 case-insensitive duplicate rejection and cannot emit Set-Cookie.
+Free HTTP helper calls use those canonical registry signatures for arity,
+argument-type and checked-error validation before native lowering.
 
 Buffered, static, error and streaming handler output passes through one validated
 response-head serializer and one uncommitted/committed/finished state machine.
