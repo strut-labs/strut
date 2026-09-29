@@ -10,6 +10,7 @@ struct RegistryApiTests{RegistryApiTests(){
     req(!sema("function main() -> void : NetworkError { app := http_server(); app.listen(\"127.0.0.1\"); }").ok(),"registry method arity checked");
     req(!sema("function main() -> void : NetworkError { app := http_server(); app.listen(\"127.0.0.1\", \"bad\"); }").ok(),"registry method argument type checked");
     req(!sema("function main() -> void { app := http_server(); app.listen(\"127.0.0.1\", 8080); }").ok(),"registry method checked error enforced");
+    req(sema("function main() -> void : NetworkError { app := http_server(); app.websocket(\"/ws\", (http_request request, websocket socket) => { token := request.cancellation; socket.accept(); return; }); app.websocket(\"/chat\", (http_request request, websocket socket) => { socket.accept(\"chat\"); return; }); }").ok(),"WebSocket route and acceptance signatures type check");
     req(sema("function main() -> void { channel<int> jobs; int? value := jobs.receive(); bool done := jobs.closed(); }").ok(),"registry generic member return types");
     req(!sema("function main() -> void { channel<int> jobs; string? value := jobs.receive(); }").ok(),"registry generic return type checked");
     req(!sema("function main() -> void { worker := thread(() => { return; }); worker.join(); }").ok(),"thread method checked error enforced");

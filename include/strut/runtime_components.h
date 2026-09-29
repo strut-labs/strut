@@ -35,6 +35,7 @@ enum class RuntimeComponentId {
     http_client,
     http_client_streaming,
     http_server,
+    http_websocket,
     http_file_response,
     http_ndjson,
     http_server_tls,

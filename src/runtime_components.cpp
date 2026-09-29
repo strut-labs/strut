@@ -38,6 +38,7 @@ const std::vector<RuntimeComponent>& registry() {
         {Id::http_client,"http_client",{Id::networking,Id::json},{"curl/curl.h"},{"curl"}},
         {Id::http_client_streaming,"http_client_streaming",{Id::http_client,Id::bytes,Id::cancellation},{},{}},
         {Id::http_server,"http_server",{Id::networking,Id::collections,Id::io,Id::threading,Id::mutex,Id::cancellation},{},{}},
+        {Id::http_websocket,"http_websocket",{Id::http_server},{},{}},
         {Id::http_file_response,"http_file_response",{Id::http_server},{"filesystem"},{}},
         {Id::http_ndjson,"http_ndjson",{Id::http_server,Id::json},{},{}},
         {Id::http_server_tls,"http_server_tls",{Id::http_server},{"openssl/ssl.h","openssl/err.h"},{"ssl","crypto"}},
@@ -65,7 +66,7 @@ void request_type(std::vector<Id>& out,TypeId type) {
         if(node.name=="atomic")add(Id::atomics);
         if(node.name.rfind("http_",0)==0)add(Id::networking);
     }
-    if(node.kind==TypeNodeKind::named){if(node.name=="bytes")add(Id::bytes);if(node.name=="cancellation_source"||node.name=="cancellation_token")add(Id::cancellation);if(node.name=="http_request"||node.name=="http_request_body"||node.name=="http_values"||node.name=="http_cookie"||node.name=="http_server_response"||node.name=="http_response_writer"||node.name=="http_server")add(Id::http_server);if(node.name=="http_response")add(Id::http_client);if(node.name=="http_response_head")add(Id::http_client_streaming);if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
+    if(node.kind==TypeNodeKind::named){if(node.name=="bytes")add(Id::bytes);if(node.name=="cancellation_source"||node.name=="cancellation_token")add(Id::cancellation);if(node.name=="websocket")add(Id::http_websocket);if(node.name=="http_request"||node.name=="http_request_body"||node.name=="http_values"||node.name=="http_cookie"||node.name=="http_server_response"||node.name=="http_response_writer"||node.name=="http_server")add(Id::http_server);if(node.name=="http_response")add(Id::http_client);if(node.name=="http_response_head")add(Id::http_client_streaming);if(node.name=="sqlite_db")add(Id::sqlite);if(node.name=="process")add(Id::process);if(node.name=="thread")add(Id::threading);}
     for(auto child:node.children)request_type(out,child);
 }
 void request_expr(std::vector<Id>& out,const IRExpr* e);

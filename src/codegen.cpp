@@ -121,6 +121,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="http_server_response") return "strut_server_response";
     if(t=="http_response_writer") return "strut_http_response_writer";
     if(t=="http_server") return "strut_http_server";
+    if(t=="websocket") return "strut_websocket";
     if(t=="sqlite_db") return "strut_sqlite_db";
     if(t=="mutex") return "strut_mutex";
     if(t.rfind("future<",0)==0&&t.back()=='>') return "strut_future<"+cpp_type(t.substr(7,t.size()-8))+">";
@@ -391,6 +392,7 @@ bool program_uses_light_thread_runtime(const IRProgram& p){
 
 struct MinimalRuntimeFeatures {
     bool http_file=false;
+    bool http_websocket=false;
     bool strings=false;
     bool bytes=false;
     bool encoding=false;
@@ -476,7 +478,7 @@ void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
     for(const auto& c:s->else_body) collect_minimal_stmt_features(c.get(),f);
     for(const auto& c:s->switch_cases){collect_minimal_expr_features(c.value.get(),f);for(const auto& statement:c.body)collect_minimal_stmt_features(statement.get(),f);}
 }
-MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);const auto components=analyze_runtime_components(p);f.http_file=components.contains(RuntimeComponentId::http_file_response);f.encoding=components.contains(RuntimeComponentId::encoding);f.crypto=components.contains(RuntimeComponentId::crypto);return f;}
+MinimalRuntimeFeatures minimal_features(const IRProgram& p){MinimalRuntimeFeatures f;for(const auto& s:p.statements)collect_minimal_stmt_features(s.get(),f);const auto components=analyze_runtime_components(p);f.http_file=components.contains(RuntimeComponentId::http_file_response);f.http_websocket=components.contains(RuntimeComponentId::http_websocket);f.encoding=components.contains(RuntimeComponentId::encoding);f.crypto=components.contains(RuntimeComponentId::crypto);return f;}
 void emit_minimal_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){
     o << "#include <cstdint>\n#include <iostream>\n#include <string>\n";
     if(f.vector||f.map||f.filter||f.reduce||f.any||f.all||f.find||f.count||f.sort||f.priority_queue_min)o << "#include <vector>\n";
@@ -903,8 +905,9 @@ namespace std { template<> struct hash<strut_string>{size_t operator()(const str
 )STRUT_HTTP";
     generated_runtime::emit_bytes(o);
     generated_runtime::emit_tcp(o,false,false);
-    generated_runtime::emit_http_server_types(o,false,file_responses);
-    generated_runtime::emit_http_server(o,false,false);
+    const bool websocket=f.http_websocket;
+    generated_runtime::emit_http_server_types(o,false,file_responses,false,websocket);
+    generated_runtime::emit_http_server(o,false,false,websocket);
 }
 void emit_light_http_runtime(std::ostringstream& o,const MinimalRuntimeFeatures& f){emit_light_http_runtime(o,f,f.http_file);}
 
@@ -1558,7 +1561,7 @@ private:CURL* curl_=nullptr;
 };
 )CPP" << R"CPP(inline strut_tls_stream tls_connect(const strut_string& host,std::int32_t port){strut_curl_init();CURL* c=curl_easy_init();if(!c)throw strut_checked_error("TlsError","curl_easy_init failed");const std::string url="https://"+host.v+":"+std::to_string(port)+"/";curl_easy_setopt(c,CURLOPT_URL,url.c_str());curl_easy_setopt(c,CURLOPT_CONNECT_ONLY,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(c,CURLOPT_SSL_VERIFYHOST,2L);curl_easy_setopt(c,CURLOPT_CONNECTTIMEOUT_MS,30000L);auto rc=curl_easy_perform(c);if(rc!=CURLE_OK){curl_easy_cleanup(c);throw strut_checked_error("TlsError",curl_easy_strerror(rc));}return strut_tls_stream(c);}
 #endif
-)CPP";if(use_curl)generated_runtime::emit_http_client(o,true,has(RuntimeComponentId::http_client_streaming),false);if(has(RuntimeComponentId::http_server))generated_runtime::emit_http_server_types(o,true,has(RuntimeComponentId::http_file_response),has(RuntimeComponentId::http_ndjson));o<<R"CPP(
+)CPP";if(use_curl)generated_runtime::emit_http_client(o,true,has(RuntimeComponentId::http_client_streaming),false);if(has(RuntimeComponentId::http_server))generated_runtime::emit_http_server_types(o,true,has(RuntimeComponentId::http_file_response),has(RuntimeComponentId::http_ndjson),has(RuntimeComponentId::http_websocket));o<<R"CPP(
 #ifdef STRUT_USE_SQLITE
 inline void strut_sqlite_bind(sqlite3_stmt* st,const json::Document& params){if(params.type!=json::Type::Array)return;for(std::size_t i=0;i<params.array.size();++i){const auto& v=params.array[i];int n=static_cast<int>(i+1);switch(v.type){case json::Type::Null:sqlite3_bind_null(st,n);break;case json::Type::Boolean:sqlite3_bind_int(st,n,v.boolean?1:0);break;case json::Type::Number:case json::Type::StrNumber:sqlite3_bind_double(st,n,v.is_number()?std::strtod(v.type==json::Type::StrNumber?v.string.c_str():v.dump().c_str(),nullptr):0.0);break;case json::Type::String:sqlite3_bind_text(st,n,v.string.c_str(),-1,SQLITE_TRANSIENT);break;default:{auto text=v.dump();sqlite3_bind_text(st,n,text.c_str(),-1,SQLITE_TRANSIENT);break;}}}}
 struct strut_sqlite_state{sqlite3* db=nullptr;~strut_sqlite_state(){if(db)sqlite3_close(db);}};
@@ -1580,7 +1583,7 @@ inline strut_string strut_embed_file(const strut_string& path){std::ifstream f(p
 inline std::unordered_map<strut_string,strut_string> strut_embed_dir(const strut_string& root){std::unordered_map<strut_string,strut_string> out;for(auto& e:std::filesystem::recursive_directory_iterator(root.v)){if(!e.is_regular_file())continue;std::ifstream f(e.path(),std::ios::binary);std::ostringstream o;o<<f.rdbuf();out[strut_string(std::filesystem::relative(e.path(),root.v).generic_string())]=strut_string(o.str());}return out;}
 
 template<class... T> void strut_print(const T&... v){((std::cout<<v),...);std::cout<<'\n';}
-)CPP";if(has(RuntimeComponentId::http_server))generated_runtime::emit_http_server(o,true,has(RuntimeComponentId::http_server_tls));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
+)CPP";if(has(RuntimeComponentId::http_server))generated_runtime::emit_http_server(o,true,has(RuntimeComponentId::http_server_tls),has(RuntimeComponentId::http_websocket));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}
 
 namespace {
 std::string env_flags(const char* name) { const char* value=std::getenv(name); return value&&*value ? std::string(" ")+value : std::string(); }

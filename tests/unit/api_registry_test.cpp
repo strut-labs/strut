@@ -30,6 +30,11 @@ int main(){
     require(api_callable("stop","http_server")!=nullptr,"HTTP stop method lookup");
     require(api_callable("running","http_server")!=nullptr,"HTTP running method lookup");
     require(api_callable("listen_tls","http_server")!=nullptr,"HTTPS listen method lookup");
+    require(api_callable("websocket","http_server")!=nullptr,"WebSocket route lookup");
+    require(api_callable("websocket","http_server")->overloads[0].parameters[1].type==intern_type("function<(http_request,websocket)->void>"),"WebSocket handler signature");
+    require(api_callable("websocket","http_server")->runtime_components==std::vector<RuntimeComponentId>{RuntimeComponentId::http_websocket},"WebSocket route owns its sliced runtime component");
+    require(api_callable("accept","websocket")&&api_callable("accept","websocket")->overloads[0].parameters[0].optional,"WebSocket acceptance has an optional subprotocol");
+    require(api_callable("accept","websocket")->checked_errors==std::vector<std::string>{"NetworkError"},"WebSocket acceptance uses the network checked error");
     require(api_callable("get_async","http_server")!=nullptr&&api_callable("post_async","http_server")!=nullptr,"async HTTP routes are registered");
     require(type_spelling(api_callable("get_async","http_server")->overloads[0].parameters[1].type)=="function<(http_request)->future<http_server_response>>","async HTTP handler signature");
     require(api_callable("get_stream","http_server")&&api_callable("post_stream","http_server"),"streaming HTTP routes are registered");
