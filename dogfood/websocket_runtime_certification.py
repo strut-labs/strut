@@ -312,6 +312,7 @@ def require_resources_return(process, baseline, peak):
         raise RuntimeError(f"server worker/thread count did not return: {baseline[2]} -> {peak[2]} -> {after[2]}")
     if baseline[1] is not None and after[1] is not None and after[1] > baseline[1] + 16384:
         raise RuntimeError(f"server RSS failed bounded return: {baseline[1]} KiB -> {peak[1]} KiB -> {after[1]} KiB")
+    return after
 
 
 def main():
@@ -437,14 +438,15 @@ def main():
             exercise_active_return_invalidation(port)
             baseline = resource_counts(server)
             peak = baseline
-            for _ in range(100):
+            for _ in range(2000):
                 with connect(port) as connection:
                     connection.sendall(client_frame(8, struct.pack("!H", 1000)))
                     if close_code(connection) != 1000:
                         raise RuntimeError("stress close handshake failed")
                 sample = resource_counts(server)
                 peak = tuple(max(old, new) if old is not None and new is not None else old or new for old, new in zip(peak, sample))
-            require_resources_return(server, baseline, peak)
+            after = require_resources_return(server, baseline, peak)
+            print(f"WebSocket resource counts (FD/HANDLE, RSS KiB, threads): {baseline} -> {peak} -> {after}")
             for path in ("/blocked-write", "/blocked-close"):
                 started = time.monotonic()
                 with connect(port, path=path) as connection:
