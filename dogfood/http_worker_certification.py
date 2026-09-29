@@ -441,10 +441,63 @@ def main():
                 server.kill()
                 server.wait()
 
+        tls_shutdown_port = available_port()
+        tls_shutdown = compile_program(
+            compiler,
+            root,
+            "tls-shutdown",
+            f'''include <filesystem>;
+
+function main(string command, string[] args) -> int : (FilesystemError, NetworkError, TlsError, ThreadError, TimeError) {{
+    app := http_server();
+    app.timeouts(5000, 5000, 5000, 500);
+    app.limits(1024, 4096, 16, 1);
+    app.get("/", (http_request request) => {{ return http_text("secure"); }});
+    listener := thread(() => {{ app.listen_tls("127.0.0.1", {tls_shutdown_port}, args[0], args[1]); }});
+    while (!app.running()) {{ sleep_ms(1); }}
+    while (!exists(args[2])) {{ sleep_ms(1); }}
+    int_64 started := now_ms();
+    app.stop();
+    listener.join();
+    println(now_ms() - started);
+    return 0;
+}}
+''',
+        )
+        tls_shutdown_ready = root / "tls-shutdown-ready"
+        server = subprocess.Popen(
+            [
+                tls_shutdown,
+                fixture / "localhost-cert.pem",
+                fixture / "localhost-key.pem",
+                tls_shutdown_ready,
+            ],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        secure = None
+        try:
+            raw = connect_when_ready(tls_shutdown_port)
+            secure = context.wrap_socket(raw, server_hostname="localhost")
+            secure.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
+            tls_shutdown_ready.touch()
+            stdout = require_clean_exit(server)
+            elapsed_ms = int(stdout.strip())
+            if elapsed_ms > 850:
+                raise RuntimeError(f"TLS shutdown exceeded one deadline: {elapsed_ms} ms")
+        finally:
+            if secure is not None:
+                secure.close()
+            if server.poll() is None:
+                server.kill()
+                server.wait()
+
     print(
         "HTTP worker certification: bounded admission and reuse, finite accounting, "
         "single-deadline shutdown, retired handlers, startup races, 600 sustained requests, "
-        "sync/async handler stop, and TLS handshake timeout passed"
+        "sync/async handler stop, TLS handshake timeout, and TLS shutdown passed"
     )
 
 
