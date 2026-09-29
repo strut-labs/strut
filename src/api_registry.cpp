@@ -36,6 +36,7 @@ const std::vector<ApiCallable>& api_callables(){
         call("http_json_response","function","http","",overload({{"body","json"}},"http_server_response"),{},{R::http_server,R::json},"Create a JSON response."),
         call("http_cookie","function","http","",overload({{"name","string"},{"value","string"}},"http_cookie"),{},{R::http_server},"Create a structured response cookie whose attributes can be configured before emission."),
         call("http_redirect","function","http","",optional_last(overload({{"location","string"},{"status","int"}},"http_server_response")),{"HttpError"},{R::http_server},"Create an empty 301, 302, 303, 307, or 308 redirect response."),
+        call("http_serve_file","function","http","",optional_last(overload({{"request","http_request"},{"writer","http_response_writer"},{"path","string"},{"content_type","string"}},"void")),{"FilesystemError","NetworkError"},{R::http_file_response},"Stream an explicit filesystem path with single-byte-range support."),
         call("tls_connect","function","networking","",overload({{"host","string"},{"port","int"}},"tls_stream"),{"TlsError"},{R::http_client},"Open a verified client TLS stream."),
         call("tcp_connect","function","networking","",overload({{"host","string"},{"port","int"}},"tcp_socket"),{"NetworkError"},{R::networking},"Open a TCP connection."),
         call("tcp_connect_async","function","networking","",overload({{"host","string"},{"port","int"}},"future<tcp_socket>"),{"NetworkError"},{R::networking,R::async},"Open a TCP connection asynchronously."),

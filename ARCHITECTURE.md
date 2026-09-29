@@ -110,6 +110,11 @@ HTTP request intake separates transport acquisition from a pure validated
 request-head/framing result and one socket-backed body reader. Fixed-length and
 strict chunked decoding feed the same binary reader state; buffered handlers
 adapt it into `request.body`, while request-stream handlers consume it directly.
+Filesystem responses are a bounded binary-file producer above the existing
+response writer. Single-range selection changes only status, metadata, seek
+offset and exact byte count; plaintext/TLS output, HEAD suppression, framing,
+backpressure, cancellation, persistence and postcommit failure remain owned by
+the shared writer and connection lifecycle.
 Decoded bytes and framing overhead have independent bounds. Reader invalidation
 interrupts an escaped active read before transport lifetime ends. Response
 commitment excludes active and future request-body reads, so one TLS transport

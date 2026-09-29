@@ -64,6 +64,8 @@ Fixed-length reads expose exactly the declared payload. HTTP/1.1 chunked reads e
 
 The first write or flush commits metadata. Metadata cannot change afterward, writes after finish fail, and finish is idempotent. Known-length writes must exactly match the declaration. Unknown-length HTTP/1.1 output is chunked internally; HTTP/1.0 output is close-delimited. The handle becomes inactive when its handler returns and never exposes raw HTTP chunk framing. A persistent connection is reusable only after the request body reaches validated EOF and the writer finishes a self-delimited response.
 
+`http_serve_file(request, writer, path, content_type?) -> void : (FilesystemError, NetworkError)` incrementally serves one explicit binary file through the same writer. It supports full responses, HEAD metadata, and one bounded byte range with 206/416 metadata. It is not a directory mount or path-authorization API; URL-to-path policy remains application-owned.
+
 ## Filesystem
 
 Enable with `include <filesystem>;`. Functions include `exists`, `is_file`, `is_dir`, `file_size`, `modified`, `make_dir`, `remove`, `remove_all`, `copy`, `move`, `touch`, `ls`, `walk`, `cwd`, `cd`, `absolute`, `canonical`, `parent`, `filename`, `extension`, `stem`, `join_path`, `read_file`, `read_bytes`, `write_file`, and `append_file`.
