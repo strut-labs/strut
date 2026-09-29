@@ -96,33 +96,7 @@ For example, `strut install sqlite` installs the highest tagged official SQLite 
 
 `strut add <path>` adds a local package checkout to the current project's manifest, copies the immutable version into the shared cache, and rewrites the lockfile deterministically. Third-party remote dependencies remain explicit objects with a semantic `version`, Git URL, and exact hexadecimal `rev`. `strut remove <name>`, `strut list`, `strut install`, `strut update`, and `strut packages [--json]` manage and inspect the graph.
 
-`include <name>` loads the package entry declared by the exact locked and checksum-verified package. An application may include its direct manifest dependencies; a package may include its own declared dependencies. A dependency import exposes only that dependency's public surface to the importing owner and does not re-export it.
-
-## Package exports and ownership
-
-Package entries may opt into an explicit public surface with contextual top-level directives:
-
-```strut
-include "implementation.p";
-
-client := Client { endpoint: "https://example.test" };
-function request(string path) -> string { return request_impl(client, path); }
-
-export client;
-export request;
-```
-
-The first `export name;` or `export;` directive in the manifest entry selects explicit mode. `export name;` exports every function overload owned by that package under `name`, or the single owned value/type with that name. `export;` selects explicit mode without adding a name, so it can define an intentionally empty public surface. Directives are declarations of the package interface, not namespaces, and are only valid at the top level of the manifest entry.
-
-Packages with no export directives retain the legacy export-all behavior. This keeps existing packages source-compatible. Explicit packages reject external `include <name/path.p>` access; implementation files remain reachable through quoted includes from the package and retain the same package owner. Every package-owned path is checked both lexically and after canonical filesystem resolution, so quoted includes and legacy subpath includes cannot traverse or follow a symlink outside the verified package root.
-
-Every package-owned top-level value, function, and type receives a deterministic compiler identity using an injective encoding of its value/function/type namespace, source spelling, locked package name/version, and verified content checksum. A direct importer binds exported source names to those identities; private and transitive names never enter its scope. Lexical binding resolution preserves parameters, locals, lambdas, loop variables, catch bindings, fields, and generic type parameters that shadow a package top-level spelling. Semantic ownership also rejects external references to generated identities, so spelling or discovering an internal name does not grant access. Distinct package names such as `a-b` and `a_b` cannot collapse to one identity, while every edge of a diamond uses the same locked identity for its shared node.
-
-A package may export a facade value whose recursively inferred carrier type remains private. Inference follows grouping, package value forwarding, struct construction, scalar and aggregate literals, and unambiguous package function returns; an exported value whose public type cannot be determined is rejected. The carrier's fields, bases, and inline or out-of-struct method signatures are part of that facade API and may use only standard types or types exported by the same package; another private type cannot leak through a nested generic, array, pointer/reference, or nullable type. The same rule applies to exported structs and their methods. Dependency types cannot be exposed through a package signature because dependency imports are not re-exports. Missing, duplicate, ambiguous, and dependency-owned exports are compile errors; exporting a function name exports its complete overload set.
-
-Package-owned `main` is always internal and cannot be exported, including under legacy export-all behavior. Operators are package-private in S0: they may support operations implemented by that package but cannot be named by an export directive or imported as a consumer API.
-
-Standard-module includes and package imports belong to the source owner that declared them. A package's standard-module enablement does not enable that module in its consumer, and an angle-bracket dependency import does not make that dependency visible to the consumer's consumer. Package identity is the locked package name/version/content node, so a shared dependency in a diamond is loaded once. LSP package indexing walks only the manifest entry's quoted-include closure, regardless of whether those files use `.p` or `.h`, follows the same explicit surface, includes public struct and facade members, and omits unreachable, private, and transitive APIs.
+`include <name>` loads the package entry declared by the exact locked and checksum-verified package. `include <name/path.h>` loads an explicit file inside it. Includes may name direct or transitive packages present in the validated lock graph.
 
 ## Install, update, and offline behavior
 

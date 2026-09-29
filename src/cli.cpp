@@ -4,9 +4,6 @@
 #include <filesystem>
 #include <iomanip>
 #include <initializer_list>
-#include <map>
-#include <set>
-#include <unordered_map>
 #include <unordered_set>
 #include <ostream>
 #include <string>
@@ -266,384 +263,56 @@ bool is_standard_module(std::string_view name) {
     return std::find(modules.begin(),modules.end(),name)!=modules.end();
 }
 
-namespace {
-struct PrivateNames {
-    std::map<std::string,std::string> values;
-    std::map<std::string,std::string> functions;
-    std::map<std::string,std::string> types;
-};
-
-struct AmbiguousNames {
-    std::set<std::string> values;
-    std::set<std::string> functions;
-    std::set<std::string> types;
-};
-
-struct PackageUnit {
-    std::string package_name;
-    std::string owner;
-    std::string identity_key;
-    std::filesystem::path root;
-    std::filesystem::path entry;
-    std::vector<StmtPtr> statements;
-    std::vector<std::string> modules;
-    std::vector<std::pair<std::string, SourceSpan>> exports;
-    bool explicit_exports = false;
-    PrivateNames imported_names;
-    AmbiguousNames ambiguous_imports;
-};
-
-struct PackageInterface {
-    PrivateNames names;
-};
-
-struct ProgramLoadState {
-    std::filesystem::path project_root;
-    Program& combined;
-    std::unordered_set<std::string> loaded;
-    std::unordered_set<std::string> active;
-    std::ostream& err;
-    std::vector<std::filesystem::path>* dependencies;
-    std::map<std::string,PackageInterface> interfaces;
-    PrivateNames application_imports;
-    AmbiguousNames application_ambiguities;
-    std::vector<StmtPtr> application_statements;
-};
-
-bool declaration_kind(const Stmt& statement, std::string& kind) {
-    switch (statement.kind) {
-        case Stmt::Kind::declaration: kind="value"; return true;
-        case Stmt::Kind::function_decl: kind="function"; return statement.owner.empty();
-        case Stmt::Kind::type_alias: kind="type"; return true;
-        case Stmt::Kind::struct_decl: kind="type"; return true;
-        case Stmt::Kind::enum_decl: kind="type"; return true;
-        default: return false;
-    }
-}
-
-std::string identifier_hex(std::string_view value) {
-    static constexpr char digits[]="0123456789abcdef";std::string out;out.reserve(value.size()*2);
-    for(unsigned char c:value){out+=digits[c>>4];out+=digits[c&15];}return out;
-}
-
-std::string package_private_name(const PackageUnit& unit, char name_space, const std::string& name) {
-    return "__strut_pkg_"+unit.identity_key+'_'+name_space+'_'+identifier_hex(name);
-}
-
-void merge_import_names(PrivateNames& target, AmbiguousNames& ambiguous, const PrivateNames& imported) {
-    auto merge=[](auto& destination,auto& collisions,const auto& source){for(const auto& item:source){auto inserted=destination.emplace(item);if(!inserted.second&&inserted.first->second!=item.second){collisions.insert(item.first);destination.erase(inserted.first);}}};
-    merge(target.values,ambiguous.values,imported.values);merge(target.functions,ambiguous.functions,imported.functions);merge(target.types,ambiguous.types,imported.types);
-}
-
-struct RewriteContext {
-    const PrivateNames& names;
-    const std::map<std::string,std::set<std::string>>& struct_fields;
-    std::vector<std::set<std::string>> value_scopes;
-    std::vector<std::set<std::string>> type_scopes;
-    bool rename_top_level = true;
-
-    bool local_value(std::string_view name) const {for(auto i=value_scopes.rbegin();i!=value_scopes.rend();++i)if(i->count(std::string(name)))return true;return false;}
-    bool local_type(std::string_view name) const {for(auto i=type_scopes.rbegin();i!=type_scopes.rend();++i)if(i->count(std::string(name)))return true;return false;}
-};
-
-std::string rewrite_type_name(const std::string& value, const RewriteContext& context) {
-    std::string out;
-    for (std::size_t i=0;i<value.size();) {
-        if (std::isalpha(static_cast<unsigned char>(value[i])) || value[i]=='_') {
-            std::size_t end=i+1; while(end<value.size()&&(std::isalnum(static_cast<unsigned char>(value[end]))||value[end]=='_'))++end;
-            const auto word=value.substr(i,end-i);auto found=context.names.types.find(word);out+=found==context.names.types.end()||context.local_type(word)?word:found->second;i=end;
-        } else out+=value[i++];
-    }
-    return out;
-}
-
-void rewrite_type(TypeSyntax& type, const RewriteContext& context) {type.name=rewrite_type_name(type.name,context);type.type_id=intern_type(type.name);}
-
-void rewrite_statement(Stmt&, RewriteContext&, bool);
-
-void rewrite_expression(Expr* expression, RewriteContext& context, bool callable = false) {
-    if(!expression)return;
-    if(expression->kind==Expr::Kind::identifier&&!context.local_value(expression->text)){
-        auto function=context.names.functions.find(expression->text);auto value=context.names.values.find(expression->text);auto type=context.names.types.find(expression->text);
-        if(callable&&function!=context.names.functions.end())expression->text=function->second;
-        else if(value!=context.names.values.end())expression->text=value->second;
-        else if(function!=context.names.functions.end())expression->text=function->second;
-        else if(callable&&type!=context.names.types.end()&&!context.local_type(type->first))expression->text=type->second;
-    }else if(expression->kind==Expr::Kind::struct_literal){auto found=context.names.types.find(expression->text);if(found!=context.names.types.end()&&!context.local_type(expression->text))expression->text=found->second;}
-    if(expression->kind==Expr::Kind::member&&expression->text.rfind("::",0)==0&&expression->left&&expression->left->kind==Expr::Kind::identifier){auto found=context.names.types.find(expression->left->text);if(found!=context.names.types.end()&&!context.local_type(expression->left->text))expression->left->text=found->second;}
-    else rewrite_expression(expression->left.get(),context,expression->kind==Expr::Kind::call);
-    rewrite_expression(expression->right.get(),context);
-    for(auto& argument:expression->arguments)rewrite_expression(argument.get(),context);
-    if(expression->lambda){
-        context.type_scopes.emplace_back(expression->lambda->generic_parameters.begin(),expression->lambda->generic_parameters.end());
-        for(auto& parameter:expression->lambda->parameters)rewrite_type(parameter.type,context);
-        for(auto& field:expression->lambda->fields)rewrite_type(field.type,context);
-        for(auto& base:expression->lambda->bases)base=rewrite_type_name(base,context);
-        context.value_scopes.emplace_back();for(const auto& parameter:expression->lambda->parameters)context.value_scopes.back().insert(parameter.name);
-        rewrite_expression(expression->lambda->expression_body.get(),context);
-        for(auto& statement:expression->lambda->body)rewrite_statement(*statement,context,false);
-        context.value_scopes.pop_back();context.type_scopes.pop_back();
-    }
-}
-
-void rewrite_block(std::vector<StmtPtr>& statements, RewriteContext& context, const std::set<std::string>& initial = {}) {
-    context.value_scopes.push_back(initial);for(auto& statement:statements)rewrite_statement(*statement,context,false);context.value_scopes.pop_back();
-}
-
-void rewrite_statement(Stmt& statement, RewriteContext& context, bool top_level) {
-    const std::string source_name=statement.name;const std::string source_owner=statement.owner;
-    context.type_scopes.emplace_back(statement.generic_parameters.begin(),statement.generic_parameters.end());
-    if(statement.declared_type)rewrite_type(*statement.declared_type,context);
-    if(statement.return_type)rewrite_type(*statement.return_type,context);
-    if(statement.alias_target)rewrite_type(*statement.alias_target,context);
-    for(auto& parameter:statement.parameters)rewrite_type(parameter.type,context);
-    for(auto& field:statement.fields)rewrite_type(field.type,context);
-    for(auto& error:statement.error_types)rewrite_type(error,context);
-    for(auto& base:statement.bases)base=rewrite_type_name(base,context);
-    if(!statement.owner.empty())statement.owner=rewrite_type_name(statement.owner,context);
-    if(top_level&&context.rename_top_level){
-        if(statement.kind==Stmt::Kind::declaration){auto found=context.names.values.find(source_name);if(found!=context.names.values.end())statement.name=found->second;}
-        else if(statement.kind==Stmt::Kind::function_decl&&source_owner.empty()){auto found=context.names.functions.find(source_name);if(found!=context.names.functions.end())statement.name=found->second;}
-        else if(statement.kind==Stmt::Kind::type_alias||statement.kind==Stmt::Kind::struct_decl||statement.kind==Stmt::Kind::enum_decl){auto found=context.names.types.find(source_name);if(found!=context.names.types.end())statement.name=found->second;}
-    }
-    if(statement.kind==Stmt::Kind::for_stmt){context.value_scopes.emplace_back();if(statement.initializer)rewrite_statement(*statement.initializer,context,false);rewrite_expression(statement.condition.get(),context);rewrite_expression(statement.increment.get(),context);for(auto& child:statement.body)rewrite_statement(*child,context,false);context.value_scopes.pop_back();}
-    else if(statement.kind==Stmt::Kind::range_for){rewrite_expression(statement.value.get(),context);rewrite_block(statement.body,context,{statement.name});}
-    else if(statement.kind==Stmt::Kind::function_decl||statement.kind==Stmt::Kind::operator_decl){rewrite_expression(statement.value.get(),context);std::set<std::string> bindings;for(const auto& parameter:statement.parameters)bindings.insert(parameter.name);if(!source_owner.empty()){auto fields=context.struct_fields.find(source_owner);if(fields!=context.struct_fields.end())bindings.insert(fields->second.begin(),fields->second.end());}rewrite_block(statement.body,context,bindings);}
-    else if(statement.kind==Stmt::Kind::struct_decl){for(auto& method:statement.body)rewrite_statement(*method,context,false);}
-    else if(statement.kind==Stmt::Kind::try_stmt){rewrite_block(statement.body,context);for(auto& clause:statement.catches){if(clause.type)rewrite_type(*clause.type,context);rewrite_block(clause.body,context,clause.name.empty()?std::set<std::string>{}:std::set<std::string>{clause.name});}}
-    else {rewrite_expression(statement.value.get(),context);rewrite_expression(statement.target.get(),context);rewrite_expression(statement.condition.get(),context);rewrite_expression(statement.increment.get(),context);if(statement.kind==Stmt::Kind::assignment&&!statement.name.empty()&&!context.local_value(statement.name)){auto found=context.names.values.find(statement.name);if(found!=context.names.values.end())statement.name=found->second;}rewrite_block(statement.body,context);rewrite_block(statement.else_body,context);for(auto& arm:statement.switch_cases){rewrite_expression(arm.value.get(),context);rewrite_block(arm.body,context);}}
-    if(!top_level&&statement.kind==Stmt::Kind::declaration&&!context.value_scopes.empty())context.value_scopes.back().insert(source_name);
-    context.type_scopes.pop_back();
-}
-
-bool mentions_private_type(const std::string& type, const std::set<std::string>& private_types, std::string& found) {
-    for(std::size_t i=0;i<type.size();){if(std::isalpha(static_cast<unsigned char>(type[i]))||type[i]=='_'){std::size_t end=i+1;while(end<type.size()&&(std::isalnum(static_cast<unsigned char>(type[end]))||type[end]=='_'))++end;auto word=type.substr(i,end-i);if(private_types.count(word)){found=word;return true;}i=end;}else ++i;}return false;
-}
-
-void append_function_signature_types(const Stmt& statement, std::vector<std::string>& types) {
-    for(const auto& parameter:statement.parameters)types.push_back(parameter.type.name);
-    if(statement.return_type)types.push_back(statement.return_type->name);
-    for(const auto& error:statement.error_types)types.push_back(error.name);
-}
-
-bool validate_public_types(const PackageUnit& unit, const std::string& surface, const std::vector<std::string>& types,
-                           const std::set<std::string>& private_types, ProgramLoadState& state) {
-    for(const auto& type:types){std::string hidden;if(mentions_private_type(type,private_types,hidden)){state.err<<unit.entry.string()<<": error: "<<surface<<" exposes private type '"<<hidden<<"' in its public signature\n";return false;}}
-    return true;
-}
-
-bool validate_dependency_types(const PackageUnit& unit, const std::string& surface, const std::vector<std::string>& types,
-                               const std::set<std::string>& dependency_types, ProgramLoadState& state) {
-    for(const auto& type:types){std::string dependency;if(mentions_private_type(type,dependency_types,dependency)){state.err<<unit.entry.string()<<": error: "<<surface<<" exposes dependency type '"<<dependency<<"'; dependency symbols are not re-exported\n";return false;}}
-    return true;
-}
-
-bool validate_facade_carrier(const PackageUnit& unit, const std::string& facade, const std::string& carrier,
-                             const std::map<std::string,std::vector<Stmt*>>& declarations,
-                             const std::map<std::string,std::vector<Stmt*>>& methods,
-                             const std::set<std::string>& private_types, const std::set<std::string>& dependency_types,
-                             std::set<std::string>& visiting, ProgramLoadState& state) {
-    const auto generic=carrier.find('<');const auto carrier_head=generic==std::string::npos?carrier:carrier.substr(0,generic);
-    if(generic!=std::string::npos){const auto arguments=carrier.substr(generic+1);if(!validate_public_types(unit,"exported facade '"+facade+"'",{arguments},private_types,state)||!validate_dependency_types(unit,"exported facade '"+facade+"'",{arguments},dependency_types,state))return false;}
-    if(!private_types.count(carrier_head))return validate_public_types(unit,"exported value '"+facade+"'",{carrier},private_types,state)&&validate_dependency_types(unit,"exported value '"+facade+"'",{carrier},dependency_types,state);
-    if(!visiting.insert(carrier_head).second){state.err<<unit.entry.string()<<": error: unable to determine public type of exported value '"<<facade<<"'\n";return false;}
-    auto found=declarations.find(carrier_head);if(found==declarations.end()||found->second.size()!=1){visiting.erase(carrier_head);return true;}
-    const auto* statement=found->second.front();
-    if(statement->kind==Stmt::Kind::type_alias&&statement->alias_target){const auto target=statement->alias_target->name;if(!validate_dependency_types(unit,"exported facade '"+facade+"'",{target},dependency_types,state)){visiting.erase(carrier_head);return false;}const bool ok=validate_facade_carrier(unit,facade,target,declarations,methods,private_types,dependency_types,visiting,state);visiting.erase(carrier_head);return ok;}
-    if(statement->kind==Stmt::Kind::struct_decl){
-        auto private_names=private_types;auto dependency_names=dependency_types;for(const auto& generic:statement->generic_parameters){private_names.erase(generic);dependency_names.erase(generic);}
-        std::vector<std::string> types;for(const auto& field:statement->fields)types.push_back(field.type.name);types.insert(types.end(),statement->bases.begin(),statement->bases.end());
-        if(!validate_public_types(unit,"exported facade '"+facade+"'",types,private_names,state)||!validate_dependency_types(unit,"exported facade '"+facade+"'",types,dependency_names,state)){visiting.erase(carrier_head);return false;}
-        auto method_set=methods.find(carrier_head);if(method_set!=methods.end())for(const auto* method:method_set->second){auto method_private=private_names;auto method_dependencies=dependency_names;for(const auto& generic:method->generic_parameters){method_private.erase(generic);method_dependencies.erase(generic);}types.clear();append_function_signature_types(*method,types);if(!validate_public_types(unit,"exported facade '"+facade+"'",types,method_private,state)||!validate_dependency_types(unit,"exported facade '"+facade+"'",types,method_dependencies,state)){visiting.erase(carrier_head);return false;}}
-    }
-    visiting.erase(carrier_head);return true;
-}
-
-std::string inferred_value_type(const Expr& expression, const std::map<std::string,std::vector<Stmt*>>& declarations, std::set<std::string>& visiting);
-
-std::string facade_carrier(const Stmt& declaration, const std::map<std::string,std::vector<Stmt*>>& declarations, std::set<std::string>& visiting) {
-    if(declaration.declared_type)return declaration.declared_type->name;
-    if(!declaration.value)return {};
-    return inferred_value_type(*declaration.value,declarations,visiting);
-}
-
-std::string inferred_value_type(const Expr& expression, const std::map<std::string,std::vector<Stmt*>>& declarations, std::set<std::string>& visiting) {
-    switch(expression.kind){
-        case Expr::Kind::integer_literal:return infer_integer_literal(expression.text).name;
-        case Expr::Kind::floating_literal:return infer_floating_literal(expression.text).name;
-        case Expr::Kind::string_literal:return "string";
-        case Expr::Kind::boolean_literal:return "bool";
-        case Expr::Kind::json_object:case Expr::Kind::map_literal:return "json";
-        case Expr::Kind::struct_literal:return expression.text;
-        case Expr::Kind::grouping:return expression.left?inferred_value_type(*expression.left,declarations,visiting):std::string{};
-        case Expr::Kind::unary:return expression.text=="!"?"bool":expression.right?inferred_value_type(*expression.right,declarations,visiting):std::string{};
-        case Expr::Kind::binary:{if(expression.text=="=="||expression.text=="!="||expression.text=="<"||expression.text=="<="||expression.text==">"||expression.text==">="||expression.text=="&&"||expression.text=="||")return "bool";if(!expression.left||!expression.right)return {};auto left=inferred_value_type(*expression.left,declarations,visiting),right=inferred_value_type(*expression.right,declarations,visiting);return left==right?left:std::string{};}
-        case Expr::Kind::array_literal:{if(expression.arguments.empty())return {};auto element=inferred_value_type(*expression.arguments.front(),declarations,visiting);return element.empty()?std::string{}:element+"[]";}
-        case Expr::Kind::identifier:{if(!visiting.insert(expression.text).second)return {};auto found=declarations.find(expression.text);std::string result;if(found!=declarations.end()&&found->second.size()==1&&found->second.front()->kind==Stmt::Kind::declaration)result=facade_carrier(*found->second.front(),declarations,visiting);visiting.erase(expression.text);return result;}
-        case Expr::Kind::call:{if(!expression.left||expression.left->kind!=Expr::Kind::identifier)return {};auto found=declarations.find(expression.left->text);if(found==declarations.end())return {};std::string result;for(const auto* candidate:found->second)if(candidate->kind==Stmt::Kind::function_decl&&candidate->return_type){if(result.empty())result=candidate->return_type->name;else if(result!=candidate->return_type->name)return {};}return result;}
-        default:return {};
-    }
-}
-
-bool path_within_package(const std::filesystem::path& root, const std::filesystem::path& candidate, std::filesystem::path& resolved, std::string& error) {
-    std::error_code ec;const auto canonical_root=std::filesystem::weakly_canonical(root,ec);if(ec){error="unable to resolve package root: "+ec.message();return false;}
-    resolved=std::filesystem::weakly_canonical(candidate,ec);if(ec){error="unable to resolve package include: "+ec.message();return false;}
-    auto relative=std::filesystem::relative(resolved,canonical_root,ec);if(ec||relative.empty()||relative.is_absolute()){error="package include escapes package root";return false;}
-    for(const auto& part:relative)if(part==".."){error="package include escapes package root";return false;}
-    return true;
-}
-
-bool expression_contains_export(const Expr* expression);
-bool statement_contains_export(const Stmt& statement) {
-    if(statement.kind==Stmt::Kind::export_stmt)return true;
-    if(statement.initializer&&statement_contains_export(*statement.initializer))return true;
-    for(const auto& child:statement.body)if(statement_contains_export(*child))return true;
-    for(const auto& child:statement.else_body)if(statement_contains_export(*child))return true;
-    for(const auto& item:statement.switch_cases){if(expression_contains_export(item.value.get()))return true;for(const auto& child:item.body)if(statement_contains_export(*child))return true;}
-    for(const auto& item:statement.catches)for(const auto& child:item.body)if(statement_contains_export(*child))return true;
-    return expression_contains_export(statement.value.get())||expression_contains_export(statement.target.get())||expression_contains_export(statement.condition.get())||expression_contains_export(statement.increment.get());
-}
-
-bool expression_contains_export(const Expr* expression) {
-    if(!expression)return false;
-    if(expression_contains_export(expression->left.get())||expression_contains_export(expression->right.get()))return true;
-    for(const auto& argument:expression->arguments)if(expression_contains_export(argument.get()))return true;
-    if(expression->lambda){for(const auto& statement:expression->lambda->body)if(statement_contains_export(*statement))return true;if(expression_contains_export(expression->lambda->expression_body.get()))return true;}
-    return false;
-}
-
-bool finalize_package(PackageUnit& unit, ProgramLoadState& state) {
-    std::map<std::string,std::vector<Stmt*>> declarations;std::map<std::string,std::set<std::string>> kinds;
-    for(auto& statement:unit.statements){std::string kind;if(declaration_kind(*statement,kind)){declarations[statement->name].push_back(statement.get());kinds[statement->name].insert(kind);}}
-    std::map<std::string,std::vector<Stmt*>> methods;std::map<std::string,std::set<std::string>> struct_fields;std::map<std::string,std::vector<std::string>> struct_bases;
-    for(auto& statement:unit.statements){if(statement->kind==Stmt::Kind::struct_decl){for(const auto& field:statement->fields)struct_fields[statement->name].insert(field.name);struct_bases[statement->name]=statement->bases;for(auto& method:statement->body)methods[statement->name].push_back(method.get());}else if(statement->kind==Stmt::Kind::function_decl&&!statement->owner.empty())methods[statement->owner].push_back(statement.get());}
-    bool fields_changed=true;while(fields_changed){fields_changed=false;for(const auto& item:struct_bases)for(const auto& base:item.second){auto found=struct_fields.find(base);if(found==struct_fields.end())continue;auto& fields=struct_fields[item.first];const auto size=fields.size();fields.insert(found->second.begin(),found->second.end());fields_changed=fields_changed||fields.size()!=size;}}
-    std::set<std::string> exported;
-    if(unit.explicit_exports){
-        for(const auto& directive:unit.exports){if(directive.first.empty())continue;if(directive.first=="main"){state.err<<unit.entry.string()<<": error: package main cannot be exported\n";return false;}if(!exported.insert(directive.first).second){state.err<<unit.entry.string()<<": error: duplicate export '"<<directive.first<<"'\n";return false;}auto found=declarations.find(directive.first);if(found==declarations.end()){state.err<<unit.entry.string()<<": error: export '"<<directive.first<<"' does not name a symbol owned by package '"<<unit.package_name<<"'\n";return false;}if(kinds[directive.first].size()!=1||(kinds[directive.first].count("function")==0&&found->second.size()!=1)){state.err<<unit.entry.string()<<": error: export '"<<directive.first<<"' is ambiguous\n";return false;}}
-    }else for(const auto& declaration:declarations)if(declaration.first!="main")exported.insert(declaration.first);
-    for(const auto& declaration:declarations){if(kinds[declaration.first].count("value"))unit.ambiguous_imports.values.erase(declaration.first);if(kinds[declaration.first].count("function"))unit.ambiguous_imports.functions.erase(declaration.first);if(kinds[declaration.first].count("type"))unit.ambiguous_imports.types.erase(declaration.first);}
-    auto report_ambiguity=[&](const auto& names){if(names.empty())return false;state.err<<unit.entry.string()<<": error: ambiguous imported symbol '"<<*names.begin()<<"' from directly included packages\n";return true;};
-    if(report_ambiguity(unit.ambiguous_imports.values)||report_ambiguity(unit.ambiguous_imports.functions)||report_ambiguity(unit.ambiguous_imports.types))return false;
-    std::set<std::string> private_types;for(const auto& declaration:declarations)if(!exported.count(declaration.first)&&kinds[declaration.first].count("type"))private_types.insert(declaration.first);
-    std::set<std::string> dependency_types;for(const auto& type:unit.imported_names.types)dependency_types.insert(type.first);
-    for(const auto& name:exported)for(const auto* statement:declarations[name]){
-        std::vector<std::string> signature_types;
-        auto surface_private_types=private_types;auto surface_dependency_types=dependency_types;
-        for(const auto& generic:statement->generic_parameters){surface_private_types.erase(generic);surface_dependency_types.erase(generic);}
-        if(statement->kind==Stmt::Kind::function_decl)append_function_signature_types(*statement,signature_types);
-        if(statement->kind==Stmt::Kind::struct_decl){for(const auto& field:statement->fields)signature_types.push_back(field.type.name);signature_types.insert(signature_types.end(),statement->bases.begin(),statement->bases.end());}
-        if(statement->kind==Stmt::Kind::type_alias&&statement->alias_target)signature_types.push_back(statement->alias_target->name);
-        if(!validate_public_types(unit,"exported symbol '"+name+"'",signature_types,surface_private_types,state)||!validate_dependency_types(unit,"exported symbol '"+name+"'",signature_types,surface_dependency_types,state))return false;
-        if(statement->kind==Stmt::Kind::struct_decl)for(const auto* method:methods[statement->name]){auto method_private_types=surface_private_types;auto method_dependency_types=surface_dependency_types;for(const auto& generic:method->generic_parameters){method_private_types.erase(generic);method_dependency_types.erase(generic);}signature_types.clear();append_function_signature_types(*method,signature_types);if(!validate_public_types(unit,"exported symbol '"+name+"'",signature_types,method_private_types,state)||!validate_dependency_types(unit,"exported symbol '"+name+"'",signature_types,method_dependency_types,state))return false;}
-        if(statement->kind==Stmt::Kind::declaration){
-            std::set<std::string> visiting{name};const auto carrier=facade_carrier(*statement,declarations,visiting);if(carrier.empty()){state.err<<unit.entry.string()<<": error: unable to determine public type of exported value '"<<name<<"'\n";return false;}
-            visiting.clear();if(!validate_facade_carrier(unit,name,carrier,declarations,methods,private_types,dependency_types,visiting,state))return false;
-        }
-    }
-    PrivateNames own_names;for(const auto& declaration:declarations){if(kinds[declaration.first].count("value"))own_names.values.emplace(declaration.first,package_private_name(unit,'v',declaration.first));if(kinds[declaration.first].count("function")){const bool native=std::any_of(declaration.second.begin(),declaration.second.end(),[](const Stmt* statement){return statement->is_extern_c;});own_names.functions.emplace(declaration.first,native?declaration.first:package_private_name(unit,'f',declaration.first));}if(kinds[declaration.first].count("type"))own_names.types.emplace(declaration.first,package_private_name(unit,'t',declaration.first));}
-    auto& internal_symbols=state.combined.owner_internal_symbols[unit.owner];for(const auto& item:own_names.values)internal_symbols.push_back(item.second);for(const auto& item:own_names.functions)internal_symbols.push_back(item.second);for(const auto& item:own_names.types)internal_symbols.push_back(item.second);
-    auto& package_interface=state.interfaces[unit.owner].names;for(const auto& name:exported){if(auto found=own_names.values.find(name);found!=own_names.values.end())package_interface.values.emplace(*found);if(auto found=own_names.functions.find(name);found!=own_names.functions.end())package_interface.functions.emplace(*found);if(auto found=own_names.types.find(name);found!=own_names.types.end())package_interface.types.emplace(*found);}
-    auto& private_symbols=state.combined.owner_private_symbols[unit.owner];for(const auto& declaration:declarations)if(!exported.count(declaration.first)){if(auto found=own_names.values.find(declaration.first);found!=own_names.values.end())private_symbols.push_back(found->second);if(auto found=own_names.functions.find(declaration.first);found!=own_names.functions.end())private_symbols.push_back(found->second);if(auto found=own_names.types.find(declaration.first);found!=own_names.types.end())private_symbols.push_back(found->second);}std::sort(private_symbols.begin(),private_symbols.end());private_symbols.erase(std::unique(private_symbols.begin(),private_symbols.end()),private_symbols.end());std::sort(internal_symbols.begin(),internal_symbols.end());internal_symbols.erase(std::unique(internal_symbols.begin(),internal_symbols.end()),internal_symbols.end());
-    PrivateNames linked_names=unit.imported_names;for(const auto& item:own_names.values)linked_names.values[item.first]=item.second;for(const auto& item:own_names.functions)linked_names.functions[item.first]=item.second;for(const auto& item:own_names.types)linked_names.types[item.first]=item.second;
-    RewriteContext context{linked_names,struct_fields,{},{},true};
-    for(auto& statement:unit.statements){statement->source_owner=unit.owner;rewrite_statement(*statement,context,true);state.combined.statements.push_back(std::move(statement));}
-    auto& owner_modules=state.combined.owner_standard_modules[unit.owner];for(const auto& module:unit.modules)if(std::find(owner_modules.begin(),owner_modules.end(),module)==owner_modules.end())owner_modules.push_back(module);
-    return true;
-}
-
-bool load_program_recursive(const std::filesystem::path&, ProgramLoadState&, const std::string&, const PackageManifest*, PackageUnit*, bool);
-
-bool entry_uses_explicit_exports(const std::filesystem::path& entry, bool& explicit_exports, std::ostream& err) {
-    std::string load_error;auto source=SourceFile::load(entry,load_error);if(!source){err<<entry.string()<<": error: "<<load_error<<'\n';return false;}Lexer lexer(*source);auto lexed=lexer.lex();if(!lexed.ok()){err<<entry.string()<<": error: unable to inspect package exports\n";return false;}Parser parser(lexed.tokens);auto parsed=parser.parse();if(!parsed.ok()){err<<entry.string()<<": error: unable to inspect package exports\n";return false;}explicit_exports=std::any_of(parsed.program.statements.begin(),parsed.program.statements.end(),[](const auto& statement){return statement->kind==Stmt::Kind::export_stmt;});return true;
-}
-
-bool load_package_target(const std::filesystem::path& root, const PackageManifest& manifest, const LockedPackage& locked, const std::filesystem::path& target, bool manifest_entry, ProgramLoadState& state) {
-    PackageUnit unit;unit.package_name=manifest.name;unit.owner=manifest.name+"@"+locked.version+"#"+locked.checksum;unit.identity_key="n"+identifier_hex(locked.name)+"_v"+identifier_hex(locked.version)+"_c"+locked.checksum.substr(locked.checksum.find(':')+1);unit.root=root;unit.entry=root/manifest.entry;
-    if(!load_program_recursive(target,state,unit.owner,&manifest,&unit,manifest_entry))return false;
-    return finalize_package(unit,state);
-}
-
-bool load_program_recursive(const std::filesystem::path& path, ProgramLoadState& state, const std::string& owner,
-                            const PackageManifest* owner_manifest, PackageUnit* unit, bool manifest_entry) {
+bool load_program_recursive(const std::filesystem::path& path, const std::filesystem::path& project_root, Program& combined, std::unordered_set<std::string>& loaded,
+                            std::unordered_set<std::string>& active, std::ostream& err, std::vector<std::filesystem::path>* dependencies = nullptr) {
     std::error_code ec;
-    auto effective=path;
-    if(unit){std::string containment_error;if(!path_within_package(unit->root,path,effective,containment_error)){state.err<<path.string()<<": error: "<<containment_error<<'\n';return false;}}
-    const auto absolute = std::filesystem::absolute(effective, ec).lexically_normal();
+    const auto absolute = std::filesystem::absolute(path, ec).lexically_normal();
     const std::string key = (ec ? path : absolute).string();
-    if (state.loaded.find(key) != state.loaded.end()) return true;
-    if (state.dependencies) state.dependencies->push_back(absolute);
-    if (!state.active.insert(key).second) { state.err << path.string() << ": error: include cycle detected\n"; return false; }
-    std::string load_error; auto source = SourceFile::load(effective, load_error);
-    if (!source) { state.err << effective.string() << ": error: " << load_error << '\n'; state.active.erase(key); return false; }
+    if (loaded.find(key) != loaded.end()) return true;
+    if (dependencies) dependencies->push_back(absolute);
+    if (!active.insert(key).second) { err << path.string() << ": error: include cycle detected\n"; return false; }
+    std::string load_error; auto source = SourceFile::load(path, load_error);
+    if (!source) { err << path.string() << ": error: " << load_error << '\n'; active.erase(key); return false; }
     Lexer lexer(*source); auto lexed=lexer.lex();
-    for(const auto& d:lexed.diagnostics) state.err << rich_diagnostic(effective,d) << '\n';
-    if(!lexed.ok()){state.active.erase(key);return false;}
+    for(const auto& d:lexed.diagnostics) err << rich_diagnostic(path,d) << '\n';
+    if(!lexed.ok()){active.erase(key);return false;}
     Parser parser(lexed.tokens); auto parsed=parser.parse();
-    for(const auto& d:parsed.diagnostics) state.err << rich_diagnostic(effective,d) << '\n';
-    if(!parsed.ok()){state.active.erase(key);return false;}
-    for(const auto& statement:parsed.program.statements)if(statement->kind!=Stmt::Kind::export_stmt&&statement_contains_export(*statement)){state.err<<effective.string()<<": error: export directives are only allowed at the top level of a package manifest entry\n";state.active.erase(key);return false;}
+    for(const auto& d:parsed.diagnostics) err << rich_diagnostic(path,d) << '\n';
+    if(!parsed.ok()){active.erase(key);return false;}
     std::vector<StmtPtr> own;
     for (auto& st : parsed.program.statements) {
-        if(st->kind==Stmt::Kind::export_stmt){if(!unit||!manifest_entry){state.err<<path.string()<<": error: export directives are only allowed in a package manifest entry\n";state.active.erase(key);return false;}unit->explicit_exports=true;unit->exports.emplace_back(st->name,st->span);continue;}
         if (st->kind == Stmt::Kind::include_stmt) {
             if (st->include_is_package && is_standard_module(st->name)) {
-                if(std::find(state.combined.standard_modules.begin(),state.combined.standard_modules.end(),st->name)==state.combined.standard_modules.end())state.combined.standard_modules.push_back(st->name);
-                auto& modules=unit?unit->modules:state.combined.owner_standard_modules[owner];if(std::find(modules.begin(),modules.end(),st->name)==modules.end())modules.push_back(st->name);
+                if (std::find(combined.standard_modules.begin(), combined.standard_modules.end(), st->name) == combined.standard_modules.end()) combined.standard_modules.push_back(st->name);
                 continue;
             }
             if (st->include_is_package) {
                 const auto slash = st->name.find('/'); const std::string package_name = st->name.substr(0, slash);
                 PackageManifest project;PackageLock lock;std::string package_error;
-                if (state.dependencies) { state.dependencies->push_back(state.project_root / "strut.json"); state.dependencies->push_back(state.project_root / "strut.lock.json"); }
-                if (!load_package_manifest_file(state.project_root / "strut.json", project, package_error)) { state.err << path.string() << ": error: package dependency include <" << st->name << "> requires a project strut.json: " << package_error << "\nhelp: run `strut init`, then add the package dependency\n"; state.active.erase(key); return false; }
-                const PackageManifest& importer=owner_manifest?*owner_manifest:project;if(!importer.dependencies.count(package_name)){state.err<<effective.string()<<": error: package '"<<package_name<<"' is not a declared dependency of '"<<importer.name<<"'\n";state.active.erase(key);return false;}
-                if(!load_package_lock_file(state.project_root/"strut.lock.json",lock,package_error)||!validate_package_lock(lock,&project,package_error)){state.err<<path.string()<<": error: package graph is not locked: "<<package_error<<"\nhelp: run `strut install`\n";state.active.erase(key);return false;}
-                auto locked=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const LockedPackage& package){return package.name==package_name;});if(locked==lock.packages.end()){state.err<<path.string()<<": error: package '"<<package_name<<"' is not present in the locked dependency graph\nhelp: declare it directly or through a package dependency, then run `strut update`\n";state.active.erase(key);return false;}
-                const std::string imported_owner=locked->name+"@"+locked->version+"#"+locked->checksum;auto& imports=state.combined.owner_package_imports[owner];if(std::find(imports.begin(),imports.end(),imported_owner)==imports.end())imports.push_back(imported_owner);
-                const auto exact_root=package_cache_root()/locked->name/locked->version/locked->checksum.substr(7);std::string actual;auto package_root=std::optional<std::filesystem::path>{};if(verify_cached_package(exact_root,actual,package_error)&&actual==locked->checksum)package_root=exact_root;if(!package_root){state.err<<path.string()<<": error: locked package dependency '"<<package_name<<"' "<<locked->version<<" is not present in the verified cache\nhelp: run `strut install`\n";state.active.erase(key);return false;}
-                PackageManifest package; if (state.dependencies) state.dependencies->push_back(*package_root / "strut.json"); if (!load_package_manifest_file(*package_root / "strut.json", package, package_error)) { state.err << path.string() << ": error: " << package_error << '\n'; state.active.erase(key); return false; }
-                if(package.entry.empty()){state.err<<path.string()<<": error: package '"<<package_name<<"' has no entry\n";state.active.erase(key);return false;}
-                std::filesystem::path safe_entry;std::string containment_error;if(!path_within_package(*package_root,*package_root/package.entry,safe_entry,containment_error)){state.err<<path.string()<<": error: "<<containment_error<<'\n';state.active.erase(key);return false;}
-                bool explicit_exports=false;if(!entry_uses_explicit_exports(safe_entry,explicit_exports,state.err)){state.active.erase(key);return false;}
-                if(slash!=std::string::npos&&explicit_exports){state.err<<path.string()<<": error: explicit package '"<<package_name<<"' does not allow external subpath includes\n";state.active.erase(key);return false;}
-                std::filesystem::path dep;if(slash==std::string::npos)dep=safe_entry;else{const auto subpath=st->name.substr(slash+1);if(!valid_package_relative_path(subpath)||!path_within_package(*package_root,*package_root/subpath,dep,containment_error)){state.err<<path.string()<<": error: package subpath include escapes package root\n";state.active.erase(key);return false;}}
-                if(!load_package_target(*package_root,package,*locked,dep,slash==std::string::npos,state)){state.active.erase(key);return false;}
-                auto package_interface=state.interfaces.find(imported_owner);if(package_interface==state.interfaces.end()){state.err<<effective.string()<<": error: package interface for '"<<package_name<<"' was not produced\n";state.active.erase(key);return false;}auto& import_names=unit?unit->imported_names:state.application_imports;auto& ambiguities=unit?unit->ambiguous_imports:state.application_ambiguities;merge_import_names(import_names,ambiguities,package_interface->second.names);
+                if (dependencies) { dependencies->push_back(project_root / "strut.json"); dependencies->push_back(project_root / "strut.lock.json"); }
+                if (!load_package_manifest_file(project_root / "strut.json", project, package_error)) { err << path.string() << ": error: package dependency include <" << st->name << "> requires a project strut.json: " << package_error << "\nhelp: run `strut init`, then add the package dependency\n"; active.erase(key); return false; }
+                if(!load_package_lock_file(project_root/"strut.lock.json",lock,package_error)||!validate_package_lock(lock,&project,package_error)){err<<path.string()<<": error: package graph is not locked: "<<package_error<<"\nhelp: run `strut install`\n";active.erase(key);return false;}
+                auto locked=std::find_if(lock.packages.begin(),lock.packages.end(),[&](const LockedPackage& package){return package.name==package_name;});if(locked==lock.packages.end()){err<<path.string()<<": error: package '"<<package_name<<"' is not present in the locked dependency graph\nhelp: declare it directly or through a package dependency, then run `strut update`\n";active.erase(key);return false;}
+                const auto exact_root=package_cache_root()/locked->name/locked->version/locked->checksum.substr(7);std::string actual;auto package_root=std::optional<std::filesystem::path>{};if(verify_cached_package(exact_root,actual,package_error)&&actual==locked->checksum)package_root=exact_root;if(!package_root){err<<path.string()<<": error: locked package dependency '"<<package_name<<"' "<<locked->version<<" is not present in the verified cache\nhelp: run `strut install`\n";active.erase(key);return false;}
+                PackageManifest package; if (dependencies) dependencies->push_back(*package_root / "strut.json"); if (!load_package_manifest_file(*package_root / "strut.json", package, package_error)) { err << path.string() << ": error: " << package_error << '\n'; active.erase(key); return false; }
+                std::filesystem::path dep = *package_root; if (slash == std::string::npos) { if (package.entry.empty()) { err << path.string() << ": error: package '" << package_name << "' has no entry\n"; active.erase(key); return false; } dep /= package.entry; } else dep /= st->name.substr(slash + 1);
+                if (!load_program_recursive(dep, project_root, combined, loaded, active, err, dependencies)) { active.erase(key); return false; }
                 continue;
             }
-            if(unit&&!valid_package_relative_path(st->name)){state.err<<effective.string()<<": error: quoted include escapes package root\n";state.active.erase(key);return false;}
-            auto dep = effective.parent_path() / st->name;
-            if(!unit){std::filesystem::path resolved;std::string containment_error;if(path_within_package(package_cache_root(),dep,resolved,containment_error)){state.err<<effective.string()<<": error: quoted include resolves inside the package cache; use `include <package>;` instead\n";state.active.erase(key);return false;}}
-            if (!load_program_recursive(dep,state,owner,owner_manifest,unit,false)) { state.active.erase(key); return false; }
+            auto dep = path.parent_path() / st->name;
+            if (!load_program_recursive(dep, project_root, combined, loaded, active, err, dependencies)) { active.erase(key); return false; }
         } else own.push_back(std::move(st));
     }
-    for(auto& st:own){st->source_owner=owner;if(unit)unit->statements.push_back(std::move(st));else state.application_statements.push_back(std::move(st));}
-    state.active.erase(key); state.loaded.insert(key); return true;
+    for(auto& st:own) combined.statements.push_back(std::move(st));
+    active.erase(key); loaded.insert(key); return true;
 }
-} // namespace
 
 bool load_program(const std::filesystem::path& path, Program& combined, std::ostream& err, std::vector<std::filesystem::path>* dependencies = nullptr) {
+    std::unordered_set<std::string> loaded, active;
     std::filesystem::path root = path.parent_path().empty() ? std::filesystem::current_path() : std::filesystem::absolute(path.parent_path());
     for (auto probe = root; !probe.empty(); probe = probe.parent_path()) { if (std::filesystem::exists(probe / "strut.json")) { root = probe; break; } if (probe == probe.root_path()) break; }
     combined.enforce_standard_modules = true;
-    ProgramLoadState state{root,combined,{},{},err,dependencies,{},{},{},{}};
-    if(!load_program_recursive(path,state,"",nullptr,nullptr,false))return false;
-    std::map<std::string,std::set<std::string>> struct_fields;
-    for(const auto& statement:state.application_statements){
-        if(statement->kind==Stmt::Kind::declaration)state.application_imports.values.erase(statement->name);
-        else if(statement->kind==Stmt::Kind::function_decl&&statement->owner.empty())state.application_imports.functions.erase(statement->name);
-        else if(statement->kind==Stmt::Kind::type_alias||statement->kind==Stmt::Kind::struct_decl||statement->kind==Stmt::Kind::enum_decl)state.application_imports.types.erase(statement->name);
-        if(statement->kind==Stmt::Kind::declaration)state.application_ambiguities.values.erase(statement->name);
-        else if(statement->kind==Stmt::Kind::function_decl&&statement->owner.empty())state.application_ambiguities.functions.erase(statement->name);
-        else if(statement->kind==Stmt::Kind::type_alias||statement->kind==Stmt::Kind::struct_decl||statement->kind==Stmt::Kind::enum_decl)state.application_ambiguities.types.erase(statement->name);
-        if(statement->kind==Stmt::Kind::struct_decl)for(const auto& field:statement->fields)struct_fields[statement->name].insert(field.name);
-    }
-    auto report_ambiguity=[&](const auto& names){if(names.empty())return false;err<<path.string()<<": error: ambiguous imported symbol '"<<*names.begin()<<"' from directly included packages\n";return true;};
-    if(report_ambiguity(state.application_ambiguities.values)||report_ambiguity(state.application_ambiguities.functions)||report_ambiguity(state.application_ambiguities.types))return false;
-    RewriteContext context{state.application_imports,struct_fields,{},{},false};
-    for(auto& statement:state.application_statements){rewrite_statement(*statement,context,true);combined.statements.push_back(std::move(statement));}
-    return true;
+    return load_program_recursive(path, root, combined, loaded, active, err, dependencies);
 }
 
 int check_source(const std::filesystem::path& path, std::ostream& out, std::ostream& err) {

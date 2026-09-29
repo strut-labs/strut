@@ -20,7 +20,6 @@ struct Symbol {
     bool is_const = false;
     std::string type_name;
     TypeId type_id;
-    std::string source_owner;
     Symbol() = default;
     Symbol(std::string symbol_name, SymbolNamespace ns, SourceSpan source_span, bool constant, std::string spelling)
         : name(std::move(symbol_name)), name_space(ns), span(source_span), is_const(constant),
@@ -56,8 +55,6 @@ private:
     bool compatible(const TypeInfo& from, const TypeInfo& to) const;
     static std::unordered_map<std::string, Symbol>& namespace_map(Scope& scope, SymbolNamespace name_space);
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
-    bool can_access(std::string_view owner) const;
-    bool can_access(std::string_view owner, std::string_view symbol) const;
     void require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const;
     void require_module(SemanticResult& result, std::string_view module, SourceSpan span, std::string_view facility) const;
 
@@ -67,7 +64,6 @@ private:
     std::unordered_map<std::string, std::vector<std::string>> struct_bases_;
     std::unordered_map<std::string, std::unordered_set<std::string>> enum_members_;
     std::unordered_set<std::string> named_types_;
-    std::unordered_map<std::string, std::string> type_owners_;
     std::unordered_set<std::string> checked_error_types_;
     std::vector<Scope> scopes_;
     std::string current_function_return_type_;
@@ -81,10 +77,6 @@ private:
     int catch_all_depth_ = 0;
     bool enforce_standard_modules_ = false;
     std::unordered_set<std::string> standard_modules_;
-    std::unordered_map<std::string, std::unordered_set<std::string>> owner_package_imports_;
-    std::unordered_map<std::string, std::unordered_set<std::string>> owner_private_symbols_;
-    std::unordered_map<std::string, std::unordered_set<std::string>> owner_internal_symbols_;
-    std::string current_source_owner_;
 };
 
 } // namespace strut
