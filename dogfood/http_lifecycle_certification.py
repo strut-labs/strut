@@ -28,6 +28,42 @@ def request(port, method="GET", path="/slow", body=None, headers=None):
     return result
 
 
+def segmented_limit_request(port, context=None):
+    raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+    connection = context.wrap_socket(raw, server_hostname="localhost") if context else raw
+    try:
+        connection.sendall(b"POST /missing HTTP/1.1\r\nHost: localhost\r\nContent-Length: 64\r\nConnection: close\r\n\r\n" + b"x" * 16)
+        received = b""
+        while b"\r\n\r\n" not in received:
+            chunk = connection.recv(4096)
+            if not chunk:
+                raise RuntimeError("server closed before sending complete response headers")
+            received += chunk
+        header, body = received.split(b"\r\n\r\n", 1)
+        lines = header.split(b"\r\n")
+        status = int(lines[0].split()[1])
+        headers = {key.strip().lower(): value.strip() for key, value in (line.split(b":", 1) for line in lines[1:])}
+        length = int(headers[b"content-length"])
+        while len(body) < length:
+            chunk = connection.recv(4096)
+            if not chunk:
+                raise RuntimeError("server closed before sending the complete response body")
+            body += chunk
+        connection.sendall(b"x" * 48)
+        if context:
+            raw = connection.unwrap()
+            raw.close()
+            connection = None
+        else:
+            connection.shutdown(socket.SHUT_WR)
+            if connection.recv(1) != b"":
+                raise RuntimeError("plaintext server sent bytes beyond Content-Length")
+        return status, body[:length].decode("utf-8")
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
     port = available_port()
@@ -72,8 +108,8 @@ def main():
                 raise RuntimeError(f"concurrent lifecycle requests failed: {results!r}")
             if request(port, "POST", "/slow") != (405, "Method Not Allowed"):
                 raise RuntimeError("method mismatch did not return 405")
-            if request(port, "POST", "/missing", "x" * 64, {"Content-Length": "64"}) != (413, "Payload Too Large"):
-                raise RuntimeError("oversized request did not return 413")
+            if segmented_limit_request(port) != (413, "Payload Too Large"):
+                raise RuntimeError("segmented oversized request did not return 413")
             stdout, stderr = server.communicate(timeout=8)
             if server.returncode != 0:
                 raise RuntimeError(f"server returned {server.returncode}\n{stdout}\n{stderr}")
@@ -111,6 +147,7 @@ def main():
     database.exec("DELETE FROM status");
     database.exec("INSERT INTO status(message) VALUES ('secure')");
     app := http_server();
+    app.limits(32, 4096, 16, 8);
     app.get("/secure", (http_request request) => {{ return http_json_response(database.query("SELECT message FROM status")); }});
     listener := thread(() => {{ app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1]); }});
     while (!app.running()) {{ sleep_ms(5); }}
@@ -172,13 +209,17 @@ def main():
             trusted = subprocess.run([client_executable, trusted_ca], cwd=root, text=True, capture_output=True, timeout=5, env=client_environment)
             if trusted.returncode != 0 or "secure" not in trusted.stdout:
                 raise RuntimeError(f"trusted Strut TLS client failed ({trusted.returncode})\n{trusted.stdout}\n{trusted.stderr}")
+            context = ssl.create_default_context(cafile=str(trusted_ca))
+            tls_limit_result = segmented_limit_request(tls_port, context)
+            if tls_limit_result != (413, "Payload Too Large"):
+                raise RuntimeError(f"TLS oversized request did not return 413: {tls_limit_result!r}")
             stdout, stderr = tls_server.communicate(timeout=20)
             if tls_server.returncode != 0:
                 raise RuntimeError(f"TLS server returned {tls_server.returncode}\n{stdout}\n{stderr}")
         finally:
             if tls_server.poll() is None:
                 tls_server.kill(); tls_server.wait()
-    print("HTTP lifecycle certification: concurrent drain, Strut TLS client/server JSON, explicit stop, 405 and 413 passed")
+    print("HTTP lifecycle certification: concurrent drain, Strut TLS client/server JSON, explicit stop, segmented plaintext/TLS 413 and TLS close_notify passed")
 
 
 if __name__ == "__main__":

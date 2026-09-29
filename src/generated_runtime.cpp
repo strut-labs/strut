@@ -285,7 +285,8 @@ using strut_socket_handle=SOCKET; constexpr strut_socket_handle strut_invalid_so
 inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){shutdown(h,SD_BOTH);closesocket(h);}}
 inline bool strut_socket_set_blocking(strut_socket_handle h,bool blocking){u_long mode=blocking?0:1;return ioctlsocket(h,FIONBIO,&mode)==0;}
 inline bool strut_socket_would_block(){const int error=WSAGetLastError();return error==WSAEWOULDBLOCK||error==WSAEINPROGRESS;}
-inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){WSAPOLLFD descriptor{h,POLLIN,0};return WSAPoll(&descriptor,1,timeout_ms);}
+inline int strut_socket_poll(strut_socket_handle h,short events,int timeout_ms){const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout_ms);for(;;){WSAPOLLFD descriptor{h,events,0};const auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now()+std::chrono::milliseconds(1)).count();const int result=WSAPoll(&descriptor,1,static_cast<INT>(std::max<std::int64_t>(0,remaining)));if(result!=SOCKET_ERROR||WSAGetLastError()!=WSAEINTR)return result;if(std::chrono::steady_clock::now()>=deadline)return 0;}}
+inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){return strut_socket_poll(h,POLLIN,timeout_ms);}inline int strut_socket_poll_write(strut_socket_handle h,int timeout_ms){return strut_socket_poll(h,POLLOUT,timeout_ms);}
 struct strut_winsock_runtime{strut_winsock_runtime(){WSADATA d{};if(WSAStartup(MAKEWORD(2,2),&d)!=0)throw strut_checked_error("NetworkError","WSAStartup failed");}~strut_winsock_runtime(){WSACleanup();}};
 inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runtime;}
 #else
@@ -295,7 +296,8 @@ using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socke
 inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){::shutdown(h,SHUT_RDWR);::close(h);}}
 inline bool strut_socket_set_blocking(strut_socket_handle h,bool blocking){const int flags=fcntl(h,F_GETFL,0);return flags>=0&&fcntl(h,F_SETFL,blocking?(flags&~O_NONBLOCK):(flags|O_NONBLOCK))==0;}
 inline bool strut_socket_would_block(){return errno==EAGAIN||errno==EWOULDBLOCK;}
-inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){pollfd descriptor{h,POLLIN,0};int result;do{result=poll(&descriptor,1,timeout_ms);}while(result<0&&(errno==EINTR||errno==EAGAIN));return result;}
+inline int strut_socket_poll(strut_socket_handle h,short events,int timeout_ms){const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout_ms);for(;;){pollfd descriptor{h,events,0};const auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now()+std::chrono::milliseconds(1)).count();const int result=poll(&descriptor,1,static_cast<int>(std::max<std::int64_t>(0,remaining)));if(result>=0||(errno!=EINTR&&errno!=EAGAIN))return result;if(std::chrono::steady_clock::now()>=deadline)return 0;}}
+inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){return strut_socket_poll(h,POLLIN,timeout_ms);}inline int strut_socket_poll_write(strut_socket_handle h,int timeout_ms){return strut_socket_poll(h,POLLOUT,timeout_ms);}
 inline void strut_socket_init(){}
 #endif
 inline void strut_socket_prepare(strut_socket_handle h){
@@ -329,6 +331,20 @@ class strut_tcp_socket {
 public:
     strut_tcp_socket():s_(std::make_shared<strut_socket_state>()){} explicit strut_tcp_socket(strut_socket_handle h){try{s_=std::make_shared<strut_socket_state>();strut_socket_prepare(h);s_->handle=h;}catch(...){strut_socket_close(h);throw;}}
     bool is_open() const{return native_handle()!=strut_invalid_socket;}void close(){if(s_)s_->close();}void shutdown_io() const{if(s_)s_->interrupt();}
+    void close_after_write(){if(!s_)return;try{auto operation=s_->acquire();
+#ifdef _WIN32
+        ::shutdown(operation.handle,SD_SEND);
+#else
+        ::shutdown(operation.handle,SHUT_WR);
+#endif
+        if(strut_socket_set_blocking(operation.handle,false)){const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(1);std::size_t drained=0;char buffer[4096];while(drained<65536){const auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now()+std::chrono::milliseconds(1)).count();if(remaining<=0||strut_socket_poll_read(operation.handle,static_cast<int>(remaining))<=0)break;
+#ifdef _WIN32
+            const int count=::recv(operation.handle,buffer,sizeof(buffer),0);
+#else
+            const ssize_t count=::recv(operation.handle,buffer,sizeof(buffer),0);
+#endif
+            if(count<0&&strut_socket_would_block())continue;if(count<=0)break;drained+=static_cast<std::size_t>(count);}}
+        }catch(...){ }close();}
     void write(const strut_string& data){if(!s_)throw strut_checked_error("NetworkError","write on closed socket");auto operation=s_->acquire();const auto h=operation.handle;std::size_t off=0;while(off<data.v.size()){
 #ifdef _WIN32
         const int amount=static_cast<int>(std::min<std::size_t>(data.v.size()-off,static_cast<std::size_t>(std::numeric_limits<int>::max())));int n=::send(h,data.v.data()+off,amount,0);
@@ -675,7 +691,22 @@ public:
     if (tls) out << R"STRUT_SERVER(
 private:
     struct openssl_thread_cleanup{~openssl_thread_cleanup(){OPENSSL_thread_stop();}};
-    class tls_socket{public:tls_socket(strut_tcp_socket socket,SSL* ssl):socket_(std::move(socket)),ssl_(ssl){}tls_socket(const tls_socket&)=delete;tls_socket& operator=(const tls_socket&)=delete;tls_socket(tls_socket&& other) noexcept:socket_(std::move(other.socket_)),ssl_(other.ssl_){other.ssl_=nullptr;}~tls_socket(){close();}strut_socket_handle native_handle() const{return socket_.native_handle();}strut_socket_operation pin() const{return socket_.pin();}strut_string read(std::int64_t max_bytes=4096){if(max_bytes<=0)return {};auto operation=socket_.pin();std::string out(static_cast<std::size_t>(max_bytes),'\0');int n=SSL_read(ssl_,out.data(),static_cast<int>(out.size()));if(n==0)return {};if(n<0)throw strut_checked_error("TlsError","TLS request read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}void write(const strut_string& data){auto operation=socket_.pin();std::size_t offset=0;while(offset<data.v.size()){const int amount=static_cast<int>(std::min<std::size_t>(data.v.size()-offset,static_cast<std::size_t>(std::numeric_limits<int>::max())));int n=SSL_write(ssl_,data.v.data()+offset,amount);if(n<=0)throw strut_checked_error("TlsError","TLS response write failed");offset+=static_cast<std::size_t>(n);}}void close(){if(ssl_){try{auto operation=socket_.pin();SSL_shutdown(ssl_);}catch(...){ }SSL_free(ssl_);ssl_=nullptr;}socket_.close();}private:strut_tcp_socket socket_;SSL* ssl_=nullptr;};
+    class tls_socket{
+    public:
+        tls_socket(strut_tcp_socket socket,SSL* ssl):socket_(std::move(socket)),ssl_(ssl){}
+        tls_socket(const tls_socket&)=delete;tls_socket& operator=(const tls_socket&)=delete;
+        tls_socket(tls_socket&& other) noexcept:socket_(std::move(other.socket_)),ssl_(other.ssl_){other.ssl_=nullptr;}
+        ~tls_socket(){close();}
+        strut_socket_handle native_handle() const{return socket_.native_handle();}
+        strut_socket_operation pin() const{return socket_.pin();}
+        strut_string read(std::int64_t max_bytes=4096){if(max_bytes<=0)return {};auto operation=socket_.pin();std::string out(static_cast<std::size_t>(max_bytes),'\0');int n=SSL_read(ssl_,out.data(),static_cast<int>(out.size()));if(n==0)return {};if(n<0)throw strut_checked_error("TlsError","TLS request read failed");out.resize(static_cast<std::size_t>(n));return strut_string(std::move(out));}
+        void write(const strut_string& data){auto operation=socket_.pin();std::size_t offset=0;while(offset<data.v.size()){const int amount=static_cast<int>(std::min<std::size_t>(data.v.size()-offset,static_cast<std::size_t>(std::numeric_limits<int>::max())));int n=SSL_write(ssl_,data.v.data()+offset,amount);if(n<=0)throw strut_checked_error("TlsError","TLS response write failed");offset+=static_cast<std::size_t>(n);}}
+        void close(){if(ssl_){try{auto operation=socket_.pin();SSL_shutdown(ssl_);}catch(...){ }SSL_free(ssl_);ssl_=nullptr;}socket_.close();}
+        void close_after_write(){if(!ssl_){socket_.close();return;}try{auto operation=socket_.pin();if(strut_socket_set_blocking(operation.handle,false)){const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(1);std::size_t drained=0;char buffer[4096];while(drained<65536){ERR_clear_error();const int count=SSL_read(ssl_,buffer,sizeof(buffer));if(count>0){drained+=static_cast<std::size_t>(count);continue;}const int error=SSL_get_error(ssl_,count);if(error==SSL_ERROR_ZERO_RETURN)break;if(error!=SSL_ERROR_WANT_READ&&error!=SSL_ERROR_WANT_WRITE)break;if(!wait(operation.handle,error,deadline))break;}for(;;){ERR_clear_error();const int result=SSL_shutdown(ssl_);if(result==1)break;const int error=result==0?SSL_ERROR_WANT_READ:SSL_get_error(ssl_,result);if(error!=SSL_ERROR_WANT_READ&&error!=SSL_ERROR_WANT_WRITE)break;if(!wait(operation.handle,error,deadline))break;}}}catch(...){ }SSL_free(ssl_);ssl_=nullptr;socket_.close();}
+    private:
+        static bool wait(strut_socket_handle handle,int error,std::chrono::steady_clock::time_point deadline){const auto remaining=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now()+std::chrono::milliseconds(1)).count();if(remaining<=0)return false;return (error==SSL_ERROR_WANT_WRITE?strut_socket_poll_write(handle,static_cast<int>(remaining)):strut_socket_poll_read(handle,static_cast<int>(remaining)))>0;}
+        strut_tcp_socket socket_;SSL* ssl_=nullptr;
+    };
     static bool tls_accept_until(const strut_tcp_socket& socket,SSL* ssl,std::int32_t timeout_ms){auto operation=socket.pin();const auto handle=operation.handle;
 #ifdef _WIN32
         u_long nonblocking=1;if(ioctlsocket(handle,FIONBIO,&nonblocking)!=0)return false;
@@ -747,7 +778,7 @@ private:
     template<class Socket> static strut_http_request_body request_body(Socket& socket,const strut_http_request_head& head,std::string buffered,std::size_t max_body,std::size_t max_framing,std::function<void()> cancel){auto state=std::make_shared<strut_http_request_body_state>();state->framing=head.framing;state->remaining=head.content_length;state->max_body=max_body;state->max_framing=max_framing;state->buffer=std::move(buffered);state->cancel=std::move(cancel);state->read=[&socket](std::size_t size){return socket.read(static_cast<std::int64_t>(std::min<std::size_t>(size,8192))).v;};state->interrupt=[&socket]{interrupt_socket(socket);};if(state->framing==strut_http_request_framing::content_length&&state->remaining==0)state->phase=strut_http_request_body_phase::eof;return strut_http_request_body(std::move(state));}
     static strut_string read_buffered_body(const strut_http_request_body& body){return body.read_all_bytes().to_string();})STRUT_SERVER"; out << R"STRUT_SERVER(
     static void write_buffered(const strut_http_response_writer& writer,const strut_server_response& response){writer.status(response.status);writer.content_type(response.content_type);for(const auto& header:response.headers)writer.header(header.first,header.second);for(const auto& cookie:response.cookies)writer.cookie(cookie);writer.content_length(static_cast<std::int64_t>(response.body.v.size()));writer.write(response.body);writer.finish();}
-    template<class Socket> static void send_error(Socket& socket,std::int32_t status,const char* message,strut_http_version version=strut_http_version::http_1_1,bool head_request=false){try{auto writer=response_writer(socket,version,false,head_request);strut_server_response response{status,strut_string(message),"text/plain; charset=utf-8",{}, {}};write_buffered(writer,response);writer.invalidate();socket.close();}catch(...){socket.close();}}
+    template<class Socket> static void send_error(Socket& socket,std::int32_t status,const char* message,strut_http_version version=strut_http_version::http_1_1,bool head_request=false){try{auto writer=response_writer(socket,version,false,head_request);strut_server_response response{status,strut_string(message),"text/plain; charset=utf-8",{}, {}};write_buffered(writer,response);writer.invalidate();socket.close_after_write();}catch(...){socket.close();}}
     static strut_string mime(const std::string& p){auto dot=p.rfind('.');auto e=dot==std::string::npos?std::string():p.substr(dot);if(e==".html")return "text/html; charset=utf-8";if(e==".css")return "text/css; charset=utf-8";if(e==".js")return "application/javascript";if(e==".json")return "application/json";if(e==".svg")return "image/svg+xml";if(e==".png")return "image/png";return "application/octet-stream";}
     static std::string etag(const std::string& data){std::uint64_t h=1469598103934665603ull;for(unsigned char c:data){h^=c;h*=1099511628211ull;}std::ostringstream out;out<<'"'<<std::hex<<h<<'"';return out.str();}
     static bool stopping(run_state* run){std::lock_guard<std::mutex> lock(run->mutex);return !run->accepting;}
