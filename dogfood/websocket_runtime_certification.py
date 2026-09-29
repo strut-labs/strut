@@ -438,7 +438,9 @@ def main():
             exercise_active_return_invalidation(port)
             baseline = resource_counts(server)
             peak = baseline
-            for _ in range(2000):
+            sanitized = "-fsanitize=" in os.environ.get("STRUT_CXXFLAGS", "")
+            stress_iterations = 100 if sanitized else 2000
+            for _ in range(stress_iterations):
                 with connect(port) as connection:
                     connection.sendall(client_frame(8, struct.pack("!H", 1000)))
                     if close_code(connection) != 1000:
@@ -446,7 +448,7 @@ def main():
                 sample = resource_counts(server)
                 peak = tuple(max(old, new) if old is not None and new is not None else old or new for old, new in zip(peak, sample))
             after = require_resources_return(server, baseline, peak)
-            print(f"WebSocket resource counts (FD/HANDLE, RSS KiB, threads): {baseline} -> {peak} -> {after}")
+            print(f"WebSocket resource counts after {stress_iterations} cycles (FD/HANDLE, RSS KiB, threads): {baseline} -> {peak} -> {after}")
             for path in ("/blocked-write", "/blocked-close"):
                 started = time.monotonic()
                 with connect(port, path=path) as connection:
