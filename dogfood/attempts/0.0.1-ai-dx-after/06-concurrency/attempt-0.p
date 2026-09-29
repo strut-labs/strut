@@ -1,4 +1,4 @@
-function main() -> int {
+function main() -> int : ThreadError {
     channel<int> jobs;
     producer := thread(() => { jobs.send(42); jobs.close(); });
     value := jobs.receive();

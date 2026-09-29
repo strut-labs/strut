@@ -1454,7 +1454,7 @@ public:
     }}
     void write_line(const strut_string& value){write(strut_string(value.v+"\n"));}void close(){strut_process_close_pipe(state_);}~strut_process_in(){close();}
 private:std::shared_ptr<strut_process_pipe_state> state_;
-};
+};)CPP" << R"CPP(
 class strut_process_out {
 public:
     strut_process_out():state_(std::make_shared<strut_process_pipe_state>()){}strut_process_out(const strut_process_out&)=delete;strut_process_out& operator=(const strut_process_out&)=delete;strut_process_out(strut_process_out&&)=default;strut_process_out& operator=(strut_process_out&& other) noexcept{if(this!=&other){close();state_=std::move(other.state_);}return *this;}
@@ -1499,7 +1499,7 @@ public:
         other.pid_=-1;
 #endif
     }
-    strut_process& operator=(strut_process&&)=delete;
+    strut_process& operator=(strut_process&&)=delete;)CPP" << R"CPP(
     void start(const strut_string& program,const std::vector<strut_string>& args,const strut_process_cancellation_token& token){
 #ifdef _WIN32
         std::string cmd=strut_win_quote(program.v);for(const auto& argument:args){cmd+=' ';cmd+=strut_win_quote(argument.v);}std::vector<char> mutable_cmd(cmd.begin(),cmd.end());mutable_cmd.push_back('\0');SIZE_T attribute_size=0;InitializeProcThreadAttributeList(nullptr,1,0,&attribute_size);std::vector<unsigned char> attribute_storage(attribute_size);HANDLE parent_in=nullptr,child_in=nullptr,parent_out=nullptr,child_out=nullptr,parent_err=nullptr,child_err=nullptr;if(!create_pipe(false,parent_in,child_in)||!create_pipe(true,parent_out,child_out)||!create_pipe(true,parent_err,child_err)){close_handle(parent_in);close_handle(child_in);close_handle(parent_out);close_handle(child_out);close_handle(parent_err);close_handle(child_err);throw strut_checked_error("ExecError","CreatePipe failed");}STARTUPINFOEXA si{};si.StartupInfo.cb=sizeof(si);si.StartupInfo.dwFlags=STARTF_USESTDHANDLES;si.StartupInfo.hStdInput=child_in;si.StartupInfo.hStdOutput=child_out;si.StartupInfo.hStdError=child_err;si.lpAttributeList=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());HANDLE inherited[3]={child_in,child_out,child_err};const BOOL list_ok=InitializeProcThreadAttributeList(si.lpAttributeList,1,0,&attribute_size);const BOOL attributes_ok=list_ok&&UpdateProcThreadAttribute(si.lpAttributeList,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,inherited,sizeof(inherited),nullptr,nullptr);BOOL ok=FALSE;if(attributes_ok)ok=CreateProcessA(nullptr,mutable_cmd.data(),nullptr,nullptr,TRUE,EXTENDED_STARTUPINFO_PRESENT,nullptr,nullptr,&si.StartupInfo,&pi_);if(list_ok)DeleteProcThreadAttributeList(si.lpAttributeList);close_handle(child_in);close_handle(child_out);close_handle(child_err);if(!ok){close_handle(parent_in);close_handle(parent_out);close_handle(parent_err);throw strut_checked_error("ExecError","CreateProcess failed");}in.attach(parent_in,token);out.attach(parent_out,token);err.attach(parent_err,token);running_=true;
