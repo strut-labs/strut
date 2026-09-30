@@ -260,7 +260,13 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         try:
             result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=20, check=False)
         except subprocess.TimeoutExpired as error:
-            raise RuntimeError(f"timeout stdout={error.stdout!r} stderr={error.stderr!r}") from error
+            processes = subprocess.run(
+                ["ps", "-axo", "pid,ppid,pgid,sid,state,command"],
+                text=True,
+                capture_output=True,
+                check=False,
+            ).stdout
+            raise RuntimeError(f"timeout stdout={error.stdout!r} stderr={error.stderr!r}\n{processes}") from error
         expected = "".join(f"p7-stage-{stage}\n" for stage in range(1, 12)) + "PTY certification passed\n"
         if result.returncode != 0 or result.stdout != expected or result.stderr:
             raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
