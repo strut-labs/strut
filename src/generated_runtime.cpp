@@ -249,6 +249,7 @@ private:std::shared_ptr<strut_cancellation_state> state_;
 
 void emit_pty(std::ostream& out) {
     out << R"STRUT_PTY(
+#define STRUT_PTY_RUNTIME 1
 #ifdef _WIN32
 class strut_pty {
 public:
@@ -272,6 +273,9 @@ inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_str
 #else
 #include <sys/ioctl.h>
 #include <termios.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #if defined(__GLIBC__)
 #if defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2,34)
@@ -364,6 +368,20 @@ private:
     std::shared_ptr<strut_pty_state> state_;
 };
 inline int strut_pty_parent_fd(int descriptor){if(descriptor<0)return descriptor;if(descriptor>STDERR_FILENO)return descriptor;const int replacement=fcntl(descriptor,F_DUPFD_CLOEXEC,STDERR_FILENO+1);const int failure=errno;::close(descriptor);if(replacement<0){errno=failure;throw strut_checked_error("PtyError","PTY descriptor setup failed");}return replacement;}
+inline bool strut_pty_child_main(int argc,char** argv){
+#ifdef __APPLE__
+    if(argc<5||std::strcmp(argv[1],"--strut-internal-pty-launcher-v1")!=0)return false;const int slave=::open(argv[2],O_RDWR);if(slave<0||ioctl(slave,TIOCSCTTY,0)!=0)_exit(126);for(int descriptor=STDIN_FILENO;descriptor<=STDERR_FILENO;++descriptor)if(dup2(slave,descriptor)<0)_exit(126);if(slave>STDERR_FILENO)::close(slave);execve(argv[3],argv+4,environ);_exit(126);
+#else
+    (void)argc;(void)argv;return false;
+#endif
+}
+inline std::string strut_pty_self_executable(){
+#ifdef __APPLE__
+    std::vector<char> path(1024);std::uint32_t size=static_cast<std::uint32_t>(path.size());if(_NSGetExecutablePath(path.data(),&size)!=0){path.resize(size);if(_NSGetExecutablePath(path.data(),&size)!=0)throw strut_checked_error("PtyError","unable to resolve PTY launcher executable");}return path.data();
+#else
+    return {};
+#endif
+}
 )STRUT_PTY"; out << R"STRUT_PTY(
 inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vector<strut_string>& arguments,const strut_pty_options& options,const strut_process_cancellation_token& token){
 #ifndef STRUT_PTY_POSIX_SPAWN_SETSID
@@ -394,7 +412,7 @@ inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vec
 #endif
         if(!error)error=posix_spawnattr_setflags(&attributes,flags);
 #ifdef __APPLE__
-        std::vector<std::string> launcher_args={"/bin/sh","-c","exec <\"$1\" >\"$1\" 2>\"$1\"\nshift\nexec \"$@\"","strut-pty-launcher",slave_name,executable};launcher_args.insert(launcher_args.end(),data.args.begin()+1,data.args.end());std::vector<char*> launcher_argv;launcher_argv.reserve(launcher_args.size()+1);for(auto& argument:launcher_args)launcher_argv.push_back(argument.data());launcher_argv.push_back(nullptr);if(!error)error=posix_spawn(&pid,"/bin/sh",&actions,&attributes,launcher_argv.data(),data.envp.data());
+        const auto launcher=strut_pty_self_executable();std::vector<std::string> launcher_args={launcher,"--strut-internal-pty-launcher-v1",slave_name,executable};launcher_args.insert(launcher_args.end(),data.args.begin(),data.args.end());std::vector<char*> launcher_argv;launcher_argv.reserve(launcher_args.size()+1);for(auto& argument:launcher_args)launcher_argv.push_back(argument.data());launcher_argv.push_back(nullptr);if(!error)error=posix_spawn(&pid,launcher.c_str(),&actions,&attributes,launcher_argv.data(),data.envp.data());
 #else
         if(!error)error=posix_spawn(&pid,executable.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());
 #endif
