@@ -87,9 +87,12 @@ function read_until(pty terminal, string expected) -> string : PtyError {{
 
 function main() -> int : (PtyError, ThreadError, TimeError) {{
     cancellation_source overload_source;
+    print("stage=first-spawn");
     first := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"]);
     string first_output := drain(first);
+    print("stage=first-drained");
     int first_exit_status := first.wait();
+    print("stage=first-waited");
     if (!first_output.contains("before-exit")) {{ return 21; }}
     if (first_exit_status != 7) {{ return 22; }}
     second := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], {{}});
@@ -98,6 +101,7 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
     if (!drain(third).contains("before-exit") || third.wait() != 7) {{ return 1; }}
     fourth := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], {{}}, overload_source.token());
     if (!drain(fourth).contains("before-exit") || fourth.wait() != 7) {{ return 1; }}
+    print("stage=overloads-complete");
 
     configured := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "inspect", "", "two words", "quote\\\"value", "trailing\\\\", "π"], {{"cwd": "{escaped(work)}", "env": {{"STRUT_PTY_ENV": "value-π"}}, "rows": 37, "columns": 111}});
     string details := drain(configured);
@@ -189,7 +193,10 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
             executable = root / "conpty-certification.exe"
             program.write_text(source, encoding="utf-8")
             subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
-            result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=60, check=False)
+            try:
+                result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=60, check=False)
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError(f"ConPTY certification timed out stdout={error.stdout!r} stderr={error.stderr!r}") from error
             if result.returncode != 0 or result.stdout != "ConPTY certification passed\n" or result.stderr:
                 raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
         print("P9 Windows ConPTY certification: spawn overloads, argv/env/cwd/geometry, merged output, interactive input, PATH and failure handling, cancellation, close/wait races, duplicate readers, shared ownership, and cleanup churn passed")
