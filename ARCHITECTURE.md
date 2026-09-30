@@ -95,6 +95,12 @@ compatibility body. Shared component emitters in `generated_runtime.cpp` provide
 the owned bytes value, generic streams, cancellation, executor, TCP, HTTP client, HTTP
 request/response helpers, active HTTP server and optional WebSocket runtime to both paths, so those
 facilities have one maintained implementation.
+The PTY component similarly composes the existing bytes, cancellation, and process
+components. Its POSIX implementation uses native PTY/session/ioctl/signal APIs and
+does not compose networking, HTTP, WebSockets, or a third-party terminal library.
+Windows retains a compile-only API stub until the separate P9 ConPTY phase: operations
+that require a PTY throw unsupported, while observers and close return documented
+default/no-op results.
 Outbound HTTP uses one emitted libcurl easy-handle core. Buffered bodies are adapters
 that append to or read from owned memory; P3 streaming substitutes bounded `bytes`
 producer/consumer callbacks and an optional existing cancellation token without

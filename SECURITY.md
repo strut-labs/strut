@@ -54,6 +54,8 @@ Native threads, mutexes, channels and the async executor have stress fixtures. T
 
 `exec` is argv-based by default so arguments are not implicitly interpreted by a shell. Shell execution is an explicit opt-in path. Static/dynamic native libraries and FFI inherit the security properties of the linked native code.
 
+POSIX PTY signals are constrained by native process/session semantics. The runtime pins the unreaped leader identity and revalidates the leader and terminal session before trusting the kernel's current foreground PGID, including a group whose numeric leader PID has exited. `ESRCH` from final delivery is an exit race. POSIX offers no atomic foreground-query-plus-signal or signal-by-session primitive, so a foreground-group transition can race the final syscall and background/detached process groups can escape leader-group cleanup. Callers requiring stronger descendant containment must use an external supervisor or cgroup.
+
 ## Reliability gates
 
 Release-candidate certification should include, at minimum:

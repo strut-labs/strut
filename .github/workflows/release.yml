@@ -110,6 +110,7 @@ jobs:
           python3 dogfood/process_cancellation_certification.py build/strut
           python3 dogfood/process_lifecycle_certification.py build/strut
           python3 dogfood/pty_certification.py build/strut
+          STRUT_PTY_RELEASE=1 python3 dogfood/pty_lifecycle_certification.py build/strut
           python3 tests/ffi/run_native_link_tests.py build/strut
       - name: Certify release runtime (Windows)
         if: runner.os == 'Windows'
@@ -142,6 +143,7 @@ jobs:
           python dogfood/process_cancellation_certification.py build/Release/strut.exe
           python dogfood/process_lifecycle_certification.py build/Release/strut.exe
           python dogfood/pty_certification.py build/Release/strut.exe
+          python dogfood/pty_lifecycle_certification.py build/Release/strut.exe
       - name: Install (POSIX)
         if: runner.os != 'Windows'
         run: cmake --install build --config Release --prefix "stage/strut-${GITHUB_REF_NAME#v}-${{ matrix.platform }}"

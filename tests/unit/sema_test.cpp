@@ -31,7 +31,8 @@ struct RegistryApiTests{RegistryApiTests(){
     req(!sema("function main() -> void : ExecError { child := process(\"tool\", [1]); }").ok(),"process rejects non-string arguments");
     req(sema("function main() -> void : ExecError { child := process(\"tool\", []); }").ok(),"process contextually types empty arguments");
     req(!sema("function main() -> void : ExecError { child := process(\"tool\"); }").ok(),"process cancellation overload preserves constructor arity checks");
-    req(sema("function main() -> int : PtyError { cancellation_source source; terminal := pty_spawn(\"tool\", [], {\"rows\": 40, \"columns\": 120}, source.token()); terminal.write_bytes([0, 255]); bytes data := terminal.read_bytes(2); terminal.close(); return terminal.exit_code(); }").ok(),"PTY API accepts options, cancellation, and binary I/O");
+    req(sema("function main() -> int : PtyError { cancellation_source source; terminal := pty_spawn(\"tool\", [], {\"rows\": 40, \"columns\": 120}, source.token()); terminal.resize(50, 132); terminal.interrupt(); terminal.terminate(); terminal.kill(); terminal.hangup(); terminal.write_bytes([0, 255]); bytes data := terminal.read_bytes(2); terminal.close(); return terminal.exit_code(); }").ok(),"PTY API accepts options, cancellation, resize, signals, and binary I/O");
+    req(!sema("function main() -> void : PtyError { terminal := pty_spawn(\"tool\", []); terminal.resize(\"bad\", 80); }").ok(),"PTY resize rejects non-integer dimensions");
     req(!sema("function main() -> void : PtyError { terminal := pty_spawn(\"tool\", [1]); }").ok(),"PTY rejects non-string arguments");
     req(!sema("function main() -> void : PtyError { terminal := pty_spawn(\"tool\", [], true); }").ok(),"PTY rejects invalid options and tokens");
     req(!sema("function main() -> void : StreamError { ifstream input; input.read_bytes(\"bad\"); }").ok(),"binary stream argument types checked");
