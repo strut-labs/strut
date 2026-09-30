@@ -61,6 +61,10 @@ elif mode == 'raw':
     os.write(1, data)
 elif mode == 'sleep':
     time.sleep(30)
+elif mode == 'sleep_raw':
+    tty.setraw(0)
+    os.write(1, b'ready')
+    time.sleep(30)
 elif mode == 'exit':
     os.write(1, b'before-exit')
     raise SystemExit(7)
@@ -137,12 +141,13 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     print("p7-stage-8"); out.flush();
 
     cancellation_source write_source;
-    blocked_write := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], write_source.token());
+    blocked_write := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep_raw"], write_source.token());
+    if (blocked_write.read_bytes(5).to_string() != "ready") {{ return 12; }}
     bytes payload := bytes(16777216);
     channel<bool> write_result;
     write_worker := thread(() => {{
-        try {{ blocked_write.write_bytes(payload); print("write-cancel=completed"); out.flush(); write_result.send(false); }}
-        catch (PtyError caught) {{ bool matched := caught.code == 125 && caught.message == "PTY I/O cancelled"; if (!matched) {{ print("write-cancel=" + to_string(caught.code) + ":" + caught.message); out.flush(); }} write_result.send(matched); }}
+        try {{ blocked_write.write_bytes(payload); write_result.send(false); }}
+        catch (PtyError caught) {{ write_result.send(caught.code == 125 && caught.message == "PTY I/O cancelled"); }}
     }});
     sleep_ms(50);
     write_source.cancel();
