@@ -89,9 +89,9 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
     cancellation_source overload_source;
     first := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"]);
     string first_output := drain(first);
-    int first_status := first.wait();
+    int first_exit_status := first.wait();
     if (!first_output.contains("before-exit")) {{ return 21; }}
-    if (first_status != 7) {{ return 22; }}
+    if (first_exit_status != 7) {{ return 22; }}
     second := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], {{}});
     if (!drain(second).contains("before-exit") || second.wait() != 7) {{ return 1; }}
     third := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], overload_source.token());
