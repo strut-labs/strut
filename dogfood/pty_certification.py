@@ -257,8 +257,9 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         executable = root / "pty-certification"
         program.write_text(source, encoding="utf-8")
         subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
+        process = subprocess.Popen(executable, cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=20, check=False)
+            stdout, stderr = process.communicate(timeout=20)
         except subprocess.TimeoutExpired as error:
             processes = subprocess.run(
                 ["ps", "-axo", "pid,ppid,pgid,sid,state,command"],
@@ -266,7 +267,10 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
                 capture_output=True,
                 check=False,
             ).stdout
+            process.kill()
+            process.communicate()
             raise RuntimeError(f"timeout stdout={error.stdout!r} stderr={error.stderr!r}\n{processes}") from error
+        result = subprocess.CompletedProcess(executable, process.returncode, stdout, stderr)
         expected = "".join(f"p7-stage-{stage}\n" for stage in range(1, 12)) + "PTY certification passed\n"
         if result.returncode != 0 or result.stdout != expected or result.stderr:
             raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
