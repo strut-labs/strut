@@ -141,8 +141,8 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     bytes payload := bytes(16777216);
     channel<bool> write_result;
     write_worker := thread(() => {{
-        try {{ blocked_write.write_bytes(payload); write_result.send(false); }}
-        catch (PtyError caught) {{ write_result.send(caught.code == 125 && caught.message == "PTY I/O cancelled"); }}
+        try {{ blocked_write.write_bytes(payload); print("write-cancel=completed"); out.flush(); write_result.send(false); }}
+        catch (PtyError caught) {{ bool matched := caught.code == 125 && caught.message == "PTY I/O cancelled"; if (!matched) {{ print("write-cancel=" + to_string(caught.code) + ":" + caught.message); out.flush(); }} write_result.send(matched); }}
     }});
     sleep_ms(50);
     write_source.cancel();
