@@ -6,6 +6,7 @@ import argparse
 import html
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,27 @@ ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples" / "docs"
 START = "<!-- strut-example:{name}:start -->"
 END = "<!-- strut-example:{name}:end -->"
+SITE_REQUIREMENTS = {
+    "content/docs/status.html": ("v0.0.3", "84458dd", "Windows ConPTY", "WebSocket server"),
+    "content/docs/crypto.html": ("secure_random_bytes", "hmac_sha256", "base64url_decode", "does not provide SHA-1"),
+    "content/docs/http.html": ("http_request_stream", "request_body_length", "cancellation_token", "Unix-domain sockets"),
+    "content/docs/http-server.html": ("get_request_stream", "http_serve_file", "http_write_ndjson", "listen_tls"),
+    "content/docs/websockets.html": ("socket.accept", "read_text", "websocket_limits", "permessage-deflate"),
+    "content/docs/processes.html": ("process(string program", "cancellation_token", "CreateProcessW", "Job Object"),
+    "content/docs/pty.html": ("pty_spawn", "terminal.resize", "glibc 2.34", "unsupported on Windows until P9 ConPTY"),
+    "content/docs/architecture.html": ("libcurl", "libcrypto", "WebSocket server route", "third-party terminal library"),
+    "content/docs/security.html": ("SSRF", "process supervisor", "Windows PTY"),
+    "llms.txt": ("current development main", "docs/crypto.html", "docs/websockets.html", "docs/pty.html"),
+    "sitemap.xml": ("docs/http-server.html", "docs/websockets.html", "docs/processes.html", "docs/pty.html"),
+    "templates/docs-nav.html": ("docs/crypto", "docs/http-server", "docs/websockets", "docs/processes", "docs/pty"),
+}
+REGISTRY_REQUIREMENTS = {
+    "secure_random_bytes", "sha256", "hmac_sha256", "base64url_decode",
+    "http_request_stream", "http_request_stream_async", "http_serve_file", "http_write_ndjson",
+    "http_server.get_stream", "http_server.get_request_stream", "http_response_writer.write_bytes",
+    "http_server.websocket", "http_server.websocket_limits", "websocket.accept", "websocket.read_text",
+    "websocket.write_bytes", "process", "process_out.read_all_bytes", "pty_spawn", "pty.resize", "pty.wait",
+}
 
 
 def run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -77,6 +99,35 @@ def certify(compiler: Path, case: dict, source: Path) -> list[str]:
     return failures
 
 
+def check_site_contract(site: Path) -> list[str]:
+    failures: list[str] = []
+    for relative, needles in SITE_REQUIREMENTS.items():
+        page = site / relative
+        if not page.exists():
+            failures.append(f"website parity: required file missing: {relative}")
+            continue
+        text = page.read_text(encoding="utf-8")
+        for needle in needles:
+            if needle not in text:
+                failures.append(f"website parity: {relative} missing {needle!r}")
+    status = site / "content" / "docs" / "status.html"
+    if status.exists() and re.search(r"WebSockets?\s+(?:remain|are)\s+[^.]{0,80}(?:deferred|unsupported)", status.read_text(encoding="utf-8"), re.IGNORECASE):
+        failures.append("website parity: status still claims WebSockets are deferred or unsupported")
+    return failures
+
+
+def check_registry(compiler: Path) -> list[str]:
+    result = run([str(compiler), "api", "--json"], ROOT)
+    if result.returncode != 0:
+        return [f"API registry query failed ({result.returncode}): {result.stderr}"]
+    try:
+        catalog = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        return [f"API registry returned invalid JSON: {error}"]
+    names = {entry.get("name") for group in ("functions", "methods") for entry in catalog.get(group, [])}
+    return [f"API registry missing website-required callable {name!r}" for name in sorted(REGISTRY_REQUIREMENTS - names)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path, nargs="?")
@@ -100,6 +151,10 @@ def main() -> int:
             counts[case["mode"]] += 1
         if site:
             failures.extend(sync_or_check(site, case, source, args.sync_website))
+    if compiler:
+        failures.extend(check_registry(compiler))
+    if site:
+        failures.extend(check_site_contract(site))
     if failures:
         for failure in failures:
             print(f"FAIL {failure}", file=sys.stderr)
