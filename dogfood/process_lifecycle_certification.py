@@ -71,8 +71,8 @@ elif mode == 'options':
 elif mode == 'fds':
     sentinel = int(os.environ['STRUT_SENTINEL_DESCRIPTOR'])
     if sys.platform == 'win32':
-        flags = ctypes.c_ulong()
-        inherited = bool(ctypes.windll.kernel32.GetHandleInformation(ctypes.c_void_p(sentinel), ctypes.byref(flags)))
+        available = ctypes.c_ulong()
+        inherited = bool(ctypes.windll.kernel32.PeekNamedPipe(ctypes.c_void_p(sentinel), None, 0, None, ctypes.byref(available), None)) and available.value == 8
     else:
         try:
             os.fstat(sentinel)
@@ -185,6 +185,7 @@ function main() -> int : (ExecError, StreamError, ThreadError, TimeError) {{
             else:
                 sentinel = sentinel_read
                 os.set_inheritable(sentinel, True)
+            os.write(sentinel_write, b"sentinel")
             environment = os.environ.copy()
             environment["STRUT_SENTINEL_DESCRIPTOR"] = str(sentinel)
             result = subprocess.run([executable], cwd=root, env=environment, close_fds=False, text=True, capture_output=True, timeout=20, check=False)
