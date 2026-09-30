@@ -81,17 +81,13 @@ elif mode == 'exit':
     return output;
 }}
 
-function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
+function main() -> int : (PtyError, ThreadError, TimeError) {{
     shell := pty_spawn("/bin/sh", ["-c", "printf shell-ok"]);
-    string shell_output := drain(shell);
-    int shell_status := shell.wait();
-    if (shell_output != "shell-ok" || shell_status != 0) {{ print("shell=" + shell_output + " status=" + to_string(shell_status)); return 1; }}
-    print("p7-stage-1"); out.flush();
+    if (drain(shell) != "shell-ok" || shell.wait() != 0) {{ return 1; }}
 
     configured := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "inspect", "", "two words", "π"], {{"cwd": "{escaped(work)}", "env": {{"STRUT_PTY_ENV": "value-π"}}, "rows": 37, "columns": 111}});
     string details := drain(configured);
-    if (configured.wait() != 0 || !details.contains("argv=['', 'two words', 'π']") || !details.contains("env=value-π") || !details.contains("cwd=pty-cwd") || !details.contains("tty=True") || !details.contains("session_leader=True") || !details.contains("controlling_terminal=True") || !details.contains("foreground_group=True") || !details.contains("size=37x111") || !details.contains("stdout") || !details.contains("stderr")) {{ print("configured=" + details); return 2; }}
-    print("p7-stage-2"); out.flush();
+    if (configured.wait() != 0 || !details.contains("argv=['', 'two words', 'π']") || !details.contains("env=value-π") || !details.contains("cwd=pty-cwd") || !details.contains("tty=True") || !details.contains("session_leader=True") || !details.contains("controlling_terminal=True") || !details.contains("foreground_group=True") || !details.contains("size=37x111") || !details.contains("stdout") || !details.contains("stderr")) {{ return 2; }}
 
     raw := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "raw"]);
     if (raw.read_bytes(5).to_string() != "ready") {{ return 3; }}
@@ -100,21 +96,17 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     bytes returned := raw.read_bytes(5);
     if (returned.length() != 5 || returned[0] != 0 || returned[1] != 10 || returned[2] != 13 || returned[3] != 128 || returned[4] != 255) {{ return 4; }}
     if (drain(raw) != "" || raw.wait() != 0 || !raw.eof()) {{ return 5; }}
-    print("p7-stage-3"); out.flush();
 
     exited := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"]);
     if (drain(exited) != "before-exit" || exited.wait() != 7 || exited.running() || exited.exit_code() != 7) {{ return 6; }}
-    print("p7-stage-4"); out.flush();
 
     interactive := pty_spawn("/bin/sh", []);
     interactive.write_bytes(bytes.from_string("printf interactive-fixture; exit 0\\n"));
     string transcript := drain(interactive);
     if (interactive.wait() != 0 || !transcript.contains("interactive-fixture") || !transcript.contains("printf interactive-fixture")) {{ return 7; }}
-    print("p7-stage-5"); out.flush();
 
     path_shell := pty_spawn("sh", ["-c", "printf path-ok"]);
     if (drain(path_shell) != "path-ok" || path_shell.wait() != 0) {{ return 8; }}
-    print("p7-stage-6"); out.flush();
 
     bool missing_rejected := false;
     try {{ missing := pty_spawn("__strut_missing_pty_executable__", []); missing.close(); }}
@@ -124,7 +116,6 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     try {{ bad_cwd := pty_spawn("/bin/sh", ["-c", "exit 0"], {{"cwd": "{escaped(root / 'missing-cwd')}"}}); bad_cwd.close(); }}
     catch (PtyError caught) {{ cwd_rejected = true; }}
     if (!cwd_rejected) {{ return 10; }}
-    print("p7-stage-7"); out.flush();
 
     cancellation_source read_source;
     blocked_read := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], read_source.token());
@@ -138,7 +129,6 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     if (!(read_result.receive() ?? false)) {{ return 11; }}
     read_worker.join();
     blocked_read.close();
-    print("p7-stage-8"); out.flush();
 
     cancellation_source write_source;
     blocked_write := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep_raw"], write_source.token());
@@ -154,7 +144,6 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     if (!(write_result.receive() ?? false)) {{ return 12; }}
     write_worker.join();
     blocked_write.close();
-    print("p7-stage-9"); out.flush();
 
     close_blocked := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     channel<bool> close_result;
@@ -216,7 +205,6 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     if (!(active_read_done.receive() ?? false) || !(active_write_done.receive() ?? false)) {{ return 16; }}
     active_reader.join();
     active_writer.join();
-    print("p7-stage-10"); out.flush();
 
     wait_close := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     channel<int> wait_close_result;
@@ -236,7 +224,6 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     wait_close_worker.join();
     wait_close_worker_two.join();
     if (now_ms() - wait_close_start > 1000 || wait_close_status < 128 || wait_close_status_two != wait_close_status || wait_close.wait() != wait_close_status || wait_close.running() || wait_close.exit_code() != wait_close_status) {{ return 17; }}
-    print("p7-stage-11"); out.flush();
 
     cancellation_source resident_source;
     resident := thread(() => {{ resident_source.token().wait(); }});
@@ -262,31 +249,8 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         executable = root / "pty-certification"
         program.write_text(source, encoding="utf-8")
         subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
-        process = subprocess.Popen(executable, cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            stdout, stderr = process.communicate(timeout=20)
-        except subprocess.TimeoutExpired as error:
-            processes = subprocess.run(
-                ["ps", "-axo", "pid,ppid,pgid,sid,state,command"],
-                text=True,
-                capture_output=True,
-                check=False,
-            ).stdout
-            sample = ""
-            if sys.platform == "darwin":
-                sampled = subprocess.run(
-                    ["sample", str(process.pid), "1", "1"],
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-                sample = sampled.stdout + sampled.stderr
-            process.kill()
-            process.communicate()
-            raise RuntimeError(f"timeout stdout={error.stdout!r} stderr={error.stderr!r}\n{processes}\n{sample}") from error
-        result = subprocess.CompletedProcess(executable, process.returncode, stdout, stderr)
-        expected = "".join(f"p7-stage-{stage}\n" for stage in range(1, 12)) + "PTY certification passed\n"
-        if result.returncode != 0 or result.stdout != expected or result.stderr:
+        result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=20, check=False)
+        if result.returncode != 0 or result.stdout != "PTY certification passed\n" or result.stderr:
             raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
     print("P7 PTY certification: spawn-session and controlling-terminal identity, direct shell and ordinary executables, PATH/argv/env/cwd, TTY geometry, merged streams, raw binary I/O, interactive echo, exit/EOF, direct spawn failure, blocked read/write cancellation, active close and wait-vs-close races, duplicate readers/writers, spawning with resident threads, shared ownership, and 25 cleanup cycles passed")
 
