@@ -1322,7 +1322,11 @@ inline int strut_posix_spawn_addchdir(posix_spawn_file_actions_t* actions,const 
 #endif
 inline pid_t strut_posix_spawn(const strut_string& program,strut_posix_spawn_data& data,const strut_exec_options& options,const std::vector<std::pair<int,int>>& duplicates,[[maybe_unused]] const std::vector<int>& closes){
     posix_spawn_file_actions_t actions;strut_posix_check(posix_spawn_file_actions_init(&actions),"posix_spawn file actions");posix_spawnattr_t attributes;int error=posix_spawnattr_init(&attributes);if(error){posix_spawn_file_actions_destroy(&actions);strut_posix_check(error,"posix_spawn attributes");}
-    auto cleanup=[&](){posix_spawnattr_destroy(&attributes);posix_spawn_file_actions_destroy(&actions);};for(const auto& item:duplicates){error=posix_spawn_file_actions_adddup2(&actions,item.first,item.second);if(error){cleanup();strut_posix_check(error,"posix_spawn dup2 action");}}
+    auto cleanup=[&](){posix_spawnattr_destroy(&attributes);posix_spawn_file_actions_destroy(&actions);};
+#ifdef __APPLE__
+    for(int descriptor=STDIN_FILENO;descriptor<=STDERR_FILENO;++descriptor){if(fcntl(descriptor,F_GETFD)<0)continue;error=posix_spawn_file_actions_addinherit_np(&actions,descriptor);if(error){cleanup();strut_posix_check(error,"posix_spawn inherit action");}}
+#endif
+    for(const auto& item:duplicates){error=posix_spawn_file_actions_adddup2(&actions,item.first,item.second);if(error){cleanup();strut_posix_check(error,"posix_spawn dup2 action");}}
 #if defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
     error=posix_spawn_file_actions_addclosefrom_np(&actions,STDERR_FILENO+1);if(error){cleanup();strut_posix_check(error,"posix_spawn closefrom action");}
 #elif !defined(__APPLE__)
