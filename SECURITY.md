@@ -56,7 +56,7 @@ Native threads, mutexes, channels and the async executor have stress fixtures. T
 
 POSIX PTY signals are constrained by native process/session semantics. The runtime pins the unreaped leader identity and revalidates the leader and terminal session before trusting the kernel's current foreground PGID, including a group whose numeric leader PID has exited. `ESRCH` from final delivery is an exit race. POSIX offers no atomic foreground-query-plus-signal or signal-by-session primitive, so a foreground-group transition can race the final syscall and background/detached process groups can escape leader-group cleanup. Callers requiring stronger descendant containment must use an external supervisor or cgroup.
 
-macOS PTY launch native-spawns the current executable through a hidden runtime entry solely to open and claim the slave after Darwin creates the new session. It then immediately calls `execve` with the parent-resolved target and original argv; no requested value is evaluated as shell text.
+macOS PTY launch native-spawns the current executable with an already-open slave inherited by a hidden runtime entry solely to claim it after Darwin creates the new session. It then immediately calls `execve` with the parent-resolved target and original argv; no requested value is evaluated as shell text.
 
 ## Reliability gates
 

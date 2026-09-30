@@ -271,6 +271,8 @@ inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_str
 inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_string>&,const strut_process_cancellation_token&){throw strut_checked_error("PtyError","PTY unsupported on Windows until P9 ConPTY");}
 inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_string>&,const json::Document&,const strut_process_cancellation_token&){throw strut_checked_error("PtyError","PTY unsupported on Windows until P9 ConPTY");}
 #else
+#include <cstdlib>
+#include <limits>
 #include <sys/ioctl.h>
 #include <termios.h>
 #ifdef __APPLE__
@@ -375,7 +377,7 @@ private:
 inline int strut_pty_parent_fd(int descriptor){if(descriptor<0)return descriptor;if(descriptor>STDERR_FILENO)return descriptor;const int replacement=fcntl(descriptor,F_DUPFD_CLOEXEC,STDERR_FILENO+1);const int failure=errno;::close(descriptor);if(replacement<0){errno=failure;throw strut_checked_error("PtyError","PTY descriptor setup failed");}return replacement;}
 inline bool strut_pty_child_main(int argc,char** argv){
 #ifdef __APPLE__
-    if(argc<5||std::strcmp(argv[1],"--strut-internal-pty-launcher-v1")!=0)return false;const int slave=::open(argv[2],O_RDWR);if(slave<0||ioctl(slave,TIOCSCTTY,0)!=0||tcsetpgrp(slave,getpgrp())!=0)_exit(126);for(int descriptor=STDIN_FILENO;descriptor<=STDERR_FILENO;++descriptor)if(dup2(slave,descriptor)<0)_exit(126);if(slave>STDERR_FILENO)::close(slave);execve(argv[3],argv+4,environ);_exit(126);
+    if(argc<5||std::strcmp(argv[1],"--strut-internal-pty-launcher-v1")!=0)return false;char* end=nullptr;errno=0;const long inherited=std::strtol(argv[2],&end,10);if(errno||!end||*end||inherited<=STDERR_FILENO||inherited>std::numeric_limits<int>::max())_exit(126);const int slave=static_cast<int>(inherited);if(ioctl(slave,TIOCSCTTY,0)!=0||tcsetpgrp(slave,getpgrp())!=0)_exit(126);for(int descriptor=STDIN_FILENO;descriptor<=STDERR_FILENO;++descriptor)if(dup2(slave,descriptor)<0)_exit(126);::close(slave);execve(argv[3],argv+4,environ);_exit(126);
 #else
     (void)argc;(void)argv;return false;
 #endif
@@ -400,9 +402,14 @@ inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vec
 #else
         std::vector<char> name(256);int name_error=ptsname_r(master,name.data(),name.size());if(name_error)throw strut_checked_error("PtyError",std::string("ptsname_r failed: ")+std::strerror(name_error));slave_name=name.data();
 #endif
-        slave=strut_pty_parent_fd(::open(slave_name.c_str(),O_RDWR|O_NOCTTY|O_CLOEXEC));if(slave<0)throw strut_checked_error("PtyError",std::string("PTY slave open failed: ")+std::strerror(errno));winsize size{};size.ws_row=options.rows;size.ws_col=options.columns;if(ioctl(slave,TIOCSWINSZ,&size)!=0)throw strut_checked_error("PtyError",std::string("PTY window setup failed: ")+std::strerror(errno));strut_close_fd(slave);
-        int error=posix_spawn_file_actions_init(&actions);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn actions failed: ")+std::strerror(error));actions_ready=true;error=posix_spawnattr_init(&attributes);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn attributes failed: ")+std::strerror(error));attributes_ready=true;
+        slave=strut_pty_parent_fd(::open(slave_name.c_str(),O_RDWR|O_NOCTTY|O_CLOEXEC));if(slave<0)throw strut_checked_error("PtyError",std::string("PTY slave open failed: ")+std::strerror(errno));winsize size{};size.ws_row=options.rows;size.ws_col=options.columns;if(ioctl(slave,TIOCSWINSZ,&size)!=0)throw strut_checked_error("PtyError",std::string("PTY window setup failed: ")+std::strerror(errno));
 #ifndef __APPLE__
+        strut_close_fd(slave);
+#endif
+        int error=posix_spawn_file_actions_init(&actions);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn actions failed: ")+std::strerror(error));actions_ready=true;error=posix_spawnattr_init(&attributes);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn attributes failed: ")+std::strerror(error));attributes_ready=true;
+#ifdef __APPLE__
+        error=posix_spawn_file_actions_addinherit_np(&actions,slave);
+#else
         error=posix_spawn_file_actions_addopen(&actions,STDIN_FILENO,slave_name.c_str(),O_RDWR,0);if(!error)error=posix_spawn_file_actions_adddup2(&actions,STDIN_FILENO,STDOUT_FILENO);if(!error)error=posix_spawn_file_actions_adddup2(&actions,STDIN_FILENO,STDERR_FILENO);
 #endif
 #if defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
@@ -417,12 +424,12 @@ inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vec
 #endif
         if(!error)error=posix_spawnattr_setflags(&attributes,flags);
 #ifdef __APPLE__
-        const auto launcher=strut_pty_self_executable();std::vector<std::string> launcher_args={launcher,"--strut-internal-pty-launcher-v1",slave_name,executable};launcher_args.insert(launcher_args.end(),data.args.begin(),data.args.end());std::vector<char*> launcher_argv;launcher_argv.reserve(launcher_args.size()+1);for(auto& argument:launcher_args)launcher_argv.push_back(argument.data());launcher_argv.push_back(nullptr);if(!error)error=posix_spawn(&pid,launcher.c_str(),&actions,&attributes,launcher_argv.data(),data.envp.data());
+        const auto launcher=strut_pty_self_executable();std::vector<std::string> launcher_args={launcher,"--strut-internal-pty-launcher-v1",std::to_string(slave),executable};launcher_args.insert(launcher_args.end(),data.args.begin(),data.args.end());std::vector<char*> launcher_argv;launcher_argv.reserve(launcher_args.size()+1);for(auto& argument:launcher_args)launcher_argv.push_back(argument.data());launcher_argv.push_back(nullptr);if(!error)error=posix_spawn(&pid,launcher.c_str(),&actions,&attributes,launcher_argv.data(),data.envp.data());
 #else
         if(!error)error=posix_spawn(&pid,executable.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());
 #endif
         if(error)throw strut_checked_error("PtyError",std::string("PTY posix_spawn failed: ")+std::strerror(error));
-        posix_spawnattr_destroy(&attributes);attributes_ready=false;posix_spawn_file_actions_destroy(&actions);actions_ready=false;
+        posix_spawnattr_destroy(&attributes);attributes_ready=false;posix_spawn_file_actions_destroy(&actions);actions_ready=false;strut_close_fd(slave);
     }catch(...){if(attributes_ready)posix_spawnattr_destroy(&attributes);if(actions_ready)posix_spawn_file_actions_destroy(&actions);strut_close_fd(master);strut_close_fd(slave);throw;}
     spawn_lock.unlock();
     const int status=fcntl(master,F_GETFL,0);if(status<0||fcntl(master,F_SETFL,status|O_NONBLOCK)<0){const int saved=errno;strut_close_fd(master);(void)::kill(-pid,SIGKILL);int ignored=0;while(waitpid(pid,&ignored,0)<0&&errno==EINTR){}throw strut_checked_error("PtyError",std::string("PTY nonblocking setup failed: ")+std::strerror(saved));}

@@ -98,9 +98,10 @@ facilities have one maintained implementation.
 The PTY component similarly composes the existing bytes, cancellation, and process
 components. Its POSIX implementation uses native PTY/session/ioctl/signal APIs and
 does not compose networking, HTTP, WebSockets, or a third-party terminal library.
-On macOS, a hidden self-exec runtime entry opens and claims the slave after native
-spawn has created the session, because Darwin applies spawn file actions too early
-to acquire a controlling terminal. It then directly `execve`s the resolved target.
+On macOS, native spawn inherits an already-open slave into a hidden self-exec runtime
+entry, which claims it after spawn has created the session because Darwin applies
+file actions too early to acquire a controlling terminal. It then directly `execve`s
+the resolved target.
 Windows retains a compile-only API stub until the separate P9 ConPTY phase: operations
 that require a PTY throw unsupported, while observers and close return documented
 default/no-op results.
