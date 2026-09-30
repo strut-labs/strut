@@ -123,6 +123,10 @@ jobs:
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after --attempt attempt-1.p
           python3 dogfood/package_certification.py build/strut
           python3 dogfood/crypto_certification.py build/strut
+          python3 dogfood/process_cancellation_certification.py build/strut
+          python3 dogfood/process_lifecycle_certification.py build/strut
+          python3 dogfood/pty_certification.py build/strut
+          python3 dogfood/pty_lifecycle_certification.py build/strut
           python3 dogfood/http_client_certification.py build/strut
           python3 dogfood/http_client_streaming_certification.py build/strut
           python3 dogfood/http_websocket_certification.py build/strut
@@ -139,10 +143,6 @@ jobs:
           python3 dogfood/http_request_cancellation_certification.py build/strut
           python3 dogfood/http_worker_certification.py build/strut
           python3 dogfood/backend_baseline_certification.py build/strut
-          python3 dogfood/process_cancellation_certification.py build/strut
-          python3 dogfood/process_lifecycle_certification.py build/strut
-          python3 dogfood/pty_certification.py build/strut
-          python3 dogfood/pty_lifecycle_certification.py build/strut
       - name: Certify sanitized generated HTTP runtime
         if: matrix.name == 'linux-x64-gcc'
         env:
