@@ -370,7 +370,7 @@ private:
 inline int strut_pty_parent_fd(int descriptor){if(descriptor<0)return descriptor;if(descriptor>STDERR_FILENO)return descriptor;const int replacement=fcntl(descriptor,F_DUPFD_CLOEXEC,STDERR_FILENO+1);const int failure=errno;::close(descriptor);if(replacement<0){errno=failure;throw strut_checked_error("PtyError","PTY descriptor setup failed");}return replacement;}
 inline bool strut_pty_child_main(int argc,char** argv){
 #ifdef __APPLE__
-    if(argc<5||std::strcmp(argv[1],"--strut-internal-pty-launcher-v1")!=0)return false;const int slave=::open(argv[2],O_RDWR);if(slave<0||ioctl(slave,TIOCSCTTY,0)!=0)_exit(126);for(int descriptor=STDIN_FILENO;descriptor<=STDERR_FILENO;++descriptor)if(dup2(slave,descriptor)<0)_exit(126);if(slave>STDERR_FILENO)::close(slave);execve(argv[3],argv+4,environ);_exit(126);
+    if(argc<5||std::strcmp(argv[1],"--strut-internal-pty-launcher-v1")!=0)return false;const int slave=::open(argv[2],O_RDWR);if(slave<0||ioctl(slave,TIOCSCTTY,0)!=0||tcsetpgrp(slave,getpgrp())!=0)_exit(126);for(int descriptor=STDIN_FILENO;descriptor<=STDERR_FILENO;++descriptor)if(dup2(slave,descriptor)<0)_exit(126);if(slave>STDERR_FILENO)::close(slave);execve(argv[3],argv+4,environ);_exit(126);
 #else
     (void)argc;(void)argv;return false;
 #endif
