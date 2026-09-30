@@ -117,7 +117,9 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     write_file("stage.txt", "merged-complete");
     interactive := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "line"]);
     if (!read_until(interactive, "ready").contains("ready")) {{ return 4; }}
-    interactive.write_bytes(bytes.from_string("hello from conpty\\n"));
+    write_file("stage.txt", "interactive-ready");
+    interactive.write_bytes(bytes.from_string("hello from conpty\\r"));
+    write_file("stage.txt", "interactive-written");
     if (!drain(interactive).contains("value=hello from conpty") || interactive.wait() != 0) {{ return 4; }}
 
     write_file("stage.txt", "interactive-complete");
