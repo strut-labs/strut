@@ -98,6 +98,9 @@ facilities have one maintained implementation.
 The PTY component similarly composes the existing bytes, cancellation, and process
 components. Its POSIX implementation uses native PTY/session/ioctl/signal APIs and
 does not compose networking, HTTP, WebSockets, or a third-party terminal library.
+On macOS, a fixed argv-only `/bin/sh` exec launcher opens the slave after the native
+spawn has created the session, because Darwin applies spawn file actions too early
+to acquire a controlling terminal. Requested values are not evaluated as shell text.
 Windows retains a compile-only API stub until the separate P9 ConPTY phase: operations
 that require a PTY throw unsupported, while observers and close return documented
 default/no-op results.
