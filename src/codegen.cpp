@@ -1092,13 +1092,13 @@ private:
 };
 template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
 struct strut_checked_error : std::runtime_error { std::string type; std::string message; std::int32_t code=0; strut_checked_error(std::string t,const std::string& m,std::int32_t c=0):std::runtime_error(m),type(std::move(t)),message(m),code(c){} };
+inline std::mutex strut_process_spawn_mutex;
 #ifndef _WIN32
 #include <fcntl.h>
 #ifndef STRUT_SIGPIPE_MUTEX_DEFINED
 #define STRUT_SIGPIPE_MUTEX_DEFINED
 inline std::mutex strut_sigpipe_mutex;
 #endif
-inline std::mutex strut_process_spawn_mutex;
 inline void strut_close_fd(int& descriptor) noexcept{if(descriptor>=0){::close(descriptor);descriptor=-1;}}
 inline void strut_close_pipe(int (&descriptors)[2]) noexcept{strut_close_fd(descriptors[0]);strut_close_fd(descriptors[1]);}
 inline bool strut_make_process_pipe(int (&descriptors)[2]) noexcept{
@@ -1245,8 +1245,9 @@ inline void strut_fs_write_file(const strut_string& p,const strut_string& data){
 inline void strut_fs_write_file(const strut_string& p,const strut_bytes& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::trunc);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.native_size()))))throw strut_checked_error("FilesystemError","write_file failed");}
 inline void strut_fs_append_file(const strut_string& p,const strut_string& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.v.empty()&&!f.write(data.v.data(),static_cast<std::streamsize>(data.v.size()))))throw strut_checked_error("FilesystemError","append_file failed");}
 inline void strut_fs_append_file(const strut_string& p,const strut_bytes& data){std::ofstream f(strut_fs_path(p),std::ios::binary|std::ios::app);if(!f||(!data.empty()&&!f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.native_size()))))throw strut_checked_error("FilesystemError","append_file failed");}
-inline std::optional<strut_string> strut_env(const strut_string& name){const char* v=std::getenv(name.v.c_str());if(!v)return std::nullopt;return strut_string(v);}
+inline std::optional<strut_string> strut_env(const strut_string& name){std::lock_guard<std::mutex> environment_lock(strut_process_spawn_mutex);const char* v=std::getenv(name.v.c_str());if(!v)return std::nullopt;return strut_string(v);}
 inline void strut_set_env(const strut_string& name,const strut_string& value){
+    std::lock_guard<std::mutex> environment_lock(strut_process_spawn_mutex);
 #ifdef _WIN32
     if(_putenv_s(name.v.c_str(),value.v.c_str())!=0)throw strut_checked_error("EnvironmentError","set_env failed");
 #else
@@ -1254,6 +1255,7 @@ inline void strut_set_env(const strut_string& name,const strut_string& value){
 #endif
 }
 inline void strut_unset_env(const strut_string& name){
+    std::lock_guard<std::mutex> environment_lock(strut_process_spawn_mutex);
 #ifdef _WIN32
     if(_putenv_s(name.v.c_str(),"")!=0)throw strut_checked_error("EnvironmentError","unset_env failed");
 #else
@@ -1273,36 +1275,85 @@ inline void wait_for_shutdown_signal(){strut_shutdown_signal_flag=0;auto old_int
 #endif
 struct strut_exec_result { std::int32_t exit_code=0; strut_string stdout; strut_string stderr; };
 struct strut_exec_options { bool capture=true; bool inherit_stdio=false; strut_string cwd; std::vector<std::pair<std::string,std::string>> env; };
-inline strut_exec_options strut_parse_exec_options(const json::Document& d){strut_exec_options o;if(d.type==json::Type::Null)return o;if(d.type!=json::Type::Object)throw strut_checked_error("ExecError","exec options must be a JSON object");if(d.has("capture")&&d["capture"].type==json::Type::Boolean)o.capture=d["capture"].boolean;if(d.has("inherit_stdio")&&d["inherit_stdio"].type==json::Type::Boolean)o.inherit_stdio=d["inherit_stdio"].boolean;if(d.has("cwd")&&d["cwd"].type==json::Type::String)o.cwd=d["cwd"].string;if(d.has("env")){const auto& e=d["env"];if(e.type!=json::Type::Object)throw strut_checked_error("ExecError","exec env option must be an object");for(const auto& kv:e.object){if(kv.second.type!=json::Type::String)throw strut_checked_error("ExecError","exec environment values must be strings");o.env.emplace_back(kv.first,kv.second.string);}}if(o.inherit_stdio)o.capture=false;return o;}
+inline strut_exec_options strut_parse_exec_options(const json::Document& d){strut_exec_options o;if(d.type==json::Type::Null)return o;if(d.type!=json::Type::Object)throw strut_checked_error("ExecError","exec options must be a JSON object");if(d.has("capture")){if(d["capture"].type!=json::Type::Boolean)throw strut_checked_error("ExecError","exec capture option must be boolean");o.capture=d["capture"].boolean;}if(d.has("inherit_stdio")){if(d["inherit_stdio"].type!=json::Type::Boolean)throw strut_checked_error("ExecError","exec inherit_stdio option must be boolean");o.inherit_stdio=d["inherit_stdio"].boolean;}if(d.has("cwd")){if(d["cwd"].type!=json::Type::String)throw strut_checked_error("ExecError","exec cwd option must be a string");o.cwd=d["cwd"].string;}if(d.has("env")){const auto& e=d["env"];if(e.type!=json::Type::Object)throw strut_checked_error("ExecError","exec env option must be an object");for(const auto& kv:e.object){if(kv.second.type!=json::Type::String)throw strut_checked_error("ExecError","exec environment values must be strings");o.env.emplace_back(kv.first,kv.second.string);}}if(o.inherit_stdio)o.capture=false;return o;}
+inline strut_exec_options strut_parse_process_options(const json::Document& d){if(d.type!=json::Type::Null&&d.type!=json::Type::Object)throw strut_checked_error("ExecError","process options must be a JSON object");if(d.type==json::Type::Object&&(d.has("capture")||d.has("inherit_stdio")))throw strut_checked_error("ExecError","streaming process options support only cwd and env");return strut_parse_exec_options(d);}
 #ifndef _WIN32
 #include <signal.h>
-inline strut_exec_result strut_exec_impl(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
-)CPP" << R"CPP(    std::vector<std::string> storage;storage.reserve(args.size()+1);storage.push_back(program.v);for(const auto& argument:args)storage.push_back(argument.v);std::vector<char*> argv;argv.reserve(storage.size()+1);for(auto& argument:storage)argv.push_back(argument.data());argv.push_back(nullptr);
-    int out_pipe[2]={-1,-1},err_pipe[2]={-1,-1};std::unique_lock<std::mutex> spawn_lock(strut_process_spawn_mutex);if(options.capture&&(!strut_make_process_pipe(out_pipe)||!strut_make_process_pipe(err_pipe))){const int failure=errno;strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(failure));}
-    pid_t pid=fork();if(pid<0){const int failure=errno;strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(failure));}
-    if(pid==0){
-        if(options.capture){::close(out_pipe[0]);::close(err_pipe[0]);if(dup2(out_pipe[1],STDOUT_FILENO)<0||dup2(err_pipe[1],STDERR_FILENO)<0)_exit(126);::close(out_pipe[1]);::close(err_pipe[1]);}
-        if(!options.cwd.v.empty()&&chdir(options.cwd.v.c_str())!=0)_exit(126);
-        for(const auto& kv:options.env)if(setenv(kv.first.c_str(),kv.second.c_str(),1)!=0)_exit(126);
-        execvp(program.v.c_str(),argv.data());_exit(errno==ENOENT?127:126);
+#include <spawn.h>
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2,29)
+#define STRUT_GLIBC_SPAWN_CHDIR 1
+#endif
+#if __GLIBC_PREREQ(2,34)
+#define STRUT_GLIBC_SPAWN_CLOSEFROM 1
+#endif
+#endif
+#if defined(STRUT_GLIBC_SPAWN_CHDIR) && !defined(__USE_GNU)
+extern "C" int posix_spawn_file_actions_addchdir_np(posix_spawn_file_actions_t*,const char*);
+#endif
+#if defined(STRUT_GLIBC_SPAWN_CLOSEFROM) && !defined(__USE_GNU)
+extern "C" int posix_spawn_file_actions_addclosefrom_np(posix_spawn_file_actions_t*,int);
+#endif
+extern char** environ;
+struct strut_posix_spawn_data{std::vector<std::string> args,environment;std::vector<char*> argv,envp;};
+inline void strut_reject_nul(const std::string& value,const char* field){if(value.find('\0')!=std::string::npos)throw strut_checked_error("ExecError",std::string(field)+" contains NUL");}
+inline strut_posix_spawn_data strut_posix_spawn_arguments(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
+    strut_posix_spawn_data data;strut_reject_nul(program.v,"program");data.args.reserve(args.size()+1);data.args.push_back(program.v);for(const auto& argument:args){strut_reject_nul(argument.v,"argument");data.args.push_back(argument.v);}data.argv.reserve(data.args.size()+1);for(auto& argument:data.args)data.argv.push_back(argument.data());data.argv.push_back(nullptr);
+    std::map<std::string,std::string> values;{std::lock_guard<std::mutex> environment_lock(strut_process_spawn_mutex);for(char** item=environ;item&&*item;++item){std::string entry=*item;const auto split=entry.find('=');if(split!=std::string::npos)values[entry.substr(0,split)]=entry.substr(split+1);}}for(const auto& item:options.env){if(item.first.empty()||item.first.find('=')!=std::string::npos)throw strut_checked_error("ExecError","invalid environment name");strut_reject_nul(item.first,"environment name");strut_reject_nul(item.second,"environment value");values[item.first]=item.second;}data.environment.reserve(values.size());for(const auto& item:values)data.environment.push_back(item.first+"="+item.second);data.envp.reserve(data.environment.size()+1);for(auto& entry:data.environment)data.envp.push_back(entry.data());data.envp.push_back(nullptr);return data;
+}
+inline void strut_posix_check(int error,const char* operation){if(error)throw strut_checked_error("ExecError",std::string(operation)+": "+std::strerror(error));}
+inline pid_t strut_posix_spawn(const strut_string& program,strut_posix_spawn_data& data,const strut_exec_options& options,const std::vector<std::pair<int,int>>& duplicates,[[maybe_unused]] const std::vector<int>& closes){
+    posix_spawn_file_actions_t actions;strut_posix_check(posix_spawn_file_actions_init(&actions),"posix_spawn file actions");posix_spawnattr_t attributes;int error=posix_spawnattr_init(&attributes);if(error){posix_spawn_file_actions_destroy(&actions);strut_posix_check(error,"posix_spawn attributes");}
+    auto cleanup=[&](){posix_spawnattr_destroy(&attributes);posix_spawn_file_actions_destroy(&actions);};for(const auto& item:duplicates){error=posix_spawn_file_actions_adddup2(&actions,item.first,item.second);if(error){cleanup();strut_posix_check(error,"posix_spawn dup2 action");}}
+#if defined(__APPLE__) || defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
+    error=posix_spawn_file_actions_addclosefrom_np(&actions,STDERR_FILENO+1);if(error){cleanup();strut_posix_check(error,"posix_spawn closefrom action");}
+#else
+    const long open_max=sysconf(_SC_OPEN_MAX);const int descriptor_limit=open_max>0&&open_max<=std::numeric_limits<int>::max()?static_cast<int>(open_max):1024;for(int descriptor=STDERR_FILENO+1;descriptor<descriptor_limit;++descriptor){if(fcntl(descriptor,F_GETFD)<0&&errno==EBADF)continue;error=posix_spawn_file_actions_addclose(&actions,descriptor);if(error){cleanup();strut_posix_check(error,"posix_spawn close action");}}
+#endif
+    if(!options.cwd.v.empty()){
+#if defined(__APPLE__) || defined(STRUT_GLIBC_SPAWN_CHDIR)
+        strut_reject_nul(options.cwd.v,"cwd");error=posix_spawn_file_actions_addchdir_np(&actions,options.cwd.v.c_str());if(error){cleanup();strut_posix_check(error,"posix_spawn chdir action");}
+#else
+        cleanup();throw strut_checked_error("ExecError","cwd for process launch requires posix_spawn addchdir support");
+#endif
     }
-    if(options.capture){strut_close_fd(out_pipe[1]);strut_close_fd(err_pipe[1]);}spawn_lock.unlock();
-    strut_exec_result result; std::string sout,serr;
-    auto read_fd=[](int fd,std::string& dst){char b[4096];for(;;){ssize_t n=read(fd,b,sizeof(b));if(n>0)dst.append(b,static_cast<std::size_t>(n));else break;}close(fd);};
-    std::thread t1,t2;if(options.capture){t1=std::thread(read_fd,out_pipe[0],std::ref(sout));t2=std::thread(read_fd,err_pipe[0],std::ref(serr));}
-    int status=0;while(waitpid(pid,&status,0)<0){if(errno!=EINTR)throw strut_checked_error("ExecError",std::string("waitpid failed: ")+std::strerror(errno));}
-    if(options.capture){t1.join();t2.join();}if(WIFEXITED(status))result.exit_code=WEXITSTATUS(status);else if(WIFSIGNALED(status))result.exit_code=128+WTERMSIG(status);else result.exit_code=-1;result.stdout=strut_string(std::move(sout));result.stderr=strut_string(std::move(serr));return result;
+    short flags=POSIX_SPAWN_SETPGROUP;error=posix_spawnattr_setflags(&attributes,flags);if(!error)error=posix_spawnattr_setpgroup(&attributes,0);if(error){cleanup();strut_posix_check(error,"posix_spawn process group");}pid_t pid=-1;error=posix_spawnp(&pid,program.v.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());cleanup();strut_posix_check(error,"posix_spawnp");return pid;
+}
+inline bool strut_posix_collect_owned(pid_t pid,int& status,bool blocking,int& failure) noexcept{siginfo_t information{};const int flags=WEXITED|WNOWAIT|(blocking?0:WNOHANG);for(;;){if(waitid(P_PID,static_cast<id_t>(pid),&information,flags)==0)break;if(errno==EINTR)continue;failure=errno;return false;}if(!blocking&&information.si_pid==0)return false;(void)::kill(-pid,SIGKILL);for(;;){const pid_t result=waitpid(pid,&status,0);if(result==pid)return true;if(result<0&&errno==EINTR)continue;failure=result<0?errno:ECHILD;return false;}}
+inline strut_exec_result strut_exec_impl(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
+    auto data=strut_posix_spawn_arguments(program,args,options);
+#if !defined(__APPLE__) && !defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
+    std::unique_lock<std::mutex> fallback_spawn_lock(strut_process_spawn_mutex);
+#endif
+    int out_pipe[2]={-1,-1},err_pipe[2]={-1,-1};if(options.capture&&(!strut_make_process_pipe(out_pipe)||!strut_make_process_pipe(err_pipe))){const int failure=errno;strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(failure));}
+    pid_t pid=-1;try{std::vector<std::pair<int,int>> duplicates;std::vector<int> closes;if(options.capture){duplicates={{out_pipe[1],STDOUT_FILENO},{err_pipe[1],STDERR_FILENO}};closes={out_pipe[0],out_pipe[1],err_pipe[0],err_pipe[1]};}pid=strut_posix_spawn(program,data,options,duplicates,closes);}catch(...){strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);throw;}
+#if !defined(__APPLE__) && !defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
+    fallback_spawn_lock.unlock();
+#endif
+    if(options.capture){strut_close_fd(out_pipe[1]);strut_close_fd(err_pipe[1]);}
+    strut_exec_result result;std::string sout,serr;std::exception_ptr read_out_error,read_err_error;auto read_fd=[](int fd,std::string& dst,std::exception_ptr& failure){try{char buffer[8192];for(;;){const ssize_t count=::read(fd,buffer,sizeof(buffer));if(count>0){dst.append(buffer,static_cast<std::size_t>(count));continue;}if(count==0)break;if(errno==EINTR)continue;throw strut_checked_error("ExecError",std::string("process pipe read failed: ")+std::strerror(errno));}}catch(...){failure=std::current_exception();}::close(fd);};
+    std::thread stdout_thread,stderr_thread;try{if(options.capture){stdout_thread=std::thread(read_fd,out_pipe[0],std::ref(sout),std::ref(read_out_error));out_pipe[0]=-1;stderr_thread=std::thread(read_fd,err_pipe[0],std::ref(serr),std::ref(read_err_error));err_pipe[0]=-1;}}catch(...){strut_close_pipe(out_pipe);strut_close_pipe(err_pipe);(void)::kill(-pid,SIGKILL);int ignored=0;while(waitpid(pid,&ignored,0)<0&&errno==EINTR){}if(stdout_thread.joinable())stdout_thread.join();throw;}
+    int status=0,wait_error=0;const bool collected=strut_posix_collect_owned(pid,status,true,wait_error);if(!collected)(void)::kill(-pid,SIGKILL);if(stdout_thread.joinable())stdout_thread.join();if(stderr_thread.joinable())stderr_thread.join();if(!collected)throw strut_checked_error("ExecError",std::string("process wait failed: ")+std::strerror(wait_error));if(read_out_error)std::rethrow_exception(read_out_error);if(read_err_error)std::rethrow_exception(read_err_error);result.exit_code=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);result.stdout=strut_string(std::move(sout));result.stderr=strut_string(std::move(serr));return result;
 }
 #else
-inline std::string strut_win_quote(const std::string& a){if(a.find_first_of(" \t\"")==std::string::npos)return a;std::string r="\"";std::size_t slashes=0;for(char c:a){if(c=='\\'){++slashes;continue;}if(c=='\"'){r.append(slashes*2+1,'\\');r+='\"';slashes=0;continue;}r.append(slashes,'\\');slashes=0;r+=c;}r.append(slashes*2,'\\');r+='\"';return r;}
+inline std::wstring strut_win_utf16(const std::string& value,const char* field){if(value.empty())return {};if(value.find('\0')!=std::string::npos)throw strut_checked_error("ExecError",std::string(field)+" contains NUL");if(value.size()>static_cast<std::size_t>(std::numeric_limits<int>::max()))throw strut_checked_error("ExecError",std::string(field)+" is too large");const int length=static_cast<int>(value.size());const int size=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,value.data(),length,nullptr,0);if(size<=0)throw strut_checked_error("ExecError",std::string("invalid UTF-8 in ")+field);std::wstring result(static_cast<std::size_t>(size),L'\0');if(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,value.data(),length,result.data(),size)!=size)throw strut_checked_error("ExecError",std::string("UTF-16 conversion failed for ")+field);return result;}
+inline std::wstring strut_win_quote(const std::wstring& argument){if(!argument.empty()&&argument.find_first_of(L" \t\"")==std::wstring::npos)return argument;std::wstring result=L"\"";std::size_t slashes=0;for(wchar_t value:argument){if(value==L'\\'){++slashes;continue;}if(value==L'\"'){result.append(slashes*2+1,L'\\');result+=L'\"';slashes=0;continue;}result.append(slashes,L'\\');slashes=0;result+=value;}result.append(slashes*2,L'\\');result+=L'\"';return result;}
+inline std::vector<wchar_t> strut_win_command(const strut_string& program,const std::vector<strut_string>& args){std::wstring command=strut_win_quote(strut_win_utf16(program.v,"program"));for(const auto& argument:args){command+=L' ';command+=strut_win_quote(strut_win_utf16(argument.v,"argument"));}std::vector<wchar_t> result(command.begin(),command.end());result.push_back(L'\0');return result;}
+struct strut_win_environment_less{bool operator()(const std::wstring& left,const std::wstring& right) const{return CompareStringOrdinal(left.c_str(),-1,right.c_str(),-1,TRUE)==CSTR_LESS_THAN;}};
+inline std::vector<wchar_t> strut_win_environment(const strut_exec_options& options){std::map<std::wstring,std::wstring,strut_win_environment_less> values;{std::lock_guard<std::mutex> environment_lock(strut_process_spawn_mutex);LPWCH raw=GetEnvironmentStringsW();if(!raw)throw strut_checked_error("ExecError","GetEnvironmentStringsW failed");struct environment_guard{LPWCH value;~environment_guard(){FreeEnvironmentStringsW(value);}} guard{raw};for(LPWCH item=raw;*item;){std::wstring entry=item;item+=entry.size()+1;const auto split=entry.find(L'=',1);if(split!=std::wstring::npos)values[entry.substr(0,split)]=entry.substr(split+1);}}for(const auto& item:options.env){if(item.first.empty()||item.first.find('=')!=std::string::npos)throw strut_checked_error("ExecError","invalid environment name");values[strut_win_utf16(item.first,"environment name")]=strut_win_utf16(item.second,"environment value");}std::vector<wchar_t> block;for(const auto& item:values){block.insert(block.end(),item.first.begin(),item.first.end());block.push_back(L'=');block.insert(block.end(),item.second.begin(),item.second.end());block.push_back(L'\0');}if(block.empty())block.push_back(L'\0');block.push_back(L'\0');return block;}
+inline void strut_win_close(HANDLE& handle) noexcept{if(handle&&handle!=INVALID_HANDLE_VALUE){CloseHandle(handle);handle=nullptr;}}
+inline std::string strut_win_error_code(const char* operation,DWORD error){return std::string(operation)+" failed (Windows error "+std::to_string(error)+")";}inline std::string strut_win_error(const char* operation){return strut_win_error_code(operation,GetLastError());}
+class strut_win_handle{public:strut_win_handle()=default;explicit strut_win_handle(HANDLE value) noexcept:value_(value){}~strut_win_handle(){reset();}strut_win_handle(const strut_win_handle&)=delete;strut_win_handle& operator=(const strut_win_handle&)=delete;strut_win_handle(strut_win_handle&& other) noexcept:value_(other.release()){}strut_win_handle& operator=(strut_win_handle&& other) noexcept{if(this!=&other)reset(other.release());return *this;}HANDLE get() const noexcept{return value_;}HANDLE* put() noexcept{reset();return &value_;}HANDLE release() noexcept{HANDLE value=value_;value_=nullptr;return value;}void reset(HANDLE value=nullptr) noexcept{strut_win_close(value_);value_=value;}explicit operator bool() const noexcept{return value_&&value_!=INVALID_HANDLE_VALUE;}private:HANDLE value_=nullptr;};
+class strut_win_attribute_list{public:explicit strut_win_attribute_list(DWORD count){SIZE_T size=0;InitializeProcThreadAttributeList(nullptr,count,0,&size);if(!size)throw strut_checked_error("ExecError",strut_win_error("process attribute sizing"));storage_.resize(size);list_=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage_.data());if(!InitializeProcThreadAttributeList(list_,count,0,&size)){list_=nullptr;throw strut_checked_error("ExecError",strut_win_error("process attribute setup"));}}~strut_win_attribute_list(){if(list_)DeleteProcThreadAttributeList(list_);}strut_win_attribute_list(const strut_win_attribute_list&)=delete;strut_win_attribute_list& operator=(const strut_win_attribute_list&)=delete;LPPROC_THREAD_ATTRIBUTE_LIST get() const noexcept{return list_;}void handles(HANDLE* values,SIZE_T bytes){if(!UpdateProcThreadAttribute(list_,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,values,bytes,nullptr,nullptr))throw strut_checked_error("ExecError",strut_win_error("process handle allowlist"));}private:std::vector<unsigned char> storage_;LPPROC_THREAD_ATTRIBUTE_LIST list_=nullptr;};
+inline HANDLE strut_win_job(){strut_win_handle job(CreateJobObjectW(nullptr,nullptr));if(!job)throw strut_checked_error("ExecError",strut_win_error("CreateJobObjectW"));JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;if(!SetInformationJobObject(job.get(),JobObjectExtendedLimitInformation,&limits,sizeof(limits))){const DWORD error=GetLastError();throw strut_checked_error("ExecError",strut_win_error_code("SetInformationJobObject",error));}return job.release();}
 inline strut_exec_result strut_exec_impl(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
-    std::string cmd=strut_win_quote(program.v);for(const auto& a:args){cmd+=' ';cmd+=strut_win_quote(a.v);}std::vector<char> mutable_cmd(cmd.begin(),cmd.end());mutable_cmd.push_back('\0');
-    std::vector<char> env_block;LPVOID env_ptr=nullptr;if(!options.env.empty()){LPCH raw=GetEnvironmentStringsA();std::map<std::string,std::string> env;if(raw){for(LPCH p=raw;*p;){std::string entry=p;p+=entry.size()+1;auto eq=entry.find('=');if(eq!=std::string::npos&&eq>0)env[entry.substr(0,eq)]=entry.substr(eq+1);}FreeEnvironmentStringsA(raw);}for(const auto& kv:options.env)env[kv.first]=kv.second;for(const auto& kv:env){auto line=kv.first+"="+kv.second;env_block.insert(env_block.end(),line.begin(),line.end());env_block.push_back('\0');}env_block.push_back('\0');env_ptr=env_block.data();}
-    auto close_handle=[](HANDLE& handle){if(handle&&handle!=INVALID_HANDLE_VALUE){CloseHandle(handle);handle=nullptr;}};SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE out_r=nullptr,out_w=nullptr,err_r=nullptr,err_w=nullptr,child_in=nullptr,child_out=nullptr,child_err=nullptr;if(options.capture){if(!CreatePipe(&out_r,&out_w,&sa,0)||!CreatePipe(&err_r,&err_w,&sa,0)){close_handle(out_r);close_handle(out_w);close_handle(err_r);close_handle(err_w);throw strut_checked_error("ExecError","CreatePipe failed");}SetHandleInformation(out_r,HANDLE_FLAG_INHERIT,0);SetHandleInformation(err_r,HANDLE_FLAG_INHERIT,0);child_out=out_w;child_err=err_w;}
-    const bool use_stdio=options.capture||options.inherit_stdio;auto duplicate_inheritable=[&](DWORD id,HANDLE& target){HANDLE source=GetStdHandle(id);return source&&source!=INVALID_HANDLE_VALUE&&DuplicateHandle(GetCurrentProcess(),source,GetCurrentProcess(),&target,0,TRUE,DUPLICATE_SAME_ACCESS);};if(use_stdio){if(!duplicate_inheritable(STD_INPUT_HANDLE,child_in)||(!options.capture&&(!duplicate_inheritable(STD_OUTPUT_HANDLE,child_out)||!duplicate_inheritable(STD_ERROR_HANDLE,child_err)))){close_handle(out_r);close_handle(out_w);close_handle(err_r);close_handle(err_w);close_handle(child_in);if(!options.capture){close_handle(child_out);close_handle(child_err);}throw strut_checked_error("ExecError","standard handle setup failed");}}
-    STARTUPINFOEXA si{};si.StartupInfo.cb=use_stdio?sizeof(si):sizeof(STARTUPINFOA);std::vector<unsigned char> attribute_storage;BOOL list_ok=FALSE,attributes_ok=TRUE;if(use_stdio){si.StartupInfo.dwFlags=STARTF_USESTDHANDLES;si.StartupInfo.hStdInput=child_in;si.StartupInfo.hStdOutput=child_out;si.StartupInfo.hStdError=child_err;SIZE_T attribute_size=0;InitializeProcThreadAttributeList(nullptr,1,0,&attribute_size);attribute_storage.resize(attribute_size);si.lpAttributeList=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());HANDLE inherited[3]={child_in,child_out,child_err};list_ok=InitializeProcThreadAttributeList(si.lpAttributeList,1,0,&attribute_size);attributes_ok=list_ok&&UpdateProcThreadAttribute(si.lpAttributeList,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,inherited,sizeof(inherited),nullptr,nullptr);}
-    PROCESS_INFORMATION pi{};BOOL ok=FALSE;if(attributes_ok)ok=CreateProcessA(nullptr,mutable_cmd.data(),nullptr,nullptr,use_stdio,use_stdio?EXTENDED_STARTUPINFO_PRESENT:0,env_ptr,options.cwd.v.empty()?nullptr:options.cwd.v.c_str(),&si.StartupInfo,&pi);if(list_ok)DeleteProcThreadAttributeList(si.lpAttributeList);close_handle(child_in);if(options.capture){close_handle(out_w);close_handle(err_w);}else{close_handle(child_out);close_handle(child_err);}if(!ok){close_handle(out_r);close_handle(err_r);throw strut_checked_error("ExecError","CreateProcess failed");}
-    std::string sout,serr;auto read_handle=[](HANDLE h,std::string& dst){char b[4096];DWORD n=0;while(ReadFile(h,b,sizeof(b),&n,nullptr)&&n)dst.append(b,n);CloseHandle(h);};std::thread t1,t2;if(options.capture){t1=std::thread(read_handle,out_r,std::ref(sout));t2=std::thread(read_handle,err_r,std::ref(serr));}WaitForSingleObject(pi.hProcess,INFINITE);DWORD code=0;GetExitCodeProcess(pi.hProcess,&code);CloseHandle(pi.hThread);CloseHandle(pi.hProcess);if(options.capture){t1.join();t2.join();auto normalize=[](std::string& value){std::size_t pos=0;while((pos=value.find("\r\n",pos))!=std::string::npos)value.erase(pos,1);};normalize(sout);normalize(serr);}strut_exec_result result;result.exit_code=static_cast<std::int32_t>(code);result.stdout=strut_string(std::move(sout));result.stderr=strut_string(std::move(serr));return result;
+    auto command=strut_win_command(program,args);auto environment=strut_win_environment(options);std::wstring cwd;if(!options.cwd.v.empty())cwd=strut_win_utf16(options.cwd.v,"cwd");SECURITY_ATTRIBUTES security{sizeof(security),nullptr,TRUE};strut_win_handle out_r,out_w,err_r,err_w,child_in,child_out,child_err;
+    if(options.capture){if(!CreatePipe(out_r.put(),out_w.put(),&security,0)||!CreatePipe(err_r.put(),err_w.put(),&security,0)||!SetHandleInformation(out_r.get(),HANDLE_FLAG_INHERIT,0)||!SetHandleInformation(err_r.get(),HANDLE_FLAG_INHERIT,0))throw strut_checked_error("ExecError",strut_win_error("pipe setup"));}
+    const bool use_stdio=options.capture||options.inherit_stdio;auto duplicate=[&](DWORD id,strut_win_handle& target){HANDLE source=GetStdHandle(id);return source&&source!=INVALID_HANDLE_VALUE&&DuplicateHandle(GetCurrentProcess(),source,GetCurrentProcess(),target.put(),0,TRUE,DUPLICATE_SAME_ACCESS);};if(use_stdio&&(!duplicate(STD_INPUT_HANDLE,child_in)||(!options.capture&&(!duplicate(STD_OUTPUT_HANDLE,child_out)||!duplicate(STD_ERROR_HANDLE,child_err)))))throw strut_checked_error("ExecError",strut_win_error("standard handle setup"));
+    STARTUPINFOEXW startup{};startup.StartupInfo.cb=use_stdio?sizeof(startup):sizeof(STARTUPINFOW);std::optional<strut_win_attribute_list> attributes;if(use_stdio){startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;startup.StartupInfo.hStdInput=child_in.get();startup.StartupInfo.hStdOutput=options.capture?out_w.get():child_out.get();startup.StartupInfo.hStdError=options.capture?err_w.get():child_err.get();attributes.emplace(1);HANDLE inherited[3]={startup.StartupInfo.hStdInput,startup.StartupInfo.hStdOutput,startup.StartupInfo.hStdError};attributes->handles(inherited,sizeof(inherited));startup.lpAttributeList=attributes->get();}
+    strut_win_handle job(strut_win_job());PROCESS_INFORMATION created{};const DWORD flags=CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED|CREATE_NEW_PROCESS_GROUP|(use_stdio?EXTENDED_STARTUPINFO_PRESENT:0);if(!CreateProcessW(nullptr,command.data(),nullptr,nullptr,use_stdio,flags,environment.data(),cwd.empty()?nullptr:cwd.c_str(),&startup.StartupInfo,&created))throw strut_checked_error("ExecError",strut_win_error("CreateProcessW"));strut_win_handle process(created.hProcess),thread(created.hThread);child_in.reset();child_out.reset();child_err.reset();out_w.reset();err_w.reset();if(!AssignProcessToJobObject(job.get(),process.get())){const DWORD error=GetLastError();TerminateProcess(process.get(),1);throw strut_checked_error("ExecError",strut_win_error_code("AssignProcessToJobObject",error));}if(ResumeThread(thread.get())==static_cast<DWORD>(-1))throw strut_checked_error("ExecError",strut_win_error("ResumeThread"));thread.reset();
+    std::string sout,serr;std::exception_ptr out_error,err_error;auto read_handle=[](HANDLE handle,std::string& output,std::exception_ptr& failure){try{char buffer[8192];DWORD count=0;for(;;){if(ReadFile(handle,buffer,sizeof(buffer),&count,nullptr)){if(!count)break;output.append(buffer,count);continue;}const DWORD error=GetLastError();if(error==ERROR_BROKEN_PIPE)break;throw strut_checked_error("ExecError",std::string("process pipe read failed (Windows error ")+std::to_string(error)+")");}}catch(...){failure=std::current_exception();}CloseHandle(handle);};std::thread stdout_thread,stderr_thread;try{if(options.capture){stdout_thread=std::thread(read_handle,out_r.get(),std::ref(sout),std::ref(out_error));(void)out_r.release();stderr_thread=std::thread(read_handle,err_r.get(),std::ref(serr),std::ref(err_error));(void)err_r.release();}}catch(...){TerminateJobObject(job.get(),1);out_r.reset();err_r.reset();if(stdout_thread.joinable())stdout_thread.join();throw;}
+    const DWORD waited=WaitForSingleObject(process.get(),INFINITE);DWORD code=0;BOOL code_ok=FALSE;DWORD wait_failure=ERROR_SUCCESS;if(waited==WAIT_OBJECT_0)code_ok=GetExitCodeProcess(process.get(),&code);if(waited!=WAIT_OBJECT_0||!code_ok)wait_failure=GetLastError();process.reset();job.reset();if(stdout_thread.joinable())stdout_thread.join();if(stderr_thread.joinable())stderr_thread.join();if(wait_failure!=ERROR_SUCCESS)throw strut_checked_error("ExecError",std::string("process wait failed (Windows error ")+std::to_string(wait_failure)+")");if(out_error)std::rethrow_exception(out_error);if(err_error)std::rethrow_exception(err_error);if(options.capture){auto normalize=[](std::string& value){std::size_t position=0;while((position=value.find("\r\n",position))!=std::string::npos)value.erase(position,1);};normalize(sout);normalize(serr);}strut_exec_result result;result.exit_code=static_cast<std::int32_t>(code);result.stdout=strut_string(std::move(sout));result.stderr=strut_string(std::move(serr));return result;
 }
 #endif
 inline strut_exec_result strut_exec(const strut_string& program,const std::vector<strut_string>& args){return strut_exec_impl(program,args,{});}inline strut_exec_result strut_exec(const strut_string& program,const std::vector<strut_string>& args,const json::Document& options){return strut_exec_impl(program,args,strut_parse_exec_options(options));}
@@ -1498,51 +1549,88 @@ class strut_process {
 public:
     strut_process_in in;strut_process_out out;strut_process_out err;
     strut_process()=default;
-    strut_process(const strut_string& program,const std::vector<strut_string>& args){start(program,args,{});}
-    strut_process(const strut_string& program,const std::vector<strut_string>& args,const strut_process_cancellation_token& token){start(program,args,token);}
+    strut_process(const strut_string& program,const std::vector<strut_string>& args){start(program,args,{},{});}
+    strut_process(const strut_string& program,const std::vector<strut_string>& args,const json::Document& options){start(program,args,strut_parse_process_options(options),{});}
+    strut_process(const strut_string& program,const std::vector<strut_string>& args,const strut_process_cancellation_token& token){start(program,args,{},token);}
+    strut_process(const strut_string& program,const std::vector<strut_string>& args,const json::Document& options,const strut_process_cancellation_token& token){start(program,args,strut_parse_process_options(options),token);}
     strut_process(const strut_process&)=delete;strut_process& operator=(const strut_process&)=delete;
     strut_process(strut_process&& other) noexcept : in(std::move(other.in)),out(std::move(other.out)),err(std::move(other.err)),
 #ifdef _WIN32
-        pi_(other.pi_),
+        process_(other.process_),job_(other.job_),process_id_(other.process_id_),
 #else
         pid_(other.pid_),
 #endif
         running_(other.running_),exit_code_(other.exit_code_){other.running_=false;
 #ifdef _WIN32
-        other.pi_={};
+        other.process_=nullptr;other.job_=nullptr;other.process_id_=0;
 #else
         other.pid_=-1;
 #endif
     }
     strut_process& operator=(strut_process&&)=delete;)CPP" << R"CPP(
-    void start(const strut_string& program,const std::vector<strut_string>& args,const strut_process_cancellation_token& token){
+    void start(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options,const strut_process_cancellation_token& token){
 #ifdef _WIN32
-        std::string cmd=strut_win_quote(program.v);for(const auto& argument:args){cmd+=' ';cmd+=strut_win_quote(argument.v);}std::vector<char> mutable_cmd(cmd.begin(),cmd.end());mutable_cmd.push_back('\0');SIZE_T attribute_size=0;InitializeProcThreadAttributeList(nullptr,1,0,&attribute_size);std::vector<unsigned char> attribute_storage(attribute_size);HANDLE parent_in=nullptr,child_in=nullptr,parent_out=nullptr,child_out=nullptr,parent_err=nullptr,child_err=nullptr;if(!create_pipe(false,parent_in,child_in)||!create_pipe(true,parent_out,child_out)||!create_pipe(true,parent_err,child_err)){close_handle(parent_in);close_handle(child_in);close_handle(parent_out);close_handle(child_out);close_handle(parent_err);close_handle(child_err);throw strut_checked_error("ExecError","CreatePipe failed");}STARTUPINFOEXA si{};si.StartupInfo.cb=sizeof(si);si.StartupInfo.dwFlags=STARTF_USESTDHANDLES;si.StartupInfo.hStdInput=child_in;si.StartupInfo.hStdOutput=child_out;si.StartupInfo.hStdError=child_err;si.lpAttributeList=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());HANDLE inherited[3]={child_in,child_out,child_err};const BOOL list_ok=InitializeProcThreadAttributeList(si.lpAttributeList,1,0,&attribute_size);const BOOL attributes_ok=list_ok&&UpdateProcThreadAttribute(si.lpAttributeList,0,PROC_THREAD_ATTRIBUTE_HANDLE_LIST,inherited,sizeof(inherited),nullptr,nullptr);BOOL ok=FALSE;if(attributes_ok)ok=CreateProcessA(nullptr,mutable_cmd.data(),nullptr,nullptr,TRUE,EXTENDED_STARTUPINFO_PRESENT,nullptr,nullptr,&si.StartupInfo,&pi_);if(list_ok)DeleteProcThreadAttributeList(si.lpAttributeList);close_handle(child_in);close_handle(child_out);close_handle(child_err);if(!ok){close_handle(parent_in);close_handle(parent_out);close_handle(parent_err);throw strut_checked_error("ExecError","CreateProcess failed");}in.attach(parent_in,token);out.attach(parent_out,token);err.attach(parent_err,token);running_=true;
+        auto command=strut_win_command(program,args);auto environment=strut_win_environment(options);std::wstring cwd;if(!options.cwd.v.empty())cwd=strut_win_utf16(options.cwd.v,"cwd");strut_win_handle parent_in,child_in,parent_out,child_out,parent_err,child_err;auto pipe=[&](bool parent_reads,strut_win_handle& parent,strut_win_handle& child){HANDLE parent_raw=nullptr,child_raw=nullptr;if(!create_pipe(parent_reads,parent_raw,child_raw))return false;parent.reset(parent_raw);child.reset(child_raw);return true;};if(!pipe(false,parent_in,child_in)||!pipe(true,parent_out,child_out)||!pipe(true,parent_err,child_err))throw strut_checked_error("ExecError","process pipe setup failed");STARTUPINFOEXW startup{};startup.StartupInfo.cb=sizeof(startup);startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;startup.StartupInfo.hStdInput=child_in.get();startup.StartupInfo.hStdOutput=child_out.get();startup.StartupInfo.hStdError=child_err.get();strut_win_attribute_list attributes(1);HANDLE inherited[3]={child_in.get(),child_out.get(),child_err.get()};attributes.handles(inherited,sizeof(inherited));startup.lpAttributeList=attributes.get();strut_win_handle job(strut_win_job());PROCESS_INFORMATION created{};const DWORD flags=CREATE_UNICODE_ENVIRONMENT|CREATE_SUSPENDED|CREATE_NEW_PROCESS_GROUP|EXTENDED_STARTUPINFO_PRESENT;if(!CreateProcessW(nullptr,command.data(),nullptr,nullptr,TRUE,flags,environment.data(),cwd.empty()?nullptr:cwd.c_str(),&startup.StartupInfo,&created))throw strut_checked_error("ExecError",strut_win_error("CreateProcessW"));strut_win_handle process(created.hProcess),thread(created.hThread);child_in.reset();child_out.reset();child_err.reset();if(!AssignProcessToJobObject(job.get(),process.get())){const DWORD error=GetLastError();TerminateProcess(process.get(),1);throw strut_checked_error("ExecError",strut_win_error_code("AssignProcessToJobObject",error));}if(ResumeThread(thread.get())==static_cast<DWORD>(-1))throw strut_checked_error("ExecError",strut_win_error("ResumeThread"));thread.reset();in.attach(parent_in.release(),token);out.attach(parent_out.release(),token);err.attach(parent_err.release(),token);process_=process.release();job_=job.release();process_id_=created.dwProcessId;running_=true;
 #else
-        std::vector<std::string> storage;storage.reserve(args.size()+1);storage.push_back(program.v);for(const auto& argument:args)storage.push_back(argument.v);std::vector<char*> argv;argv.reserve(storage.size()+1);for(auto& argument:storage)argv.push_back(argument.data());argv.push_back(nullptr);int pin[2]{-1,-1},pout[2]{-1,-1},perr[2]{-1,-1};std::unique_lock<std::mutex> spawn_lock(strut_process_spawn_mutex);if(!create_pipe(pin)||!create_pipe(pout)||!create_pipe(perr)){const int failure=errno;close_pipe(pin);close_pipe(pout);close_pipe(perr);throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(failure));}pid_=fork();if(pid_<0){const int failure=errno;close_pipe(pin);close_pipe(pout);close_pipe(perr);throw strut_checked_error("ExecError",std::string("fork failed: ")+std::strerror(failure));}if(pid_==0){if(dup2(pin[0],STDIN_FILENO)<0||dup2(pout[1],STDOUT_FILENO)<0||dup2(perr[1],STDERR_FILENO)<0)_exit(126);::close(pin[0]);::close(pin[1]);::close(pout[0]);::close(pout[1]);::close(perr[0]);::close(perr[1]);execvp(program.v.c_str(),argv.data());_exit(errno==ENOENT?127:126);}close_fd(pin[0]);close_fd(pout[1]);close_fd(perr[1]);spawn_lock.unlock();try{in.attach(pin[1],token);pin[1]=-1;out.attach(pout[0],token);pout[0]=-1;err.attach(perr[0],token);perr[0]=-1;}catch(...){close_pipe(pin);close_pipe(pout);close_pipe(perr);in.close();out.close();err.close();(void)::kill(pid_,SIGKILL);int status=0;while(waitpid(pid_,&status,0)<0&&errno==EINTR){}pid_=-1;throw;}running_=true;
+        auto data=strut_posix_spawn_arguments(program,args,options);
+#if !defined(__APPLE__) && !defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
+        std::unique_lock<std::mutex> fallback_spawn_lock(strut_process_spawn_mutex);
+#endif
+        int pin[2]{-1,-1},pout[2]{-1,-1},perr[2]{-1,-1};if(!create_pipe(pin)||!create_pipe(pout)||!create_pipe(perr)){const int failure=errno;close_pipe(pin);close_pipe(pout);close_pipe(perr);throw strut_checked_error("ExecError",std::string("pipe failed: ")+std::strerror(failure));}try{pid_=strut_posix_spawn(program,data,options,{{pin[0],STDIN_FILENO},{pout[1],STDOUT_FILENO},{perr[1],STDERR_FILENO}},{pin[0],pin[1],pout[0],pout[1],perr[0],perr[1]});}catch(...){close_pipe(pin);close_pipe(pout);close_pipe(perr);throw;}
+#if !defined(__APPLE__) && !defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
+        fallback_spawn_lock.unlock();
+#endif
+        close_fd(pin[0]);close_fd(pout[1]);close_fd(perr[1]);try{in.attach(pin[1],token);pin[1]=-1;out.attach(pout[0],token);pout[0]=-1;err.attach(perr[0],token);perr[0]=-1;}catch(...){close_pipe(pin);close_pipe(pout);close_pipe(perr);in.close();out.close();err.close();(void)::kill(-pid_,SIGKILL);int status=0;while(waitpid(pid_,&status,0)<0&&errno==EINTR){}pid_=-1;throw;}running_=true;
 #endif
     }
     std::int32_t wait(){if(!running_)return exit_code_;
 #ifdef _WIN32
-        WaitForSingleObject(pi_.hProcess,INFINITE);DWORD c=0;GetExitCodeProcess(pi_.hProcess,&c);CloseHandle(pi_.hThread);CloseHandle(pi_.hProcess);exit_code_=static_cast<std::int32_t>(c);
+        const DWORD waited=WaitForSingleObject(process_,INFINITE);DWORD code=0;if(waited!=WAIT_OBJECT_0||!GetExitCodeProcess(process_,&code))throw strut_checked_error("ExecError",strut_win_error("process wait"));exit_code_=static_cast<std::int32_t>(code);close_handle(process_);close_handle(job_);
 #else
-        int status=0;while(waitpid(pid_,&status,0)<0){if(errno!=EINTR)throw strut_checked_error("ExecError","waitpid failed");}exit_code_=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);
+        int status=0,failure=0;if(!strut_posix_collect_owned(pid_,status,true,failure))throw strut_checked_error("ExecError",std::string("process wait failed: ")+std::strerror(failure));exit_code_=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);pid_=-1;
 #endif
         running_=false;return exit_code_;}
-    void terminate(){if(!running_)return;
+    void terminate(){poll();if(!running_)return;
 #ifdef _WIN32
-        if(!TerminateProcess(pi_.hProcess,1))throw strut_checked_error("ExecError","TerminateProcess failed");
+        if(!TerminateJobObject(job_,1)&&GetLastError()!=ERROR_ACCESS_DENIED)throw strut_checked_error("ExecError",strut_win_error("TerminateJobObject"));
 #else
-        if(::kill(pid_,SIGTERM)!=0&&errno!=ESRCH)throw strut_checked_error("ExecError","kill failed");
+        if(::kill(-pid_,SIGTERM)!=0&&errno!=ESRCH)throw strut_checked_error("ExecError",std::string("process-group termination failed: ")+std::strerror(errno));
 #endif
     }
-    bool running(){return running_;}std::int32_t exit_code(){return running_?-1:exit_code_;}void close_input(){in.close();}
-    ~strut_process() noexcept{if(running_){try{terminate();}catch(...){ }try{wait();}catch(...){ }}}
+    bool running(){poll();return running_;}std::int32_t exit_code(){poll();return running_?-1:exit_code_;}void close_input(){in.close();}
+    ~strut_process() noexcept{in.close();poll();if(!running_)return;
+#ifdef _WIN32
+        (void)GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,process_id_);
+#else
+        (void)::kill(-pid_,SIGTERM);
+#endif
+        for(int attempt=0;attempt<20&&running_;++attempt){poll();if(running_)std::this_thread::sleep_for(std::chrono::milliseconds(10));}if(running_){
+#ifdef _WIN32
+            (void)TerminateJobObject(job_,1);
+#else
+            (void)::kill(-pid_,SIGKILL);
+#endif
+            for(int attempt=0;attempt<20&&running_;++attempt){poll();if(running_)std::this_thread::sleep_for(std::chrono::milliseconds(10));}if(running_)defer_cleanup();
+        }}
 private:
+    void defer_cleanup() noexcept{
+#ifdef _WIN32
+        HANDLE process=process_,job=job_;process_=nullptr;job_=nullptr;process_id_=0;running_=false;try{std::thread([process,job](){if(process)WaitForSingleObject(process,INFINITE);if(process)CloseHandle(process);if(job)CloseHandle(job);}).detach();}catch(...){if(job)CloseHandle(job);if(process)CloseHandle(process);}
+#else
+        const pid_t pid=pid_;pid_=-1;running_=false;try{std::thread([pid](){int status=0;while(waitpid(pid,&status,0)<0&&errno==EINTR){}}).detach();}catch(...){ }
+#endif
+    }
+    void poll() noexcept{if(!running_)return;
+#ifdef _WIN32
+        const DWORD waited=WaitForSingleObject(process_,0);if(waited==WAIT_OBJECT_0){DWORD code=0;if(GetExitCodeProcess(process_,&code))exit_code_=static_cast<std::int32_t>(code);running_=false;close_handle(process_);close_handle(job_);}else if(waited==WAIT_FAILED){running_=false;close_handle(process_);close_handle(job_);}
+#else
+        int status=0,failure=0;if(strut_posix_collect_owned(pid_,status,false,failure)){exit_code_=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);pid_=-1;running_=false;}else if(failure){pid_=-1;running_=false;}
+#endif
+    }
 #ifdef _WIN32
     static void close_handle(HANDLE& handle) noexcept{if(handle){CloseHandle(handle);handle=nullptr;}}
-    static bool create_pipe(bool parent_reads,HANDLE& parent,HANDLE& child){static std::atomic<unsigned long> serial{0};const std::string name="\\\\.\\pipe\\strut-"+std::to_string(GetCurrentProcessId())+"-"+std::to_string(serial.fetch_add(1,std::memory_order_relaxed));const DWORD access=(parent_reads?PIPE_ACCESS_INBOUND:PIPE_ACCESS_OUTBOUND)|FILE_FLAG_OVERLAPPED;parent=CreateNamedPipeA(name.c_str(),access,PIPE_TYPE_BYTE|PIPE_READMODE_BYTE|PIPE_WAIT,1,65536,65536,0,nullptr);if(parent==INVALID_HANDLE_VALUE){parent=nullptr;return false;}SECURITY_ATTRIBUTES attributes{sizeof(attributes),nullptr,TRUE};child=CreateFileA(name.c_str(),parent_reads?GENERIC_WRITE:GENERIC_READ,0,&attributes,OPEN_EXISTING,0,nullptr);if(child==INVALID_HANDLE_VALUE){child=nullptr;close_handle(parent);return false;}OVERLAPPED connection{};connection.hEvent=CreateEventA(nullptr,TRUE,FALSE,nullptr);if(!connection.hEvent){close_handle(parent);close_handle(child);return false;}BOOL connected=ConnectNamedPipe(parent,&connection);if(!connected){const DWORD error=GetLastError();if(error==ERROR_PIPE_CONNECTED)connected=TRUE;else if(error==ERROR_IO_PENDING){DWORD transferred=0;connected=GetOverlappedResult(parent,&connection,&transferred,TRUE);}}CloseHandle(connection.hEvent);if(!connected){close_handle(parent);close_handle(child);return false;}return true;}
-    PROCESS_INFORMATION pi_{};
+    static bool create_pipe(bool parent_reads,HANDLE& parent,HANDLE& child){static std::atomic<unsigned long> serial{0};const std::wstring name=L"\\\\.\\pipe\\strut-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(serial.fetch_add(1,std::memory_order_relaxed));const DWORD access=(parent_reads?PIPE_ACCESS_INBOUND:PIPE_ACCESS_OUTBOUND)|FILE_FLAG_OVERLAPPED;parent=CreateNamedPipeW(name.c_str(),access,PIPE_TYPE_BYTE|PIPE_READMODE_BYTE|PIPE_WAIT,1,65536,65536,0,nullptr);if(parent==INVALID_HANDLE_VALUE){parent=nullptr;return false;}SECURITY_ATTRIBUTES attributes{sizeof(attributes),nullptr,TRUE};child=CreateFileW(name.c_str(),parent_reads?GENERIC_WRITE:GENERIC_READ,0,&attributes,OPEN_EXISTING,0,nullptr);if(child==INVALID_HANDLE_VALUE){child=nullptr;close_handle(parent);return false;}OVERLAPPED connection{};connection.hEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);if(!connection.hEvent){close_handle(parent);close_handle(child);return false;}BOOL connected=ConnectNamedPipe(parent,&connection);if(!connected){const DWORD error=GetLastError();if(error==ERROR_PIPE_CONNECTED)connected=TRUE;else if(error==ERROR_IO_PENDING){DWORD transferred=0;connected=GetOverlappedResult(parent,&connection,&transferred,TRUE);}}CloseHandle(connection.hEvent);if(!connected){close_handle(parent);close_handle(child);return false;}return true;}
+    HANDLE process_=nullptr,job_=nullptr;DWORD process_id_=0;
 #else
     static void close_fd(int& descriptor) noexcept{strut_close_fd(descriptor);}
     static void close_pipe(int (&descriptors)[2]) noexcept{strut_close_pipe(descriptors);}
@@ -1552,7 +1640,15 @@ private:
     bool running_=false;std::int32_t exit_code_=-1;
 };
 inline strut_exec_result strut_pipe_exec(const strut_string& first,const std::vector<strut_string>& first_args,const strut_string& second,const std::vector<strut_string>& second_args){
-)CPP" << R"CPP(    strut_process a(first,first_args);strut_process b(second,second_args);std::thread pump([&](){for(;;){auto chunk=a.out.read(4096);if(chunk.v.empty())break;b.in.write(chunk);}b.in.close();});auto aerr=std::thread([&](){a.err.read_all();});auto berr=std::thread([&](){b.err.read_all();});auto code_b=b.wait();auto stdout_b=b.out.read_all();pump.join();auto code_a=a.wait();(void)code_a;aerr.join();berr.join();strut_exec_result r;r.exit_code=code_b;r.stdout=std::move(stdout_b);return r;
+)CPP" << R"CPP(    strut_process a(first,first_args);strut_process b(second,second_args);std::string first_error,second_output,second_error;std::exception_ptr pump_error,first_error_error,second_output_error,second_error_error;
+    std::thread pump,drain_first_error,drain_second_output,drain_second_error;try{
+        pump=std::thread([&](){try{for(;;){auto chunk=a.out.read(8192);if(chunk.v.empty())break;b.in.write(chunk);}}catch(...){pump_error=std::current_exception();a.out.close();}b.in.close();});
+        drain_first_error=std::thread([&](){try{first_error=a.err.read_all().v;}catch(...){first_error_error=std::current_exception();a.err.close();}});
+        drain_second_output=std::thread([&](){try{second_output=b.out.read_all().v;}catch(...){second_output_error=std::current_exception();b.out.close();}});
+        drain_second_error=std::thread([&](){try{second_error=b.err.read_all().v;}catch(...){second_error_error=std::current_exception();b.err.close();}});
+    }catch(...){try{a.terminate();}catch(...){ }try{b.terminate();}catch(...){ }a.out.close();a.err.close();b.in.close();b.out.close();b.err.close();if(pump.joinable())pump.join();if(drain_first_error.joinable())drain_first_error.join();if(drain_second_output.joinable())drain_second_output.join();if(drain_second_error.joinable())drain_second_error.join();throw;}
+    std::int32_t code_a=-1,code_b=-1;std::exception_ptr wait_error;try{code_a=a.wait();code_b=b.wait();}catch(...){wait_error=std::current_exception();b.in.close();a.out.close();a.err.close();b.out.close();b.err.close();try{a.terminate();}catch(...){ }try{b.terminate();}catch(...){ }}
+    pump.join();drain_first_error.join();drain_second_output.join();drain_second_error.join();(void)code_a;if(wait_error)std::rethrow_exception(wait_error);if(pump_error)std::rethrow_exception(pump_error);if(first_error_error)std::rethrow_exception(first_error_error);if(second_output_error)std::rethrow_exception(second_output_error);if(second_error_error)std::rethrow_exception(second_error_error);strut_exec_result result;result.exit_code=code_b;result.stdout=strut_string(std::move(second_output));result.stderr=strut_string(std::move(first_error)+std::move(second_error));return result;
 }
 
 )CPP";if(has(RuntimeComponentId::networking))generated_runtime::emit_tcp(o,true,true);o<<R"CPP(

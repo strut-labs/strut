@@ -10,6 +10,7 @@ These programs exercise Strut as an application language rather than isolated sy
 - `http_client_streaming_certification.py` — bounded upload/download callbacks, cancellation, redirects, async behavior and resource stability.
 - `http_websocket_certification.py` — P4 plaintext/TLS RFC 6455 upgrade validation, ownership and lifecycle behavior.
 - `websocket_runtime_certification.py` — P5 plaintext/TLS framing, canonical extended lengths, partial disconnects, exact limits, controls, bounded server closing handshakes, post-close Ping, escaped-reader draining, live-server resources, races and bounded lifecycle stress; Linux GCC CI also runs it under ThreadSanitizer.
+- `process_lifecycle_certification.py` — P6 Unicode and empty argv, cwd/environment options, inherited descriptor isolation, simultaneous multi-megabyte stdout/stderr, pipeline backpressure, exec/process descendant pipe retention, resistant bounded cleanup and repeated lifecycle cycles; Linux GCC CI also runs it under ASan/UBSan and ThreadSanitizer.
 - `service/concurrent_service.p` — native threads, mutexes, typed channels and async futures.
 - `web/app.p` — SQLite, async HTTP routing and compile-time embedded static assets in one executable.
 - `package-app` — a manifest-backed multi-file project with SQLite and process execution.
