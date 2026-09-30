@@ -109,18 +109,22 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     string details := drain(configured);
     if (configured.wait() != 0 || !details.contains("cwd=pty-cwd") || !details.contains("env=value-π") || !details.contains("size=37x111") || !details.contains("arg0=''") || !details.contains("arg1='two words'") || !details.contains("arg2='quote\\\"value'") || !details.contains("arg3='trailing\\\\\\\\'") || !details.contains("arg4='π'")) {{ return 2; }}
 
+    write_file("stage.txt", "configured-complete");
     merged := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "merged"]);
     string streams := drain(merged);
     if (merged.wait() != 0 || !streams.contains("stdout-marker") || !streams.contains("stderr-marker")) {{ return 3; }}
 
+    write_file("stage.txt", "merged-complete");
     interactive := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "line"]);
     if (!read_until(interactive, "ready").contains("ready")) {{ return 4; }}
     interactive.write_bytes(bytes.from_string("hello from conpty\\n"));
     if (!drain(interactive).contains("value=hello from conpty") || interactive.wait() != 0) {{ return 4; }}
 
+    write_file("stage.txt", "interactive-complete");
     path_launch := pty_spawn("strut-path-tool.exe", ["/D", "/Q", "/C", "echo path-ok"], {{"env": {{"PATH": "{escaped(work)}"}}}});
     if (!drain(path_launch).contains("path-ok") || path_launch.wait() != 0) {{ return 5; }}
 
+    write_file("stage.txt", "path-complete");
     bool missing_rejected := false;
     try {{ missing := pty_spawn("__strut_missing_pty_executable__.exe", []); missing.close(); }} catch (PtyError caught) {{ missing_rejected = true; }}
     bool invalid_rejected := false;
@@ -129,6 +133,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     try {{ bad_cwd := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], {{"cwd": "{escaped(root / 'missing-cwd')}"}}); bad_cwd.close(); }} catch (PtyError caught) {{ cwd_rejected = true; }}
     if (!missing_rejected || !invalid_rejected || !cwd_rejected) {{ return 6; }}
 
+    write_file("stage.txt", "failures-complete");
     cancellation_source pre_source;
     pre_source.cancel();
     pre_cancelled := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], pre_source.token());
@@ -139,6 +144,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     if (!pre_read_cancelled || !pre_write_cancelled) {{ return 7; }}
     pre_cancelled.close();
 
+    write_file("stage.txt", "pre-cancel-complete");
     cancellation_source read_source;
     blocked_read := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], read_source.token());
     channel<bool> read_result;
@@ -147,6 +153,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     if (!(read_result.receive() ?? false)) {{ return 7; }}
     read_worker.join(); blocked_read.close();
 
+    write_file("stage.txt", "read-cancel-complete");
     cancellation_source write_source;
     blocked_write := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "no-read"], write_source.token());
     if (!read_until(blocked_write, "ready").contains("ready")) {{ return 8; }}
@@ -157,6 +164,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     if (!(write_result.receive() ?? false)) {{ return 8; }}
     write_worker.join(); blocked_write.close();
 
+    write_file("stage.txt", "write-cancel-complete");
     close_blocked := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     channel<bool> close_result;
     close_worker := thread(() => {{ try {{ close_blocked.read_bytes(1); close_result.send(false); }} catch (PtyError caught) {{ close_result.send(caught.message == "PTY is closed"); }} }});
@@ -164,6 +172,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     if (!(close_result.receive() ?? false)) {{ return 9; }}
     close_worker.join();
 
+    write_file("stage.txt", "close-blocked-complete");
     duplicate := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     channel<bool> duplicate_started;
     duplicate_worker := thread(() => {{ duplicate_started.send(true); try {{ duplicate.read_bytes(1); }} catch (PtyError caught) {{ }} }});
@@ -173,6 +182,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     if (!duplicate_rejected) {{ return 10; }}
     duplicate.close(); duplicate_worker.join();
 
+    write_file("stage.txt", "duplicate-complete");
     wait_close := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     channel<int> wait_results;
     first_waiter := thread(() => {{ wait_results.send(wait_close.wait()); }});
@@ -183,6 +193,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     first_waiter.join(); second_waiter.join();
     if (first_status != second_status || wait_close.wait() != first_status || wait_close.running() || wait_close.exit_code() != first_status) {{ return 11; }}
 
+    write_file("stage.txt", "wait-close-complete");
     cancellation_source resident_source;
     resident := thread(() => {{ resident_source.token().wait(); }});
     for (cycle := 0; cycle < 25; cycle++) {{ quick := pty_spawn("cmd.exe", ["/D", "/Q", "/C", "exit 0"]); copy := quick; if (quick.wait() != 0) {{ return 12; }} quick.close(); copy.close(); }}
