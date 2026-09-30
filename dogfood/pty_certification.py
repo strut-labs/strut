@@ -84,7 +84,14 @@ elif mode == 'exit':
             encoding="utf-8",
         )
 
-        source = f'''function drain(pty terminal) -> string : PtyError {{
+        source = f'''function mark_initialization() -> int {{
+    print("PTY initialization marker");
+    return 0;
+}}
+
+int initialization_guard := mark_initialization();
+
+function drain(pty terminal) -> string : PtyError {{
     string output := "";
     while (!terminal.eof()) {{
         bytes chunk := terminal.read_bytes(4096);
@@ -266,7 +273,7 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
         program.write_text(source, encoding="utf-8")
         subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
         result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=20, check=False)
-        if result.returncode != 0 or result.stdout != "PTY certification passed\n" or result.stderr:
+        if result.returncode != 0 or result.stdout != "PTY initialization marker\nPTY certification passed\n" or result.stderr:
             raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
     print("P7 PTY certification: spawn-session and controlling-terminal identity, direct shell and ordinary executables, PATH/argv/env/cwd, TTY geometry, merged streams, raw binary I/O, interactive echo, exit/EOF, direct spawn failure, blocked read/write cancellation, active close and wait-vs-close races, duplicate readers/writers, spawning with resident threads, shared ownership, and 25 cleanup cycles passed")
 

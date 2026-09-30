@@ -102,7 +102,8 @@ On macOS, native spawn inherits an already-open slave and close-on-exec status c
 into a hidden self-exec runtime entry. The entry validates its session and identity,
 claims the slave after spawn has created the session because Darwin applies file
 actions too early to acquire a controlling terminal, and directly `execve`s the
-resolved target. The status channel reports setup failure and closes on successful exec.
+resolved target. Early-priority dispatch runs before generated application globals;
+the status channel reports setup failure and closes on successful exec.
 Windows retains a compile-only API stub until the separate P9 ConPTY phase: operations
 that require a PTY throw unsupported, while observers and close return documented
 default/no-op results.

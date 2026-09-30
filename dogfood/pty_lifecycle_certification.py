@@ -378,6 +378,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         channel<int> close_cancel_status;
         channel<bool> close_cancel_done;
         channel<bool> close_cancelled;
+        channel<bool> close_before_cancel;
         channel<bool> close_probe_started;
         channel<int> close_probe_result;
         close_cancel_waiter := thread(() => {{ try {{ close_cancel_status.send(close_cancel.wait()); }} catch (PtyError caught) {{ close_cancel_status.send(-caught.code); }} }});
@@ -393,8 +394,8 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         }});
         close_probe_started.receive();
         sleep_ms(2);
-        close_cancel_closer := thread(() => {{ close_cancel.close(); close_cancel_done.send(true); }});
-        close_cancel_canceller := thread(() => {{ close_cancel_source.cancel(); close_cancelled.send(true); }});
+        close_cancel_closer := thread(() => {{ close_cancel.close(); if (close_cancel_cycle == 0) {{ close_before_cancel.send(true); }} close_cancel_done.send(true); }});
+        close_cancel_canceller := thread(() => {{ if (close_cancel_cycle == 0) {{ close_before_cancel.receive(); }} close_cancel_source.cancel(); close_cancelled.send(true); }});
         int close_probe_code := close_probe_result.receive() ?? -1;
         int close_cancel_code := close_cancel_status.receive() ?? -1;
         bool close_finished := close_cancel_done.receive() ?? false;
