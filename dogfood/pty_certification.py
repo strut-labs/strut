@@ -73,7 +73,9 @@ elif mode == 'exit':
 """,
                 encoding="utf-8",
             )
-            source = f'''function drain(pty terminal) -> string : PtyError {{
+            source = f'''include <filesystem>;
+
+function drain(pty terminal) -> string : PtyError {{
     string output := "";
     while (!terminal.eof()) {{ bytes chunk := terminal.read_bytes(4096); if (!chunk.empty()) {{ output = output + chunk.to_string(); }} }}
     return output;
@@ -85,14 +87,14 @@ function read_until(pty terminal, string expected) -> string : PtyError {{
     return output;
 }}
 
-function main() -> int : (PtyError, ThreadError, TimeError) {{
+function main() -> int : (PtyError, ThreadError, TimeError, FilesystemError) {{
     cancellation_source overload_source;
-    print("stage=first-spawn");
+    write_file("stage.txt", "first-spawn");
     first := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"]);
     string first_output := drain(first);
-    print("stage=first-drained");
+    write_file("stage.txt", "first-drained");
     int first_exit_status := first.wait();
-    print("stage=first-waited");
+    write_file("stage.txt", "first-waited");
     if (!first_output.contains("before-exit")) {{ return 21; }}
     if (first_exit_status != 7) {{ return 22; }}
     second := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], {{}});
@@ -101,7 +103,7 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
     if (!drain(third).contains("before-exit") || third.wait() != 7) {{ return 1; }}
     fourth := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "exit"], {{}}, overload_source.token());
     if (!drain(fourth).contains("before-exit") || fourth.wait() != 7) {{ return 1; }}
-    print("stage=overloads-complete");
+    write_file("stage.txt", "overloads-complete");
 
     configured := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "inspect", "", "two words", "quote\\\"value", "trailing\\\\", "π"], {{"cwd": "{escaped(work)}", "env": {{"STRUT_PTY_ENV": "value-π"}}, "rows": 37, "columns": 111}});
     string details := drain(configured);
@@ -196,7 +198,8 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
             try:
                 result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=60, check=False)
             except subprocess.TimeoutExpired as error:
-                raise RuntimeError(f"ConPTY certification timed out stdout={error.stdout!r} stderr={error.stderr!r}") from error
+                stage = (root / "stage.txt").read_text(encoding="utf-8") if (root / "stage.txt").exists() else "not-started"
+                raise RuntimeError(f"ConPTY certification timed out at {stage} stdout={error.stdout!r} stderr={error.stderr!r}") from error
             if result.returncode != 0 or result.stdout != "ConPTY certification passed\n" or result.stderr:
                 raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
         print("P9 Windows ConPTY certification: spawn overloads, argv/env/cwd/geometry, merged output, interactive input, PATH and failure handling, cancellation, close/wait races, duplicate readers, shared ownership, and cleanup churn passed")
