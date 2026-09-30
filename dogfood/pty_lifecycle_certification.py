@@ -345,10 +345,14 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     print("RESOURCE_BASELINE"); out.flush();
     sleep_ms(1000);
 
+    print("STEP_NATURAL_SPAWN"); out.flush();
     natural_tree := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "leader-exit-descendant", "{escaped(natural_descendant_pid_file)}"]);
+    print("STEP_NATURAL_DRAIN"); out.flush();
     drain(natural_tree);
+    print("STEP_NATURAL_WAIT"); out.flush();
     if (natural_tree.wait() != 0) {{ return 1; }}
     natural_tree.close();
+    print("STEP_NATURAL_DONE"); out.flush();
 
     resized := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "resize"]);
     if (!read_until(resized, "ready").contains("ready")) {{ return 2; }}
