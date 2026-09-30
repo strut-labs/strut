@@ -83,7 +83,7 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
 
     configured := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "inspect", "", "two words", "π"], {{"cwd": "{escaped(work)}", "env": {{"STRUT_PTY_ENV": "value-π"}}, "rows": 37, "columns": 111}});
     string details := drain(configured);
-    if (configured.wait() != 0 || !details.contains("argv=['', 'two words', 'π']") || !details.contains("env=value-π") || !details.contains("cwd=pty-cwd") || !details.contains("tty=True") || !details.contains("session_leader=True") || !details.contains("controlling_terminal=True") || !details.contains("foreground_group=True") || !details.contains("size=37x111") || !details.contains("stdout") || !details.contains("stderr")) {{ return 2; }}
+    if (configured.wait() != 0 || !details.contains("argv=['', 'two words', 'π']") || !details.contains("env=value-π") || !details.contains("cwd=pty-cwd") || !details.contains("tty=True") || !details.contains("session_leader=True") || !details.contains("controlling_terminal=True") || !details.contains("foreground_group=True") || !details.contains("size=37x111") || !details.contains("stdout") || !details.contains("stderr")) {{ print("configured=" + details); return 2; }}
 
     raw := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "raw"]);
     if (raw.read_bytes(5).to_string() != "ready") {{ return 3; }}
