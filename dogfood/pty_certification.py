@@ -79,7 +79,9 @@ elif mode == 'exit':
 
 function main() -> int : (PtyError, ThreadError, TimeError) {{
     shell := pty_spawn("/bin/sh", ["-c", "printf shell-ok"]);
-    if (drain(shell) != "shell-ok" || shell.wait() != 0) {{ return 1; }}
+    string shell_output := drain(shell);
+    int shell_status := shell.wait();
+    if (shell_output != "shell-ok" || shell_status != 0) {{ print("shell=" + shell_output + " status=" + to_string(shell_status)); return 1; }}
 
     configured := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "inspect", "", "two words", "π"], {{"cwd": "{escaped(work)}", "env": {{"STRUT_PTY_ENV": "value-π"}}, "rows": 37, "columns": 111}});
     string details := drain(configured);
