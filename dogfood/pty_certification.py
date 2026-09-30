@@ -190,7 +190,7 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
             program.write_text(source, encoding="utf-8")
             subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
             result = subprocess.run(executable, cwd=root, text=True, capture_output=True, timeout=60, check=False)
-            if result.returncode != 0 or "ConPTY certification passed" not in result.stdout or result.stderr:
+            if result.returncode != 0 or result.stdout != "ConPTY certification passed\n" or result.stderr:
                 raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
         print("P9 Windows ConPTY certification: spawn overloads, argv/env/cwd/geometry, merged output, interactive input, PATH and failure handling, cancellation, close/wait races, duplicate readers, shared ownership, and cleanup churn passed")
         return
