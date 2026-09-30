@@ -381,7 +381,7 @@ inline bool strut_pty_child_main(int argc,char** argv){
     auto descriptor=[](const char* value){char* end=nullptr;errno=0;const long parsed=std::strtol(value,&end,10);return errno||!end||*end||parsed<=STDERR_FILENO||parsed>std::numeric_limits<int>::max()?-1:static_cast<int>(parsed);};
     const int slave=descriptor(argv[2]),status=descriptor(argv[3]);if(slave<0||status<0||fcntl(slave,F_GETFD)<0||fcntl(status,F_GETFD)<0||!isatty(slave))return false;
     auto fail=[&](int error) noexcept {const int value=error?error:EIO;ssize_t count;do{count=::write(status,&value,sizeof(value));}while(count<0&&errno==EINTR);_exit(126);};
-    if(geteuid()!=getuid()||getegid()!=getgid())fail(EPERM);if(getsid(0)!=getpid()||getpgrp()!=getpid())fail(EPERM);const int status_flags=fcntl(status,F_GETFD,0);if(status_flags<0||fcntl(status,F_SETFD,status_flags|FD_CLOEXEC)<0)fail(errno);if(ioctl(slave,TIOCSCTTY,0)!=0||tcsetpgrp(slave,getpgrp())!=0)fail(errno);for(int target=STDIN_FILENO;target<=STDERR_FILENO;++target)if(dup2(slave,target)<0)fail(errno);::close(slave);execve(argv[4],argv+5,environ);fail(errno);
+    if(geteuid()!=getuid()||getegid()!=getgid())fail(EPERM);if(getsid(0)!=getpid()||getpgrp()!=getpid())fail(EPERM);const int status_flags=fcntl(status,F_GETFD,0);if(status_flags<0||fcntl(status,F_SETFD,status_flags|FD_CLOEXEC)<0)fail(errno);if(ioctl(slave,TIOCSCTTY,0)!=0||tcsetpgrp(slave,getpgrp())!=0)fail(errno);for(int target=STDIN_FILENO;target<=STDERR_FILENO;++target)if(dup2(slave,target)<0)fail(errno);::close(slave);execve(argv[4],argv+5,environ);fail(errno);return true;
 #else
     (void)argc;(void)argv;return false;
 #endif
