@@ -308,6 +308,7 @@ inline std::string strut_pty_resolve_executable(const strut_string& program,cons
     if(program.v.find('/')!=std::string::npos){const auto candidate=program.v.front()=='/'?program.v:strut_pty_join_path(cwd,program.v);if(::access(candidate.c_str(),X_OK)==0)return candidate;throw strut_checked_error("PtyError",std::string("PTY executable is not accessible: ")+std::strerror(errno));}
     std::string path="/usr/bin:/bin";for(const auto& entry:data.environment)if(entry.rfind("PATH=",0)==0){path=entry.substr(5);break;}std::size_t begin=0;for(;;){const auto end=path.find(':',begin);auto directory=path.substr(begin,end==std::string::npos?std::string::npos:end-begin);if(directory.empty())directory=cwd;else if(directory.front()!='/')directory=strut_pty_join_path(cwd,directory);const auto candidate=strut_pty_join_path(directory,program.v);if(::access(candidate.c_str(),X_OK)==0)return candidate;if(end==std::string::npos)break;begin=end+1;}throw strut_checked_error("PtyError","PTY executable not found in PATH");
 }
+)STRUT_PTY"; out << R"STRUT_PTY(
 struct strut_pty_operation {
     std::atomic<bool> closed{false};int wake[2]{-1,-1};
     strut_pty_operation(){
@@ -341,6 +342,7 @@ public:
     std::shared_ptr<strut_pty_state> state_;bool reading_;std::unique_lock<std::mutex> direction_;std::shared_ptr<strut_pty_operation> operation_;strut_process_cancellation_token token;int descriptor=-1;
 };
 inline void strut_pty_mark_eof(const std::shared_ptr<strut_pty_state>& state){std::lock_guard<std::mutex> lock(state->io_mutex);state->eof_seen=true;}
+)STRUT_PTY"; out << R"STRUT_PTY(
 class strut_pty {
 public:
     strut_pty():state_(std::make_shared<strut_pty_state>()){}
@@ -362,6 +364,7 @@ private:
     std::shared_ptr<strut_pty_state> state_;
 };
 inline int strut_pty_parent_fd(int descriptor){if(descriptor<0)return descriptor;if(descriptor>STDERR_FILENO)return descriptor;const int replacement=fcntl(descriptor,F_DUPFD_CLOEXEC,STDERR_FILENO+1);const int failure=errno;::close(descriptor);if(replacement<0){errno=failure;throw strut_checked_error("PtyError","PTY descriptor setup failed");}return replacement;}
+)STRUT_PTY"; out << R"STRUT_PTY(
 inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vector<strut_string>& arguments,const strut_pty_options& options,const strut_process_cancellation_token& token){
 #ifndef STRUT_PTY_POSIX_SPAWN_SETSID
     (void)program;(void)arguments;(void)options;(void)token;throw strut_checked_error("PtyError","PTY unsupported: P8 requires macOS or glibc 2.34 or newer");
@@ -377,11 +380,17 @@ inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vec
         slave=strut_pty_parent_fd(::open(slave_name.c_str(),O_RDWR|O_NOCTTY|O_CLOEXEC));if(slave<0)throw strut_checked_error("PtyError",std::string("PTY slave open failed: ")+std::strerror(errno));winsize size{};size.ws_row=options.rows;size.ws_col=options.columns;if(ioctl(slave,TIOCSWINSZ,&size)!=0)throw strut_checked_error("PtyError",std::string("PTY window setup failed: ")+std::strerror(errno));strut_close_fd(slave);
         int error=posix_spawn_file_actions_init(&actions);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn actions failed: ")+std::strerror(error));actions_ready=true;error=posix_spawnattr_init(&attributes);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn attributes failed: ")+std::strerror(error));attributes_ready=true;
         error=posix_spawn_file_actions_addopen(&actions,STDIN_FILENO,slave_name.c_str(),O_RDWR,0);if(!error)error=posix_spawn_file_actions_adddup2(&actions,STDIN_FILENO,STDOUT_FILENO);if(!error)error=posix_spawn_file_actions_adddup2(&actions,STDIN_FILENO,STDERR_FILENO);
+#if defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
         if(!error)error=posix_spawn_file_actions_addclosefrom_np(&actions,STDERR_FILENO+1);
+#endif
         if(!error&&!options.launch.cwd.v.empty()){
-            error=posix_spawn_file_actions_addchdir_np(&actions,options.launch.cwd.v.c_str());
+            error=strut_posix_spawn_addchdir(&actions,options.launch.cwd.v.c_str());
         }
-        if(!error)error=posix_spawnattr_setflags(&attributes,static_cast<short>(STRUT_PTY_POSIX_SPAWN_SETSID));if(!error)error=posix_spawn(&pid,executable.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());if(error)throw strut_checked_error("PtyError",std::string("PTY posix_spawn failed: ")+std::strerror(error));
+        short flags=static_cast<short>(STRUT_PTY_POSIX_SPAWN_SETSID);
+#ifdef __APPLE__
+        flags=static_cast<short>(flags|POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
+        if(!error)error=posix_spawnattr_setflags(&attributes,flags);if(!error)error=posix_spawn(&pid,executable.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());if(error)throw strut_checked_error("PtyError",std::string("PTY posix_spawn failed: ")+std::strerror(error));
         posix_spawnattr_destroy(&attributes);attributes_ready=false;posix_spawn_file_actions_destroy(&actions);actions_ready=false;
     }catch(...){if(attributes_ready)posix_spawnattr_destroy(&attributes);if(actions_ready)posix_spawn_file_actions_destroy(&actions);strut_close_fd(master);strut_close_fd(slave);throw;}
     spawn_lock.unlock();
