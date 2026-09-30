@@ -139,7 +139,7 @@ const std::vector<ApiCallable>& api_callables(){
         call("pty.read_bytes","method","pty","pty",overload({{"max_bytes","int_64"}},"bytes"),{"PtyError"},{R::pty},"Read at most the requested binary bytes from the pseudo-terminal."),
         call("pty.write_bytes","method","pty","pty",overload({{"data","bytes"}},"void"),{"PtyError"},{R::pty},"Write all bytes to the pseudo-terminal or fail."),
         call("pty.eof","method","pty","pty",overload({},"bool"),{},{R::pty},"Report whether slave closure has been observed."),
-        call("pty.resize","method","pty","pty",overload({{"rows","int"},{"columns","int"}},"void"),{"PtyError"},{R::pty},"Set terminal dimensions from 1 through 65535 and let the kernel deliver SIGWINCH."),
+        call("pty.resize","method","pty","pty",overload({{"rows","int"},{"columns","int"}},"void"),{"PtyError"},{R::pty},"Set terminal dimensions from 1 through 32767; POSIX kernels deliver SIGWINCH after resize."),
         call("pty.interrupt","method","pty","pty",overload({},"void"),{"PtyError"},{R::pty},"Send SIGINT to the validated foreground process group, or the pinned leader group."),
         call("pty.terminate","method","pty","pty",overload({},"void"),{"PtyError"},{R::pty},"Send SIGTERM to the validated foreground process group, or the pinned leader group."),
         call("pty.kill","method","pty","pty",overload({},"void"),{"PtyError"},{R::pty},"Send SIGKILL to the validated foreground process group, or the pinned leader group."),

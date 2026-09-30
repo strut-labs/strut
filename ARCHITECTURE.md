@@ -97,16 +97,27 @@ request/response helpers, active HTTP server and optional WebSocket runtime to b
 facilities have one maintained implementation.
 The PTY component similarly composes the existing bytes, cancellation, and process
 components. Its POSIX implementation uses native PTY/session/ioctl/signal APIs and
-does not compose networking, HTTP, WebSockets, or a third-party terminal library.
+its Windows implementation uses native ConPTY, overlapped host pipes, and a Job
+Object. It does not compose networking, HTTP, WebSockets, or a third-party terminal
+library.
 On macOS, native spawn inherits an already-open slave and close-on-exec status channel
 into a hidden self-exec runtime entry. The entry validates its session and identity,
 claims the slave after spawn has created the session because Darwin applies file
 actions too early to acquire a controlling terminal, and directly `execve`s the
 resolved target. Early-priority dispatch runs before generated application globals;
 the status channel reports setup failure and closes on successful exec.
-Windows retains a compile-only API stub until the separate P9 ConPTY phase: operations
-that require a PTY throw unsupported, while observers and close return documented
-default/no-op results.
+Windows dynamically resolves the three ConPTY entry points, creates synchronous
+terminal ends plus overlapped host ends, and attaches the opaque pseudo-console
+handle through `STARTUPINFOEXW`. The child is created suspended, assigned to a
+kill-on-close Job, and resumed only after containment succeeds. A weak monitor owns
+only a duplicated process handle; it caches leader completion and terminates Job
+descendants without retaining PTY state or closing the pseudo-console. Pending reads
+wait on both output and process completion, initiating pseudo-console close only when
+a reader is present to drain final output. Explicit close and terminate retire output
+first. Pseudo-console close runs off-thread to accommodate pre-26100 blocking flush
+behavior; worker setup failure also retires output before synchronous fallback.
+Systems before Windows 10 1809 retain normal startup and receive a deterministic
+`PtyError` only from `pty_spawn`.
 Outbound HTTP uses one emitted libcurl easy-handle core. Buffered bodies are adapters
 that append to or read from owned memory; P3 streaming substitutes bounded `bytes`
 producer/consumer callbacks and an optional existing cancellation token without

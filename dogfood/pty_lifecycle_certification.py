@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Certify the P8 PTY control surface, lifecycle races, and resources."""
 
+import ctypes
 import os
 from pathlib import Path
 import queue
@@ -37,6 +38,102 @@ def linux_sample(pid):
         return {"fd": descriptors, "children": len(children), "zombies": zombies, "rss_kib": rss_kib, "threads": int(fields["Threads"])}
     except (FileNotFoundError, PermissionError, ProcessLookupError):
         return None
+
+
+def windows_sample(pid):
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetProcessHandleCount.argtypes = [wintypes.HANDLE, wintypes.LPDWORD]
+    kernel32.GetProcessHandleCount.restype = wintypes.BOOL
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    process = kernel32.OpenProcess(0x0400, False, pid)
+    if not process:
+        return None
+    try:
+        handles = ctypes.c_ulong()
+        if not kernel32.GetProcessHandleCount(process, ctypes.byref(handles)):
+            return None
+    finally:
+        kernel32.CloseHandle(process)
+
+    class ThreadEntry(ctypes.Structure):
+        _fields_ = [
+            ("size", wintypes.DWORD),
+            ("usage", wintypes.DWORD),
+            ("thread_id", wintypes.DWORD),
+            ("owner_pid", wintypes.DWORD),
+            ("base_priority", wintypes.LONG),
+            ("delta_priority", wintypes.LONG),
+            ("flags", wintypes.DWORD),
+        ]
+
+    kernel32.Thread32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+    kernel32.Thread32First.restype = wintypes.BOOL
+    kernel32.Thread32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)]
+    kernel32.Thread32Next.restype = wintypes.BOOL
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000004, 0)
+    if snapshot == ctypes.c_void_p(-1).value:
+        return None
+    threads = 0
+    try:
+        entry = ThreadEntry()
+        entry.size = ctypes.sizeof(entry)
+        present = kernel32.Thread32First(snapshot, ctypes.byref(entry))
+        while present:
+            if entry.owner_pid == pid:
+                threads += 1
+            present = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return {"handles": handles.value, "threads": threads}
+
+
+def process_exists(pid):
+    if sys.platform == "win32":
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x00100000, False, pid)
+        if not handle:
+            error = ctypes.get_last_error()
+            if error == 87:
+                return False
+            raise OSError(error, f"OpenProcess failed for descendant {pid}")
+        try:
+            result = kernel32.WaitForSingleObject(handle, 0)
+            if result == 0:
+                return False
+            if result == 0x102:
+                return True
+            raise OSError(ctypes.get_last_error(), f"WaitForSingleObject failed for descendant {pid}")
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def wait_gone(pid, description, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not process_exists(pid):
+            return
+        time.sleep(0.02)
+    raise RuntimeError(f"{description} PID {pid} survived PTY cleanup")
 
 
 def maxima(left, right):
@@ -84,30 +181,46 @@ def certify_resources(executable, root):
     after_fds = None
     seen_done = False
     observed = []
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + (120 if sys.platform == "win32" else 60)
     while time.monotonic() < deadline and not seen_done:
         try:
             line = lines.get(timeout=0.01)
             observed.append(line)
             if line == "RESOURCE_BASELINE" and sys.platform.startswith("linux"):
                 baseline = linux_sample(process.pid)
+            elif line == "RESOURCE_BASELINE" and sys.platform == "win32":
+                baseline = windows_sample(process.pid)
             elif line == "RESOURCE_AFTER" and sys.platform.startswith("linux"):
                 time.sleep(0.05)
                 after = linux_sample(process.pid)
                 after_fds = linux_fd_targets(process.pid)
+            elif line == "RESOURCE_AFTER" and sys.platform == "win32":
+                deadline_after = time.monotonic() + 3
+                after = windows_sample(process.pid)
+                while time.monotonic() < deadline_after:
+                    sample = windows_sample(process.pid)
+                    if sample is not None:
+                        after = sample if after is None else {name: min(after[name], sample[name]) for name in after}
+                    time.sleep(0.05)
             elif line == "PTY lifecycle certification passed":
                 seen_done = True
         except queue.Empty:
-            pass
+            if process.poll() is not None:
+                break
         if sys.platform.startswith("linux") and process.poll() is None:
             sample = linux_sample(process.pid)
+            if sample is not None:
+                peak = maxima(peak, sample)
+        elif sys.platform == "win32" and process.poll() is None:
+            sample = windows_sample(process.pid)
             if sample is not None:
                 peak = maxima(peak, sample)
     try:
         returncode = process.wait(timeout=max(1, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
         process.kill()
-        reader.join()
+        process.wait()
+        reader.join(timeout=2)
         raise RuntimeError(f"P8 PTY lifecycle fixture timed out; stdout={observed!r} stderr={process.stderr.read()!r}")
     reader.join()
     stderr = process.stderr.read()
@@ -128,8 +241,16 @@ def certify_resources(executable, root):
         if after["rss_kib"] > baseline["rss_kib"] + allowance:
             raise RuntimeError(f"PTY RSS did not return within allowance: baseline={baseline} after={after} allowance={allowance}")
         print(f"P8 PTY resources Linux: baseline={baseline} peak={peak} after={after} rss_allowance_kib={allowance} thread_allowance={thread_allowance}")
+    elif sys.platform == "win32":
+        if baseline is None or peak is None or after is None:
+            raise RuntimeError(f"missing Windows resource samples: baseline={baseline} peak={peak} after={after}")
+        if after["handles"] != baseline["handles"]:
+            raise RuntimeError(f"PTY HANDLE count did not return to baseline: baseline={baseline} peak={peak} after={after}")
+        if after["threads"] != baseline["threads"]:
+            raise RuntimeError(f"PTY thread count did not return to baseline: baseline={baseline} peak={peak} after={after}")
+        print(f"P9 PTY resources Windows: baseline={baseline} peak={peak} after={after}")
     else:
-        print("P8 PTY resources: FD/child/zombie/RSS/thread counters unsupported on this platform; functional fixture executed")
+        print("P8 PTY resources: native counters unsupported on this platform; functional fixture executed")
 
 
 def main():
@@ -140,12 +261,193 @@ def main():
         program = root / "pty-lifecycle.p"
         executable = root / ("pty-lifecycle.exe" if sys.platform == "win32" else "pty-lifecycle")
         if sys.platform == "win32":
-            program.write_text(
-                'function inspect(pty terminal) -> void : PtyError { terminal.resize(24, 80); terminal.interrupt(); terminal.terminate(); terminal.kill(); terminal.hangup(); terminal.wait(); return; } function main() -> int { return 0; }\n',
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            if not all(hasattr(kernel32, name) for name in ("CreatePseudoConsole", "ResizePseudoConsole", "ClosePseudoConsole")):
+                program.write_text(
+                    'function inspect(pty terminal) -> void : PtyError { terminal.resize(24, 80); terminal.interrupt(); terminal.terminate(); terminal.kill(); terminal.hangup(); terminal.wait(); return; } function main() -> int { return 0; }\n',
+                    encoding="utf-8",
+                )
+                subprocess.run([compiler, program, "-o", executable, *compile_flags], cwd=root, check=True)
+                subprocess.run([executable], cwd=root, check=True)
+                print("P9 Windows ConPTY lifecycle API compile certification passed on a pre-1809 host; spawn fallback is covered by pty_certification.py")
+                return
+            descendant_pid_file = root / "descendant.pid"
+            natural_descendant_pid_file = root / "natural-descendant.pid"
+            abandoned_pid_file = root / "abandoned.pid"
+            abandoned_marker = root / "abandoned-survived.txt"
+            helper = root / "conpty-lifecycle-helper.py"
+            helper.write_text(
+                """import os, pathlib, signal, subprocess, sys, time
+mode = sys.argv[1]
+if mode == 'resize':
+    print('ready', flush=True)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        size = os.get_terminal_size(1)
+        if size.lines == 51 and size.columns == 133:
+            print('resized=51x133', flush=True)
+            raise SystemExit(0)
+        time.sleep(0.01)
+    raise SystemExit(2)
+elif mode == 'interrupt':
+    def interrupted(signum, frame):
+        print('caught=INT', flush=True)
+        raise SystemExit(0)
+    signal.signal(signal.SIGINT, interrupted)
+    print('ready', flush=True)
+    while True: time.sleep(1)
+elif mode == 'hangup':
+    print('ready', flush=True)
+    sys.stdin.buffer.read()
+    print('eof', flush=True)
+elif mode == 'sleep':
+    print('ready', flush=True)
+    time.sleep(30)
+elif mode == 'descendant':
+    child = subprocess.Popen([sys.executable, __file__, 'sleep'])
+    pathlib.Path(sys.argv[2]).write_text(str(child.pid), encoding='ascii')
+    time.sleep(30)
+elif mode == 'leader-exit-descendant':
+    child = subprocess.Popen([sys.executable, __file__, 'sleep'])
+    pathlib.Path(sys.argv[2]).write_text(str(child.pid), encoding='ascii')
+elif mode == 'delayed-marker':
+    pathlib.Path(sys.argv[2]).write_text(str(os.getpid()), encoding='ascii')
+    print('ready', flush=True)
+    time.sleep(1)
+    pathlib.Path(sys.argv[3]).write_text('survived', encoding='ascii')
+""",
                 encoding="utf-8",
             )
+            source = f'''function drain(pty terminal) -> string : PtyError {{
+    string output := "";
+    while (!terminal.eof()) {{ bytes chunk := terminal.read_bytes(4096); if (!chunk.empty()) {{ output = output + chunk.to_string(); }} }}
+    return output;
+}}
+
+function read_until(pty terminal, string expected) -> string : PtyError {{
+    string output := "";
+    while (!output.contains(expected) && !terminal.eof()) {{ output = output + terminal.read_bytes(4096).to_string(); }}
+    return output;
+}}
+
+function abandon(string helper, string pid_file, string marker) -> void : PtyError {{
+    abandoned := pty_spawn("{escaped(sys.executable)}", [helper, "delayed-marker", pid_file, marker]);
+    if (!read_until(abandoned, "ready").contains("ready")) {{ return; }}
+    escaped_copy := abandoned;
+    return;
+}}
+
+function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
+    warmup := pty_spawn("cmd.exe", ["/D", "/Q", "/C", "exit 0"]);
+    if (warmup.wait() != 0) {{ return 1; }}
+    warmup.close();
+    sleep_ms(100);
+    print("RESOURCE_BASELINE"); out.flush();
+    sleep_ms(1000);
+
+    natural_tree := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "leader-exit-descendant", "{escaped(natural_descendant_pid_file)}"]);
+    drain(natural_tree);
+    if (natural_tree.wait() != 0) {{ return 1; }}
+    natural_tree.close();
+
+    resized := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "resize"]);
+    if (!read_until(resized, "ready").contains("ready")) {{ return 2; }}
+    resized.resize(51, 133);
+    if (!drain(resized).contains("resized=51x133") || resized.wait() != 0) {{ return 2; }}
+    bool bad_resize := false;
+    invalid_resize := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
+    try {{ invalid_resize.resize(0, 80); }} catch (PtyError caught) {{ bad_resize = true; }}
+    if (!bad_resize) {{ return 3; }}
+    bad_resize = false;
+    try {{ invalid_resize.resize(24, 32768); }} catch (PtyError caught) {{ bad_resize = true; }}
+    if (!bad_resize) {{ return 3; }}
+    invalid_resize.close();
+
+    interrupted := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "interrupt"]);
+    if (!read_until(interrupted, "ready").contains("ready")) {{ return 4; }}
+    interrupted.interrupt();
+    if (!drain(interrupted).contains("caught=INT") || interrupted.wait() != 0) {{ return 4; }}
+
+    hung_up := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "hangup"]);
+    if (!read_until(hung_up, "ready").contains("ready")) {{ return 5; }}
+    hung_up.hangup();
+    if (!drain(hung_up).contains("eof") || hung_up.wait() != 0) {{ return 5; }}
+
+    terminated := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
+    if (!read_until(terminated, "ready").contains("ready")) {{ return 6; }}
+    terminated.terminate();
+    int terminated_status := terminated.wait();
+    if (terminated.running() || terminated.exit_code() != terminated_status || terminated.wait() != terminated_status) {{ return 6; }}
+
+    killed := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
+    if (!read_until(killed, "ready").contains("ready")) {{ return 7; }}
+    killed.kill();
+    if (killed.wait() != 137 || killed.running() || killed.exit_code() != 137) {{ return 7; }}
+
+    cancellation_source wait_source;
+    cancelled_wait := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], wait_source.token());
+    channel<bool> wait_result;
+    wait_worker := thread(() => {{ try {{ cancelled_wait.wait(); wait_result.send(false); }} catch (PtyError caught) {{ wait_result.send(caught.code == 125); }} }});
+    sleep_ms(50); wait_source.cancel();
+    if (!(wait_result.receive() ?? false)) {{ return 8; }}
+    wait_worker.join(); cancelled_wait.close();
+
+    resize_race := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
+    if (!read_until(resize_race, "ready").contains("ready")) {{ return 9; }}
+    resize_worker := thread(() => {{ for (index := 0; index < 500; index++) {{ try {{ resize_race.resize(24 + index % 50, 80 + index % 100); }} catch (PtyError caught) {{ return; }} }} }});
+    signal_worker := thread(() => {{ for (index := 0; index < 100; index++) {{ try {{ resize_race.interrupt(); }} catch (PtyError caught) {{ return; }} }} }});
+    sleep_ms(10); resize_race.close(); resize_worker.join(); signal_worker.join();
+
+    for (close_cancel_cycle := 0; close_cancel_cycle < 20; close_cancel_cycle++) {{
+        cancellation_source source;
+        raced := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], source.token());
+        channel<int> result;
+        waiter := thread(() => {{ try {{ result.send(raced.wait()); }} catch (PtyError caught) {{ result.send(-caught.code); }} }});
+        closer := thread(() => {{ raced.close(); }});
+        canceller := thread(() => {{ source.cancel(); }});
+        int status := result.receive() ?? -999;
+        waiter.join(); closer.join(); canceller.join();
+        int cached := raced.wait();
+        if ((status != -125 && status != cached) || raced.running() || raced.exit_code() != cached) {{ return 10; }}
+    }}
+
+    abandon("{escaped(helper)}", "{escaped(abandoned_pid_file)}", "{escaped(abandoned_marker)}");
+    for (cycle := 0; cycle < 300; cycle++) {{
+        quick := pty_spawn("cmd.exe", ["/D", "/Q", "/C", "exit 0"]);
+        escaped_copy := quick;
+        if (cycle % 2 == 0) {{ if (quick.wait() != 0) {{ return 11; }} }} else {{ quick.close(); }}
+        escaped_copy.close();
+    }}
+    print("RESOURCE_AFTER"); out.flush();
+    sleep_ms(500);
+    print("PTY lifecycle certification passed"); out.flush();
+    return 0;
+}}
+'''
+            program.write_text(source, encoding="utf-8")
             subprocess.run([compiler, program, "-o", executable, *compile_flags], cwd=root, check=True)
-            print("P8 PTY Windows compile-only API/stub certification passed; ConPTY remains deferred to P9")
+            certify_resources(executable, root)
+            if not natural_descendant_pid_file.exists():
+                raise RuntimeError("natural-exit ConPTY descendant PID was not reported")
+            wait_gone(int(natural_descendant_pid_file.read_text(encoding="ascii")), "natural-exit ConPTY descendant")
+            if not abandoned_pid_file.exists():
+                raise RuntimeError("abandoned ConPTY helper never reported readiness")
+            wait_gone(int(abandoned_pid_file.read_text(encoding="ascii")), "abandoned ConPTY child")
+            if abandoned_marker.exists():
+                raise RuntimeError("abandoned live ConPTY survived last-owner cleanup")
+
+            owner_source = root / "conpty-owner-shutdown.p"
+            owner_executable = root / "conpty-owner-shutdown.exe"
+            owner_source.write_text(
+                f'''function main() -> int : (PtyError, TimeError) {{ terminal := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "descendant", "{escaped(descendant_pid_file)}"]); escaped_terminal := terminal; sleep_ms(250); return 0; }}\n''',
+                encoding="utf-8",
+            )
+            subprocess.run([compiler, owner_source, "-o", owner_executable, *compile_flags], cwd=root, check=True)
+            result = subprocess.run(owner_executable, cwd=root, text=True, capture_output=True, timeout=15, check=False)
+            if result.returncode != 0 or result.stderr or not descendant_pid_file.exists():
+                raise RuntimeError(f"ConPTY owner shutdown failed: exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
+            wait_gone(int(descendant_pid_file.read_text(encoding="ascii")), "ConPTY descendant")
+            print("P9 Windows ConPTY lifecycle certification: resize, ETX interrupt, input hangup, terminate/kill approximations, wait cancellation, close/cancel and resize/control races, exact descendant cleanup, HANDLE/thread return, owner shutdown, and 300 spawn/exit cycles passed")
             return
 
         helper = root / "pty-p8-helper.py"
@@ -238,7 +540,7 @@ elif mode == 'descendant':
 
 function read_until(pty terminal, string expected) -> string : PtyError {{
     string output := "";
-    while (!output.contains(expected)) {{ output = output + terminal.read_bytes(4096).to_string(); }}
+    while (!output.contains(expected) && !terminal.eof()) {{ output = output + terminal.read_bytes(4096).to_string(); }}
     return output;
 }}
 
@@ -263,7 +565,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     try {{ invalid_resize.resize(0, 80); }} catch (PtyError caught) {{ bad_resize = true; }}
     if (!bad_resize) {{ return 3; }}
     bad_resize = false;
-    try {{ invalid_resize.resize(24, 65536); }} catch (PtyError caught) {{ bad_resize = true; }}
+    try {{ invalid_resize.resize(24, 32768); }} catch (PtyError caught) {{ bad_resize = true; }}
     if (!bad_resize) {{ return 4; }}
     invalid_resize.close();
 
