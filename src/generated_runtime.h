@@ -9,6 +9,7 @@ void emit_encoding(std::ostream& out);
 void emit_crypto(std::ostream& out);
 void emit_streams(std::ostream& out);
 void emit_cancellation(std::ostream& out);
+void emit_pty(std::ostream& out);
 void emit_executor(std::ostream& out);
 void emit_tcp(std::ostream& out, bool connect, bool async);
 void emit_http_client(std::ostream& out, bool async, bool streaming = false, bool curl_global = true);

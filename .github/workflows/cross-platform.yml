@@ -141,6 +141,7 @@ jobs:
           python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
           python3 dogfood/process_lifecycle_certification.py build/strut
+          python3 dogfood/pty_certification.py build/strut
       - name: Certify sanitized generated HTTP runtime
         if: matrix.name == 'linux-x64-gcc'
         env:
@@ -162,6 +163,7 @@ jobs:
           python3 dogfood/http_client_certification.py build/strut
           python3 dogfood/http_client_streaming_certification.py build/strut
           python3 dogfood/process_lifecycle_certification.py build/strut
+          python3 dogfood/pty_certification.py build/strut
       - name: Certify generated HTTP worker concurrency
         if: matrix.name == 'linux-x64-gcc'
         env:
@@ -172,6 +174,7 @@ jobs:
           python3 dogfood/http_client_streaming_certification.py build/strut
           python3 dogfood/websocket_runtime_certification.py build/strut
           python3 dogfood/process_lifecycle_certification.py build/strut
+          python3 dogfood/pty_certification.py build/strut
       - name: Certify generated C++ and dogfood (MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -203,6 +206,7 @@ jobs:
           python dogfood/backend_baseline_certification.py build/Release/strut.exe
           python dogfood/process_cancellation_certification.py build/Release/strut.exe
           python dogfood/process_lifecycle_certification.py build/Release/strut.exe
+          python dogfood/pty_certification.py build/Release/strut.exe
 
   linux-arm64:
     name: linux-arm64-gcc
@@ -252,3 +256,4 @@ jobs:
           python3 dogfood/backend_baseline_certification.py build/strut
           python3 dogfood/process_cancellation_certification.py build/strut
           python3 dogfood/process_lifecycle_certification.py build/strut
+          python3 dogfood/pty_certification.py build/strut

@@ -23,6 +23,7 @@ enum class RuntimeComponentId {
     environment,
     time,
     process,
+    pty,
     safe_pointer,
     weak_pointer,
     raw_pointer,

@@ -243,7 +243,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             for(std::size_t i=0;i<argument_types.size();++i)if(argument_types[i].name=="opaque[]"){
                 bool bytes_context=false;if(builtin)for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& parameter:candidate.parameters)if(!parameter.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()&&i<candidate.parameters.size()&&type_spelling(substitute_type(candidate.parameters[i].type,{"T"},builtin_bindings))=="bytes"){bytes_context=true;break;}}
                 if(bytes_context)argument_types[i]=infer_expression(result,*expr.arguments[i],intern_type("bytes"));
-                const bool process_arguments=builtin&&builtin->name=="process"&&i==1;if(process_arguments)argument_types[i]=infer_expression(result,*expr.arguments[i],intern_type("string[]"));
+                const bool process_arguments=builtin&&(builtin->name=="process"||builtin->name=="pty_spawn")&&i==1;if(process_arguments)argument_types[i]=infer_expression(result,*expr.arguments[i],intern_type("string[]"));
                 if(!bytes_context&&!process_arguments)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"cannot infer element type of empty array literal\nhelp: add an explicit type, for example `string[] values := []`, before passing it"});
             }
             if(expr.left && expr.left->kind==Expr::Kind::identifier){if(extern_c_functions_.find(expr.left->text)!=extern_c_functions_.end() && unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"extern C call requires unsafe block"});auto fit=function_errors_.find(expr.left->text);if(fit!=function_errors_.end())for(const auto& e:fit->second)if(current_function_errors_.find(e)==current_function_errors_.end() && catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+expr.left->text+"' may throw checked error "+e+" not declared by current function\nhelp: handle "+e+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
@@ -288,6 +288,14 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                     if(expr.arguments.size()==3&&argument_types[2].name!="json"&&argument_types[2].name!="cancellation_token")result.diagnostics.push_back(Diagnostic{expr.arguments[2]->span,"process third argument must be JSON options or cancellation_token"});
                     if(expr.arguments.size()==4&&(argument_types[2].name!="json"||argument_types[3].name!="cancellation_token"))result.diagnostics.push_back(Diagnostic{expr.arguments[2]->span,"process four-argument form requires JSON options followed by cancellation_token"});
                     return {TypeKind::named,0,"process"};
+                }
+                if(name=="pty_spawn"){
+                    if(expr.arguments.size()<2||expr.arguments.size()>4)result.diagnostics.push_back(Diagnostic{expr.span,"pty_spawn(...) expects program, arguments, optional JSON options, and an optional cancellation token"});
+                    if(!argument_types.empty()&&!compatible(argument_types[0],builtin_type("string")))result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"PTY program must be string"});
+                    if(argument_types.size()>1){const bool empty_array=expr.arguments[1]->kind==Expr::Kind::array_literal&&expr.arguments[1]->arguments.empty();if(!empty_array&&argument_types[1].name!="string[]")result.diagnostics.push_back(Diagnostic{expr.arguments[1]->span,"PTY arguments must be string[]"});}
+                    if(expr.arguments.size()==3&&argument_types[2].name!="json"&&argument_types[2].name!="cancellation_token")result.diagnostics.push_back(Diagnostic{expr.arguments[2]->span,"pty_spawn third argument must be JSON options or cancellation_token"});
+                    if(expr.arguments.size()==4&&(argument_types[2].name!="json"||argument_types[3].name!="cancellation_token"))result.diagnostics.push_back(Diagnostic{expr.arguments[2]->span,"pty_spawn four-argument form requires JSON options followed by cancellation_token"});
+                    return {TypeKind::named,0,"pty"};
                 }
                 if (name == "exists" || name == "is_file" || name == "is_dir") { require_module(result, "filesystem", expr.span, name); return builtin_type("bool"); }
                 if (name == "ls" || name == "walk") { require_module(result, "filesystem", expr.span, name); return {TypeKind::named,0,"string[]"}; }

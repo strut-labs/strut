@@ -104,6 +104,7 @@ std::string cpp_type_legacy(std::string t){
     if(t=="ofstream") return "strut_ofstream";
     if(t=="exec_result") return "strut_exec_result";
     if(t=="process") return "strut_process";
+    if(t=="pty") return "strut_pty";
     if(t=="process_in") return "strut_process_in";
     if(t=="process_out") return "strut_process_out";
     if(t=="cancellation_source") return "strut_cancellation_source";
@@ -252,6 +253,7 @@ std::string expr(const IRExpr& e){
             if(e.left&&e.left->kind==IRExpr::Kind::identifier&&e.left->text=="bytes"){std::string out="strut_bytes(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             std::string name=expr(*e.left); if(name=="new"&&e.arguments.size()==1)return "strut_ptr("+expr(*e.arguments[0])+")"; if(name=="ptr"&&e.arguments.size()==1)return "strut_raw("+expr(*e.arguments[0])+")"; if(name=="ref"&&e.arguments.size()==1)return "strut_make_ref("+expr(*e.arguments[0])+")"; if(name=="weak"&&e.arguments.size()==1)return "strut_weak("+expr(*e.arguments[0])+")"; if(name=="print"||name=="println"){std::string out="strut_print(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=expr(*e.arguments[i]);}return out+")";}
             if(name=="input") name="strut_input"; else if(name=="istream") name="strut_istream"; else if(name=="ostream") name="strut_ostream"; else if(name=="sstream") name="strut_sstream"; else if(name=="ifstream") name="strut_ifstream"; else if(name=="ofstream") name="strut_ofstream"; else if(name=="join") name="strut_join"; else if(name=="to_int") name="strut_to_int"; else if(name=="to_double") name="strut_to_double"; else if(name=="to_string") name="strut_to_string"; else if(name=="exists") name="strut_fs_exists"; else if(name=="is_file") name="strut_fs_is_file"; else if(name=="is_dir") name="strut_fs_is_dir"; else if(name=="file_size") name="strut_fs_file_size"; else if(name=="modified") name="strut_fs_modified"; else if(name=="make_dir") name="strut_fs_make_dir"; else if(name=="remove") name="strut_fs_remove"; else if(name=="remove_all") name="strut_fs_remove_all"; else if(name=="copy") name="strut_fs_copy"; else if(name=="move") name="strut_fs_move"; else if(name=="touch") name="strut_fs_touch"; else if(name=="ls") name="strut_fs_ls"; else if(name=="walk") name="strut_fs_walk"; else if(name=="cwd") name="strut_fs_cwd"; else if(name=="cd") name="strut_fs_cd"; else if(name=="absolute") name="strut_fs_absolute"; else if(name=="canonical") name="strut_fs_canonical"; else if(name=="parent") name="strut_fs_parent"; else if(name=="filename") name="strut_fs_filename"; else if(name=="extension") name="strut_fs_extension"; else if(name=="stem") name="strut_fs_stem"; else if(name=="join_path") name="strut_fs_join_path"; else if(name=="read_file") name="strut_fs_read_file"; else if(name=="read_bytes") name="strut_fs_read_bytes"; else if(name=="write_file") name="strut_fs_write_file"; else if(name=="append_file") name="strut_fs_append_file"; else if(name=="env") name="strut_env"; else if(name=="set_env") name="strut_set_env"; else if(name=="unset_env") name="strut_unset_env"; else if(name=="now_ms") name="strut_now_ms"; else if(name=="unix_ms") name="strut_unix_ms"; else if(name=="sleep_ms") name="strut_sleep_ms"; else if(name=="exec") name="strut_exec"; else if(name=="exec_shell") name="strut_exec_shell"; else if(name=="process") name="strut_process"; else if(name=="pipe_exec") name="strut_pipe_exec"; else if(name=="thread") name="strut_thread"; else if(name=="mutex") name="strut_mutex"; else if(name=="http_server") name="strut_http_server"; else if(name=="http_text") name="strut_http_text"; else if(name=="http_html") name="strut_http_html"; else if(name=="http_json_response") name="strut_http_json_response"; else if(name=="sqlite_open") name="strut_sqlite_open"; else if(name=="embed_file") name="strut_embed_file"; else if(name=="embed_dir") name="strut_embed_dir";
+            if(name=="pty_spawn")name="strut_pty_spawn";
             if(name=="http_cookie")name="strut_make_http_cookie";else if(name=="http_redirect")name="strut_http_redirect";else if(name=="http_serve_file")name="strut_http_serve_file_cancellable";else if(name=="http_write_ndjson")name="strut_http_write_ndjson";
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=call_argument(*e.arguments[i]);}return out+")";
         }
@@ -1320,6 +1322,9 @@ inline pid_t strut_posix_spawn(const strut_string& program,strut_posix_spawn_dat
     short flags=POSIX_SPAWN_SETPGROUP;error=posix_spawnattr_setflags(&attributes,flags);if(!error)error=posix_spawnattr_setpgroup(&attributes,0);if(error){cleanup();strut_posix_check(error,"posix_spawn process group");}pid_t pid=-1;error=posix_spawnp(&pid,program.v.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());cleanup();strut_posix_check(error,"posix_spawnp");return pid;
 }
 inline bool strut_posix_collect_owned(pid_t pid,int& status,bool blocking,int& failure) noexcept{siginfo_t information{};const int flags=WEXITED|WNOWAIT|(blocking?0:WNOHANG);for(;;){if(waitid(P_PID,static_cast<id_t>(pid),&information,flags)==0)break;if(errno==EINTR)continue;failure=errno;return false;}if(!blocking&&information.si_pid==0)return false;(void)::kill(-pid,SIGKILL);for(;;){const pid_t result=waitpid(pid,&status,0);if(result==pid)return true;if(result<0&&errno==EINTR)continue;failure=result<0?errno:ECHILD;return false;}}
+inline bool strut_posix_update_owned(pid_t& pid,bool& running,std::int32_t& exit_code,bool blocking,int& failure) noexcept{if(!running)return true;int status=0;if(!strut_posix_collect_owned(pid,status,blocking,failure)){if(failure){pid=-1;running=false;}return false;}exit_code=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);pid=-1;running=false;return true;}
+inline void strut_posix_defer_owned(pid_t& pid,bool& running) noexcept{const pid_t owned=pid;pid=-1;running=false;try{std::thread([owned](){int status=0;while(waitpid(owned,&status,0)<0&&errno==EINTR){}}).detach();}catch(...){}}
+inline void strut_posix_cleanup_owned(pid_t& pid,bool& running,std::int32_t& exit_code) noexcept{int failure=0;if(strut_posix_update_owned(pid,running,exit_code,false,failure)||!running)return;(void)::kill(-pid,SIGTERM);for(int attempt=0;attempt<20&&running;++attempt){failure=0;if(strut_posix_update_owned(pid,running,exit_code,false,failure))break;if(running)std::this_thread::sleep_for(std::chrono::milliseconds(10));}if(running){(void)::kill(-pid,SIGKILL);for(int attempt=0;attempt<20&&running;++attempt){failure=0;if(strut_posix_update_owned(pid,running,exit_code,false,failure))break;if(running)std::this_thread::sleep_for(std::chrono::milliseconds(10));}}if(running)strut_posix_defer_owned(pid,running);}
 inline strut_exec_result strut_exec_impl(const strut_string& program,const std::vector<strut_string>& args,const strut_exec_options& options){
     auto data=strut_posix_spawn_arguments(program,args,options);
 #if !defined(__APPLE__) && !defined(STRUT_GLIBC_SPAWN_CLOSEFROM)
@@ -1587,7 +1592,7 @@ public:
 #ifdef _WIN32
         const DWORD waited=WaitForSingleObject(process_,INFINITE);DWORD code=0;if(waited!=WAIT_OBJECT_0||!GetExitCodeProcess(process_,&code))throw strut_checked_error("ExecError",strut_win_error("process wait"));exit_code_=static_cast<std::int32_t>(code);close_handle(process_);close_handle(job_);
 #else
-        int status=0,failure=0;if(!strut_posix_collect_owned(pid_,status,true,failure))throw strut_checked_error("ExecError",std::string("process wait failed: ")+std::strerror(failure));exit_code_=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);pid_=-1;
+        int failure=0;if(!strut_posix_update_owned(pid_,running_,exit_code_,true,failure))throw strut_checked_error("ExecError",std::string("process wait failed: ")+std::strerror(failure));
 #endif
         running_=false;return exit_code_;}
     void terminate(){poll();if(!running_)return;
@@ -1598,33 +1603,31 @@ public:
 #endif
     }
     bool running(){poll();return running_;}std::int32_t exit_code(){poll();return running_?-1:exit_code_;}void close_input(){in.close();}
-    ~strut_process() noexcept{in.close();poll();if(!running_)return;
+    ~strut_process() noexcept{in.close();
 #ifdef _WIN32
+        poll();if(!running_)return;
         (void)GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,process_id_);
-#else
-        (void)::kill(-pid_,SIGTERM);
-#endif
         for(int attempt=0;attempt<20&&running_;++attempt){poll();if(running_)std::this_thread::sleep_for(std::chrono::milliseconds(10));}if(running_){
-#ifdef _WIN32
             (void)TerminateJobObject(job_,1);
-#else
-            (void)::kill(-pid_,SIGKILL);
-#endif
             for(int attempt=0;attempt<20&&running_;++attempt){poll();if(running_)std::this_thread::sleep_for(std::chrono::milliseconds(10));}if(running_)defer_cleanup();
-        }}
+        }
+#else
+        strut_posix_cleanup_owned(pid_,running_,exit_code_);
+#endif
+    }
 private:
     void defer_cleanup() noexcept{
 #ifdef _WIN32
         HANDLE process=process_,job=job_;process_=nullptr;job_=nullptr;process_id_=0;running_=false;try{std::thread([process,job](){if(process)WaitForSingleObject(process,INFINITE);if(process)CloseHandle(process);if(job)CloseHandle(job);}).detach();}catch(...){if(job)CloseHandle(job);if(process)CloseHandle(process);}
 #else
-        const pid_t pid=pid_;pid_=-1;running_=false;try{std::thread([pid](){int status=0;while(waitpid(pid,&status,0)<0&&errno==EINTR){}}).detach();}catch(...){ }
+        strut_posix_defer_owned(pid_,running_);
 #endif
     }
     void poll() noexcept{if(!running_)return;
 #ifdef _WIN32
         const DWORD waited=WaitForSingleObject(process_,0);if(waited==WAIT_OBJECT_0){DWORD code=0;if(GetExitCodeProcess(process_,&code))exit_code_=static_cast<std::int32_t>(code);running_=false;close_handle(process_);close_handle(job_);}else if(waited==WAIT_FAILED){running_=false;close_handle(process_);close_handle(job_);}
 #else
-        int status=0,failure=0;if(strut_posix_collect_owned(pid_,status,false,failure)){exit_code_=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);pid_=-1;running_=false;}else if(failure){pid_=-1;running_=false;}
+        int failure=0;if(!strut_posix_update_owned(pid_,running_,exit_code_,false,failure)&&failure){pid_=-1;running_=false;}
 #endif
     }
 #ifdef _WIN32
@@ -1639,6 +1642,7 @@ private:
 #endif
     bool running_=false;std::int32_t exit_code_=-1;
 };
+)CPP";if(has(RuntimeComponentId::pty))generated_runtime::emit_pty(o);o<<R"CPP(
 inline strut_exec_result strut_pipe_exec(const strut_string& first,const std::vector<strut_string>& first_args,const strut_string& second,const std::vector<strut_string>& second_args){
 )CPP" << R"CPP(    strut_process a(first,first_args);strut_process b(second,second_args);std::string first_error,second_output,second_error;std::exception_ptr pump_error,first_error_error,second_output_error,second_error_error;
     std::thread pump,drain_first_error,drain_second_output,drain_second_error;try{

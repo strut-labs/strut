@@ -247,6 +247,144 @@ private:std::shared_ptr<strut_cancellation_state> state_;
 )STRUT_CANCEL";
 }
 
+void emit_pty(std::ostream& out) {
+    out << R"STRUT_PTY(
+#ifdef _WIN32
+class strut_pty {
+public:
+    strut_bytes read_bytes(std::int64_t) const{throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+    void write_bytes(const strut_bytes&) const{throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+    bool eof() const noexcept{return true;}
+    std::int32_t wait() const{throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+    bool running() const noexcept{return false;}
+    std::int32_t exit_code() const noexcept{return -1;}
+    void close() const noexcept{}
+};
+inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_string>&){throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_string>&,const json::Document&){throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_string>&,const strut_process_cancellation_token&){throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+inline strut_pty strut_pty_spawn(const strut_string&,const std::vector<strut_string>&,const json::Document&,const strut_process_cancellation_token&){throw strut_checked_error("PtyError","PTY unsupported on Windows in P7");}
+#else
+#include <sys/ioctl.h>
+#include <termios.h>
+#if defined(__GLIBC__)
+#if defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2,34)
+#ifndef POSIX_SPAWN_SETSID
+#define POSIX_SPAWN_SETSID 0x80
+#endif
+#define STRUT_PTY_POSIX_SPAWN_SETSID POSIX_SPAWN_SETSID
+#endif
+#endif
+#elif defined(__APPLE__) && defined(POSIX_SPAWN_SETSID_NP)
+#define STRUT_PTY_POSIX_SPAWN_SETSID POSIX_SPAWN_SETSID_NP
+#elif defined(__APPLE__) && defined(POSIX_SPAWN_SETSID)
+#define STRUT_PTY_POSIX_SPAWN_SETSID POSIX_SPAWN_SETSID
+#endif
+
+struct strut_pty_options {
+    strut_exec_options launch;
+    unsigned short rows=24;
+    unsigned short columns=80;
+};
+inline strut_pty_options strut_parse_pty_options(const json::Document& value){
+    strut_pty_options out;if(value.type==json::Type::Null)return out;if(value.type!=json::Type::Object)throw strut_checked_error("PtyError","PTY options must be a JSON object");
+    for(const auto& item:value.object)if(item.first!="cwd"&&item.first!="env"&&item.first!="rows"&&item.first!="columns")throw strut_checked_error("PtyError","unknown PTY option: "+item.first);
+    if(value.has("cwd")){if(value["cwd"].type!=json::Type::String)throw strut_checked_error("PtyError","PTY cwd option must be a string");out.launch.cwd=value["cwd"].string;}
+    if(value.has("env")){const auto& environment=value["env"];if(environment.type!=json::Type::Object)throw strut_checked_error("PtyError","PTY env option must be an object");for(const auto& item:environment.object){if(item.second.type!=json::Type::String)throw strut_checked_error("PtyError","PTY environment values must be strings");out.launch.env.emplace_back(item.first,item.second.string);}}
+    auto dimension=[&](const char* name,unsigned short& target){if(!value.has(name))return;const auto& item=value[name];if(item.type!=json::Type::Number||item.num<1||item.num>65535||item.num!=static_cast<double>(static_cast<unsigned short>(item.num)))throw strut_checked_error("PtyError",std::string("PTY ")+name+" must be an integer from 1 through 65535");target=static_cast<unsigned short>(item.num);};
+    dimension("rows",out.rows);dimension("columns",out.columns);return out;
+}
+inline std::string strut_pty_cwd(){std::vector<char> buffer(256);for(;;){if(::getcwd(buffer.data(),buffer.size()))return buffer.data();if(errno!=ERANGE)throw strut_checked_error("PtyError",std::string("getcwd failed: ")+std::strerror(errno));buffer.resize(buffer.size()*2);}}
+inline std::string strut_pty_join_path(const std::string& left,const std::string& right){if(left.empty())return right;if(right.empty())return left;return left+(left.back()=='/'?"":"/")+right;}
+inline std::string strut_pty_child_directory(const strut_exec_options& options){if(options.cwd.v.empty())return strut_pty_cwd();if(options.cwd.v.front()=='/')return options.cwd.v;return strut_pty_join_path(strut_pty_cwd(),options.cwd.v);}
+inline std::string strut_pty_resolve_executable(const strut_string& program,const strut_posix_spawn_data& data,const strut_exec_options& options){
+    if(program.v.empty())throw strut_checked_error("PtyError","PTY program is empty");strut_reject_nul(program.v,"program");const auto cwd=strut_pty_child_directory(options);
+    if(program.v.find('/')!=std::string::npos){const auto candidate=program.v.front()=='/'?program.v:strut_pty_join_path(cwd,program.v);if(::access(candidate.c_str(),X_OK)==0)return candidate;throw strut_checked_error("PtyError",std::string("PTY executable is not accessible: ")+std::strerror(errno));}
+    std::string path="/usr/bin:/bin";for(const auto& entry:data.environment)if(entry.rfind("PATH=",0)==0){path=entry.substr(5);break;}std::size_t begin=0;for(;;){const auto end=path.find(':',begin);auto directory=path.substr(begin,end==std::string::npos?std::string::npos:end-begin);if(directory.empty())directory=cwd;else if(directory.front()!='/')directory=strut_pty_join_path(cwd,directory);const auto candidate=strut_pty_join_path(directory,program.v);if(::access(candidate.c_str(),X_OK)==0)return candidate;if(end==std::string::npos)break;begin=end+1;}throw strut_checked_error("PtyError","PTY executable not found in PATH");
+}
+struct strut_pty_operation {
+    std::atomic<bool> closed{false};int wake[2]{-1,-1};
+    strut_pty_operation(){
+#ifdef __linux__
+        if(pipe2(wake,O_NONBLOCK|O_CLOEXEC)!=0)throw strut_checked_error("PtyError","PTY cancellation wakeup setup failed");
+#else
+        std::lock_guard<std::mutex> spawn_lock(strut_process_spawn_mutex);if(pipe(wake)!=0)throw strut_checked_error("PtyError","PTY cancellation wakeup setup failed");for(int descriptor:wake){const int status=fcntl(descriptor,F_GETFL,0),flags=fcntl(descriptor,F_GETFD,0);if(status<0||flags<0||fcntl(descriptor,F_SETFL,status|O_NONBLOCK)<0||fcntl(descriptor,F_SETFD,flags|FD_CLOEXEC)<0){const int failure=errno;strut_close_pipe(wake);errno=failure;throw strut_checked_error("PtyError","PTY cancellation wakeup setup failed");}}
+#endif
+    }
+    void signal() noexcept{const char byte=0;ssize_t result;do{result=::write(wake[1],&byte,1);}while(result<0&&errno==EINTR);}
+    ~strut_pty_operation(){strut_close_pipe(wake);}
+};
+struct strut_pty_state {
+    mutable std::mutex io_mutex,lifecycle_mutex,read_mutex,write_mutex;std::condition_variable lifecycle_cv;int master=-1;pid_t pid=-1;bool closed=true,eof_seen=false,running_value=false,close_requested=false;int lifecycle_owner=0,lifecycle_failure=0;std::int32_t code=-1;strut_process_cancellation_token token;std::weak_ptr<strut_pty_operation> reader,writer;
+    void close_native_if_idle() noexcept{if(closed&&reader.expired()&&writer.expired())strut_close_fd(master);}
+    void close_io() noexcept{std::shared_ptr<strut_pty_operation> read,write;{std::lock_guard<std::mutex> lock(io_mutex);if(closed)return;closed=true;read=reader.lock();write=writer.lock();close_native_if_idle();}if(read){read->closed.store(true,std::memory_order_release);read->signal();}if(write){write->closed.store(true,std::memory_order_release);write->signal();}}
+    static int observe(pid_t owned) noexcept{siginfo_t information{};for(;;){if(waitid(P_PID,static_cast<id_t>(owned),&information,WEXITED|WNOWAIT|WNOHANG)==0)return information.si_pid==0?0:1;if(errno!=EINTR)return -errno;}}
+    void finish(pid_t owned,int status,int failure) noexcept{{std::lock_guard<std::mutex> lock(lifecycle_mutex);if(pid==owned){if(failure)lifecycle_failure=failure;else code=WIFEXITED(status)?WEXITSTATUS(status):(WIFSIGNALED(status)?128+WTERMSIG(status):-1);pid=-1;running_value=false;}lifecycle_owner=0;}lifecycle_cv.notify_all();}
+    void run_owner(bool blocking) noexcept{pid_t owned=-1;{std::lock_guard<std::mutex> lock(lifecycle_mutex);owned=pid;}bool term_sent=false,kill_sent=false;int attempts=0;for(;;){const int observation=observe(owned);if(observation<0){finish(owned,0,-observation);return;}if(observation>0){(void)::kill(-owned,SIGKILL);int status=0,failure=0;for(;;){const pid_t result=waitpid(owned,&status,0);if(result==owned)break;if(result<0&&errno==EINTR)continue;failure=result<0?errno:ECHILD;break;}finish(owned,status,failure);return;}bool requested=false;{std::unique_lock<std::mutex> lock(lifecycle_mutex);requested=close_requested;if(!requested&&!blocking){lifecycle_owner=0;lock.unlock();lifecycle_cv.notify_all();return;}}if(requested){if(!term_sent){(void)::kill(-owned,SIGTERM);term_sent=true;attempts=0;}else if(!kill_sent&&++attempts>=20){(void)::kill(-owned,SIGKILL);kill_sent=true;attempts=0;}else if(kill_sent&&++attempts>=20){try{std::thread([owned](){int status=0;while(waitpid(owned,&status,0)<0&&errno==EINTR){}}).detach();}catch(...){}finish(owned,0,ETIMEDOUT);return;}}std::unique_lock<std::mutex> lock(lifecycle_mutex);lifecycle_cv.wait_for(lock,std::chrono::milliseconds(10),[&]{return close_requested&&!requested;});}}
+    void cleanup() noexcept{close_io();bool owner=false;{std::unique_lock<std::mutex> lock(lifecycle_mutex);close_requested=true;if(!running_value)return;if(lifecycle_owner==0){lifecycle_owner=2;owner=true;}lifecycle_cv.notify_all();if(!owner){(void)lifecycle_cv.wait_for(lock,std::chrono::seconds(1),[&]{return !running_value;});return;}}run_owner(true);}
+    ~strut_pty_state(){cleanup();}
+};
+class strut_pty_guard {
+public:
+    strut_pty_guard(std::shared_ptr<strut_pty_state> state,bool reading):state_(std::move(state)),reading_(reading),direction_(reading_?state_->read_mutex:state_->write_mutex,std::defer_lock),operation_(std::make_shared<strut_pty_operation>()){
+        if(!direction_.try_lock())throw strut_checked_error("PtyError",reading_?"PTY already has an active reader":"PTY already has an active writer");std::lock_guard<std::mutex> lock(state_->io_mutex);if(state_->closed)throw strut_checked_error("PtyError","PTY is closed");(reading_?state_->reader:state_->writer)=operation_;descriptor=state_->master;token=state_->token;
+    }
+    ~strut_pty_guard(){std::lock_guard<std::mutex> lock(state_->io_mutex);auto& active=reading_?state_->reader:state_->writer;if(auto operation=active.lock();operation==operation_)active.reset();state_->close_native_if_idle();}
+    void interrupted() const{if(token.cancelled())throw strut_checked_error("PtyError","PTY I/O cancelled",strut_process_cancelled_code);if(operation_->closed.load(std::memory_order_acquire))throw strut_checked_error("PtyError","PTY is closed");}
+    short poll(short events){for(;;){interrupted();pollfd descriptors[2]={{descriptor,events,0},{operation_->wake[0],POLLIN,0}};const int result=::poll(descriptors,2,-1);if(result<0&&errno==EINTR)continue;if(result<0)throw strut_checked_error("PtyError",std::string("PTY poll failed: ")+std::strerror(errno));if(descriptors[0].revents)return descriptors[0].revents;interrupted();}}
+    std::shared_ptr<strut_pty_state> state_;bool reading_;std::unique_lock<std::mutex> direction_;std::shared_ptr<strut_pty_operation> operation_;strut_process_cancellation_token token;int descriptor=-1;
+};
+inline void strut_pty_mark_eof(const std::shared_ptr<strut_pty_state>& state){std::lock_guard<std::mutex> lock(state->io_mutex);state->eof_seen=true;}
+class strut_pty {
+public:
+    strut_pty():state_(std::make_shared<strut_pty_state>()){}
+    explicit strut_pty(std::shared_ptr<strut_pty_state> state):state_(std::move(state)){}
+    strut_bytes read_bytes(std::int64_t maximum) const{if(maximum<0)throw strut_checked_error("PtyError","negative PTY read size");{std::lock_guard<std::mutex> lock(state_->io_mutex);if(state_->closed)throw strut_checked_error("PtyError","PTY is closed");if(maximum==0||state_->eof_seen)return {};}strut_pty_guard guard(state_,true);[[maybe_unused]] auto subscription=guard.token.subscribe([operation=guard.operation_]{operation->signal();});const auto size=static_cast<std::size_t>(std::min<std::int64_t>(maximum,65536));strut_bytes output(static_cast<std::int64_t>(size));for(;;){const short events=guard.poll(POLLIN);const ssize_t count=::read(guard.descriptor,output.data(),size);if(count>0){output.resize_native(static_cast<std::size_t>(count));return output;}if(count==0||(count<0&&errno==EIO)){strut_pty_mark_eof(state_);output.resize_native(0);return output;}if(count<0&&(errno==EAGAIN||errno==EWOULDBLOCK||errno==EINTR)){if(events&(POLLHUP|POLLERR)){strut_pty_mark_eof(state_);output.resize_native(0);return output;}continue;}guard.interrupted();throw strut_checked_error("PtyError",std::string("PTY read failed: ")+std::strerror(errno));}}
+    void write_bytes(const strut_bytes& value) const{strut_pty_guard guard(state_,false);[[maybe_unused]] auto subscription=guard.token.subscribe([operation=guard.operation_]{operation->signal();});guard.interrupted();std::size_t offset=0;while(offset<value.native_size()){const short events=guard.poll(POLLOUT);if(events&(POLLHUP|POLLERR))throw strut_checked_error("PtyError","PTY slave is closed");int failure=0;const ssize_t count=strut_process_write_once(guard.descriptor,reinterpret_cast<const char*>(value.data())+offset,value.native_size()-offset,failure);if(count<0&&(failure==EAGAIN||failure==EWOULDBLOCK||failure==EINTR))continue;if(count<=0){guard.interrupted();throw strut_checked_error("PtyError",std::string("PTY write failed: ")+std::strerror(failure));}offset+=static_cast<std::size_t>(count);}}
+    bool eof() const{std::lock_guard<std::mutex> lock(state_->io_mutex);return state_->eof_seen;}
+    std::int32_t wait() const{auto state=state_;for(;;){bool owner=false;{std::unique_lock<std::mutex> lock(state->lifecycle_mutex);if(!state->running_value){if(state->lifecycle_failure)throw strut_checked_error("PtyError",std::string("PTY wait failed: ")+std::strerror(state->lifecycle_failure));return state->code;}if(state->lifecycle_owner==0){state->lifecycle_owner=1;owner=true;}else state->lifecycle_cv.wait(lock,[&]{return !state->running_value||state->lifecycle_owner==0;});}if(owner)state->run_owner(true);}}
+    bool running() const{auto state=state_;bool owner=false;{std::lock_guard<std::mutex> lock(state->lifecycle_mutex);if(!state->running_value)return false;if(state->lifecycle_owner==0){state->lifecycle_owner=1;owner=true;}}if(owner)state->run_owner(false);std::lock_guard<std::mutex> lock(state->lifecycle_mutex);return state->running_value;}
+    std::int32_t exit_code() const{auto state=state_;bool owner=false;{std::lock_guard<std::mutex> lock(state->lifecycle_mutex);if(state->running_value&&state->lifecycle_owner==0){state->lifecycle_owner=1;owner=true;}}if(owner)state->run_owner(false);std::lock_guard<std::mutex> lock(state->lifecycle_mutex);return state->running_value||state->lifecycle_failure?-1:state->code;}
+    void close() const{auto state=state_;state->cleanup();}
+private:std::shared_ptr<strut_pty_state> state_;
+};
+inline int strut_pty_parent_fd(int descriptor){if(descriptor<0)return descriptor;if(descriptor>STDERR_FILENO)return descriptor;const int replacement=fcntl(descriptor,F_DUPFD_CLOEXEC,STDERR_FILENO+1);const int failure=errno;::close(descriptor);if(replacement<0){errno=failure;throw strut_checked_error("PtyError","PTY descriptor setup failed");}return replacement;}
+inline strut_pty strut_pty_spawn_impl(const strut_string& program,const std::vector<strut_string>& arguments,const strut_pty_options& options,const strut_process_cancellation_token& token){
+#ifndef STRUT_PTY_POSIX_SPAWN_SETSID
+    (void)program;(void)arguments;(void)options;(void)token;throw strut_checked_error("PtyError","PTY unsupported: P7 requires macOS or glibc 2.34 or newer");
+#else
+    strut_posix_spawn_data data;std::string executable;try{data=strut_posix_spawn_arguments(program,arguments,options.launch);executable=strut_pty_resolve_executable(program,data,options.launch);if(!options.launch.cwd.v.empty())strut_reject_nul(options.launch.cwd.v,"cwd");}catch(const strut_checked_error& error){throw strut_checked_error("PtyError",error.message,error.code);}
+    std::unique_lock<std::mutex> spawn_lock(strut_process_spawn_mutex);int master=-1,slave=-1;pid_t pid=-1;posix_spawn_file_actions_t actions;posix_spawnattr_t attributes;bool actions_ready=false,attributes_ready=false;try{
+        master=strut_pty_parent_fd(posix_openpt(O_RDWR|O_NOCTTY|O_CLOEXEC));if(master<0)throw strut_checked_error("PtyError",std::string("posix_openpt failed: ")+std::strerror(errno));if(grantpt(master)!=0||unlockpt(master)!=0)throw strut_checked_error("PtyError",std::string("PTY slave setup failed: ")+std::strerror(errno));std::string slave_name;
+#ifdef __APPLE__
+        char* name=ptsname(master);if(!name)throw strut_checked_error("PtyError",std::string("ptsname failed: ")+std::strerror(errno));slave_name=name;
+#else
+        std::vector<char> name(256);int name_error=ptsname_r(master,name.data(),name.size());if(name_error)throw strut_checked_error("PtyError",std::string("ptsname_r failed: ")+std::strerror(name_error));slave_name=name.data();
+#endif
+        slave=strut_pty_parent_fd(::open(slave_name.c_str(),O_RDWR|O_NOCTTY|O_CLOEXEC));if(slave<0)throw strut_checked_error("PtyError",std::string("PTY slave open failed: ")+std::strerror(errno));winsize size{};size.ws_row=options.rows;size.ws_col=options.columns;if(ioctl(slave,TIOCSWINSZ,&size)!=0)throw strut_checked_error("PtyError",std::string("PTY window setup failed: ")+std::strerror(errno));strut_close_fd(slave);
+        int error=posix_spawn_file_actions_init(&actions);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn actions failed: ")+std::strerror(error));actions_ready=true;error=posix_spawnattr_init(&attributes);if(error)throw strut_checked_error("PtyError",std::string("PTY spawn attributes failed: ")+std::strerror(error));attributes_ready=true;
+        error=posix_spawn_file_actions_addopen(&actions,STDIN_FILENO,slave_name.c_str(),O_RDWR,0);if(!error)error=posix_spawn_file_actions_adddup2(&actions,STDIN_FILENO,STDOUT_FILENO);if(!error)error=posix_spawn_file_actions_adddup2(&actions,STDIN_FILENO,STDERR_FILENO);
+        if(!error)error=posix_spawn_file_actions_addclosefrom_np(&actions,STDERR_FILENO+1);
+        if(!error&&!options.launch.cwd.v.empty()){
+            error=posix_spawn_file_actions_addchdir_np(&actions,options.launch.cwd.v.c_str());
+        }
+        if(!error)error=posix_spawnattr_setflags(&attributes,static_cast<short>(STRUT_PTY_POSIX_SPAWN_SETSID));if(!error)error=posix_spawn(&pid,executable.c_str(),&actions,&attributes,data.argv.data(),data.envp.data());if(error)throw strut_checked_error("PtyError",std::string("PTY posix_spawn failed: ")+std::strerror(error));
+        posix_spawnattr_destroy(&attributes);attributes_ready=false;posix_spawn_file_actions_destroy(&actions);actions_ready=false;
+    }catch(...){if(attributes_ready)posix_spawnattr_destroy(&attributes);if(actions_ready)posix_spawn_file_actions_destroy(&actions);strut_close_fd(master);strut_close_fd(slave);throw;}
+    spawn_lock.unlock();
+    const int status=fcntl(master,F_GETFL,0);if(status<0||fcntl(master,F_SETFL,status|O_NONBLOCK)<0){const int saved=errno;strut_close_fd(master);(void)::kill(-pid,SIGKILL);int ignored=0;while(waitpid(pid,&ignored,0)<0&&errno==EINTR){}throw strut_checked_error("PtyError",std::string("PTY nonblocking setup failed: ")+std::strerror(saved));}
+    try{auto state=std::make_shared<strut_pty_state>();state->master=master;state->pid=pid;state->closed=false;state->running_value=true;state->token=token;return strut_pty(std::move(state));}catch(...){strut_close_fd(master);(void)::kill(-pid,SIGKILL);int ignored=0;while(waitpid(pid,&ignored,0)<0&&errno==EINTR){}throw;}
+#endif
+}
+inline strut_pty strut_pty_spawn(const strut_string& program,const std::vector<strut_string>& arguments){return strut_pty_spawn_impl(program,arguments,{},{});}
+inline strut_pty strut_pty_spawn(const strut_string& program,const std::vector<strut_string>& arguments,const json::Document& options){return strut_pty_spawn_impl(program,arguments,strut_parse_pty_options(options),{});}
+inline strut_pty strut_pty_spawn(const strut_string& program,const std::vector<strut_string>& arguments,const strut_process_cancellation_token& token){return strut_pty_spawn_impl(program,arguments,{},token);}
+inline strut_pty strut_pty_spawn(const strut_string& program,const std::vector<strut_string>& arguments,const json::Document& options,const strut_process_cancellation_token& token){return strut_pty_spawn_impl(program,arguments,strut_parse_pty_options(options),token);}
+#endif
+)STRUT_PTY";
+}
+
 void emit_executor(std::ostream& out) {
     out << R"STRUT_ASYNC(
 #ifndef STRUT_EXECUTION_CONTEXT_DEFINED

@@ -87,6 +87,9 @@ int main(){
     require(api_callable("write_bytes","ostream")&&api_callable("write_bytes","ofstream"),"binary output contract and file adapter are registered");
     require(api_callable("read_all_bytes","process_out")&&api_callable("write_bytes","process_in"),"process binary adapters are registered");
     require(api_callable("process")->overloads.size()==4&&type_spelling(api_callable("process")->overloads[1].parameters[2].type)=="json"&&type_spelling(api_callable("process")->overloads[2].parameters[2].type)=="cancellation_token"&&type_spelling(api_callable("process")->overloads[3].parameters[3].type)=="cancellation_token","process options and cancellation bindings are registered");
+    require(api_callable("pty_spawn")&&api_callable("pty_spawn")->overloads.size()==4&&api_callable("pty_spawn")->checked_errors==std::vector<std::string>{"PtyError"},"PTY spawn overloads and named error are registered");
+    require(api_callable("read_bytes","pty")&&api_callable("write_bytes","pty")&&api_callable("wait","pty")&&api_callable("close","pty"),"PTY binary I/O and lifecycle methods are registered");
+    require(api_callable("pty_spawn")->runtime_components==std::vector<RuntimeComponentId>{RuntimeComponentId::pty},"PTY API owns its sliced runtime component");
     require(api_callable("pipe_exec")->overloads[0].parameters.size()==4,"pipeline registry matches its argv-safe runtime signature");
     require(api_callable("read_all_bytes","ifstream")->overloads[0].parameters[0].optional,"binary read-all limit is optional");
     require(api_callable("token","cancellation_source")&&api_callable("cancel","cancellation_source"),"cancellation source contract is registered");

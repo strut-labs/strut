@@ -31,6 +31,9 @@ struct RegistryApiTests{RegistryApiTests(){
     req(!sema("function main() -> void : ExecError { child := process(\"tool\", [1]); }").ok(),"process rejects non-string arguments");
     req(sema("function main() -> void : ExecError { child := process(\"tool\", []); }").ok(),"process contextually types empty arguments");
     req(!sema("function main() -> void : ExecError { child := process(\"tool\"); }").ok(),"process cancellation overload preserves constructor arity checks");
+    req(sema("function main() -> int : PtyError { cancellation_source source; terminal := pty_spawn(\"tool\", [], {\"rows\": 40, \"columns\": 120}, source.token()); terminal.write_bytes([0, 255]); bytes data := terminal.read_bytes(2); terminal.close(); return terminal.exit_code(); }").ok(),"PTY API accepts options, cancellation, and binary I/O");
+    req(!sema("function main() -> void : PtyError { terminal := pty_spawn(\"tool\", [1]); }").ok(),"PTY rejects non-string arguments");
+    req(!sema("function main() -> void : PtyError { terminal := pty_spawn(\"tool\", [], true); }").ok(),"PTY rejects invalid options and tokens");
     req(!sema("function main() -> void : StreamError { ifstream input; input.read_bytes(\"bad\"); }").ok(),"binary stream argument types checked");
     req(sema("include <encoding>; function main() -> void : EncodingError { bytes raw := [0, 255]; string text := base64_encode(raw); bytes decoded := base64_decode(text); string safe := base64url_encode(decoded); base64url_decode(safe); }").ok(),"binary Base64 APIs type check");
     req(!sema("include <encoding>; function main() -> void : EncodingError { base64_encode(\"text\"); }").ok(),"Base64 encoding rejects text input");
