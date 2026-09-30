@@ -267,9 +267,18 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
                 capture_output=True,
                 check=False,
             ).stdout
+            sample = ""
+            if sys.platform == "darwin":
+                sampled = subprocess.run(
+                    ["sample", str(process.pid), "1", "1"],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                sample = sampled.stdout + sampled.stderr
             process.kill()
             process.communicate()
-            raise RuntimeError(f"timeout stdout={error.stdout!r} stderr={error.stderr!r}\n{processes}") from error
+            raise RuntimeError(f"timeout stdout={error.stdout!r} stderr={error.stderr!r}\n{processes}\n{sample}") from error
         result = subprocess.CompletedProcess(executable, process.returncode, stdout, stderr)
         expected = "".join(f"p7-stage-{stage}\n" for stage in range(1, 12)) + "PTY certification passed\n"
         if result.returncode != 0 or result.stdout != expected or result.stderr:
