@@ -56,7 +56,7 @@ Native threads, mutexes, channels and the async executor have stress fixtures. T
 
 POSIX PTY signals are constrained by native process/session semantics. The runtime pins the unreaped leader identity and revalidates the leader and terminal session before trusting the kernel's current foreground PGID, including a group whose numeric leader PID has exited. `ESRCH` from final delivery is an exit race. POSIX offers no atomic foreground-query-plus-signal or signal-by-session primitive, so a foreground-group transition can race the final syscall and background/detached process groups can escape leader-group cleanup. Callers requiring stronger descendant containment must use an external supervisor or cgroup.
 
-macOS PTY launch native-spawns the current executable with an already-open slave inherited by a hidden runtime entry solely to claim it after Darwin creates the new session. It then immediately calls `execve` with the parent-resolved target and original argv; no requested value is evaluated as shell text.
+macOS PTY launch native-spawns the current executable with an already-open slave and close-on-exec status channel inherited by a hidden runtime entry solely to claim the terminal after Darwin creates the new session. The entry requires matching real/effective IDs, validates its session and descriptors, and reports setup or target-exec failure through that channel. It then immediately calls `execve` with the parent-resolved target and original argv; no requested value is evaluated as shell text.
 
 ## Reliability gates
 
@@ -72,7 +72,7 @@ Release-candidate certification should include, at minimum:
 - clean documentation build;
 - benchmark/regression checks for material performance-sensitive changes.
 
-The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. Cross-platform CI additionally runs the high-risk generated HTTP suites and the crypto/encoding certification under GCC ASan/UBSan, plus the worker/shutdown suite under GCC ThreadSanitizer. Release certification also runs bytes, crypto/encoding, streams, cancellation and process cancellation before installation, archive upload and publication. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
+The tag-triggered release workflow gates every Linux x64, Linux ARM64, macOS ARM64 and Windows x64 package on CTest plus HTTP framing, buffered-response, response-streaming, request-streaming, application-helper, static-file/range, NDJSON, persistence, request-cancellation, worker, lifecycle and backend-baseline certification. Cross-platform CI additionally runs the high-risk generated HTTP suites and the crypto/encoding certification under GCC ASan/UBSan, plus the worker/shutdown suite under GCC ThreadSanitizer. Release certification also runs bytes, crypto/encoding, streams, cancellation, process cancellation, process lifecycle, and PTY functional/lifecycle certification before installation, archive upload and publication; Windows PTY coverage remains compile-only until P9. Native static/dynamic FFI linkage is additionally certified for the POSIX packages; the current native-link fixture does not support the Windows toolchain.
 
 ## Current limitations
 

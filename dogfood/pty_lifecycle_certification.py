@@ -377,28 +377,36 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         if (close_cancel.read_bytes(5).to_string() != "ready") {{ return 24; }}
         channel<int> close_cancel_status;
         channel<bool> close_cancel_done;
+        channel<bool> close_cancelled;
         channel<bool> close_probe_started;
-        channel<bool> close_probe_result;
+        channel<int> close_probe_result;
         close_cancel_waiter := thread(() => {{ try {{ close_cancel_status.send(close_cancel.wait()); }} catch (PtyError caught) {{ close_cancel_status.send(-caught.code); }} }});
         close_probe := thread(() => {{
             close_probe_started.send(true);
             try {{ while (true) {{ close_cancel.read_bytes(1); }} }}
-            catch (PtyError caught) {{ close_probe_result.send(caught.message == "PTY is closed"); }}
+            catch (PtyError caught) {{
+                int probe_code := -1;
+                if (caught.code == 125) {{ probe_code = 125; }}
+                else if (caught.message == "PTY is closed") {{ probe_code = 1; }}
+                close_probe_result.send(probe_code);
+            }}
         }});
         close_probe_started.receive();
         sleep_ms(2);
         close_cancel_closer := thread(() => {{ close_cancel.close(); close_cancel_done.send(true); }});
-        if (!(close_probe_result.receive() ?? false)) {{ return 26; }}
-        close_cancel_source.cancel();
+        close_cancel_canceller := thread(() => {{ close_cancel_source.cancel(); close_cancelled.send(true); }});
+        int close_probe_code := close_probe_result.receive() ?? -1;
         int close_cancel_code := close_cancel_status.receive() ?? -1;
         bool close_finished := close_cancel_done.receive() ?? false;
+        bool cancel_finished := close_cancelled.receive() ?? false;
         close_cancel_waiter.join();
         close_cancel_closer.join();
+        close_cancel_canceller.join();
         close_probe.join();
         int close_cancel_cached := close_cancel.wait();
         bool close_cancel_running := close_cancel.running();
         int close_cancel_exit := close_cancel.exit_code();
-        if (!close_finished || close_cancel_code < 0 || close_cancel_cached != close_cancel_code || close_cancel_running || close_cancel_exit != close_cancel_code) {{ return 27; }}
+        if (!close_finished || !cancel_finished || (close_probe_code != 1 && close_probe_code != 125) || (close_cancel_code != -125 && close_cancel_code != close_cancel_cached) || close_cancel_cached < 0 || close_cancel_running || close_cancel_exit != close_cancel_cached) {{ return 27; }}
     }}
 
     print("STEP_STRESS");

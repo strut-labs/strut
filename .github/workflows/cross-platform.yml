@@ -16,6 +16,11 @@ on:
       - 'tools/check_release.py'
       - 'tools/certify_docs.py'
       - 'RELEASE_NOTES.md'
+      - 'PTY.md'
+      - 'STANDARD_LIBRARY.md'
+      - 'ARCHITECTURE.md'
+      - 'SECURITY.md'
+      - 'BACKEND_RUNTIME_HANDOVER.md'
       - '.github/workflows/cross-platform.yml'
       - '.github/workflows/release.yml'
   pull_request:
@@ -31,6 +36,11 @@ on:
       - 'tools/check_release.py'
       - 'tools/certify_docs.py'
       - 'RELEASE_NOTES.md'
+      - 'PTY.md'
+      - 'STANDARD_LIBRARY.md'
+      - 'ARCHITECTURE.md'
+      - 'SECURITY.md'
+      - 'BACKEND_RUNTIME_HANDOVER.md'
       - '.github/workflows/cross-platform.yml'
       - '.github/workflows/release.yml'
 

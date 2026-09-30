@@ -19,15 +19,27 @@ def main():
             root = Path(temporary)
             program = root / "pty-stub.p"
             executable = root / "pty-stub.exe"
-            program.write_text('function main() -> int : PtyError { terminal := pty_spawn("unused", []); terminal.close(); return 0; }\n', encoding="utf-8")
+            program.write_text(
+                'function main() -> int { cancellation_source source; bool first := false; bool second := false; bool third := false; bool fourth := false; '
+                'try { terminal := pty_spawn("unused", []); terminal.close(); } catch (PtyError caught) { first = caught.message == "PTY unsupported on Windows until P9 ConPTY"; } '
+                'try { terminal := pty_spawn("unused", [], {}); terminal.close(); } catch (PtyError caught) { second = caught.message == "PTY unsupported on Windows until P9 ConPTY"; } '
+                'try { terminal := pty_spawn("unused", [], source.token()); terminal.close(); } catch (PtyError caught) { third = caught.message == "PTY unsupported on Windows until P9 ConPTY"; } '
+                'try { terminal := pty_spawn("unused", [], {}, source.token()); terminal.close(); } catch (PtyError caught) { fourth = caught.message == "PTY unsupported on Windows until P9 ConPTY"; } '
+                'if (!first || !second || !third || !fourth) { return 1; } return 0; }\n',
+                encoding="utf-8",
+            )
             subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
-        print("P7 PTY runtime certification skipped: PTY unsupported on Windows until P9 ConPTY; /W4 /WX stub compilation passed")
+            subprocess.run([executable], cwd=root, check=True)
+        print("P7 PTY Windows stub certification: all spawn overloads returned the documented unsupported error; /W4 /WX compilation passed")
         return
 
     with tempfile.TemporaryDirectory(prefix="strut-pty-") as temporary:
         root = Path(temporary)
         work = root / "pty-cwd"
         work.mkdir()
+        invalid_executable = root / "invalid-executable"
+        invalid_executable.write_text("not an executable image\n", encoding="utf-8")
+        invalid_executable.chmod(0o755)
         helper = root / "pty-helper.py"
         helper.write_text(
             """import fcntl, os, pathlib, struct, sys, termios, time, tty
@@ -112,6 +124,10 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
     try {{ missing := pty_spawn("__strut_missing_pty_executable__", []); missing.close(); }}
     catch (PtyError caught) {{ missing_rejected = true; }}
     if (!missing_rejected) {{ return 9; }}
+    bool invalid_rejected := false;
+    try {{ invalid := pty_spawn("{escaped(invalid_executable)}", []); invalid.close(); }}
+    catch (PtyError caught) {{ invalid_rejected = true; }}
+    if (!invalid_rejected) {{ return 9; }}
     bool cwd_rejected := false;
     try {{ bad_cwd := pty_spawn("/bin/sh", ["-c", "exit 0"], {{"cwd": "{escaped(root / 'missing-cwd')}"}}); bad_cwd.close(); }}
     catch (PtyError caught) {{ cwd_rejected = true; }}

@@ -54,7 +54,7 @@ def main():
         open_file.write_text("held open", encoding="utf-8")
         helper = root / "process-helper.py"
         helper.write_text(
-            f"""import os, pathlib, signal, subprocess, sys, threading, time
+            f"""import ctypes, os, pathlib, signal, subprocess, sys, threading, time
 SIZE = {PAYLOAD}
 mode = sys.argv[1]
 def write(fd, byte):
@@ -69,11 +69,17 @@ elif mode == 'options':
     actual = pathlib.Path.cwd().name + '|' + os.environ.get('STRUT_UNICODE_ENV', '')
     os.write(1, b'ok' if actual == expected else actual.encode())
 elif mode == 'fds':
-    if sys.platform == 'win32' or not pathlib.Path('/proc/self/fd').exists():
-        os.write(1, b'ok')
+    sentinel = int(os.environ['STRUT_SENTINEL_DESCRIPTOR'])
+    if sys.platform == 'win32':
+        flags = ctypes.c_ulong()
+        inherited = bool(ctypes.windll.kernel32.GetHandleInformation(ctypes.c_void_p(sentinel), ctypes.byref(flags)))
     else:
-        extras = [fd for fd in os.listdir('/proc/self/fd') if int(fd) > 2]
-        os.write(1, b'ok' if len(extras) <= 1 else repr(extras).encode())
+        try:
+            os.fstat(sentinel)
+            inherited = True
+        except OSError:
+            inherited = False
+    os.write(1, b'leaked' if inherited else b'ok')
 elif mode == 'spam':
     error = threading.Thread(target=write, args=(2, b'e'))
     error.start(); write(1, b'o'); error.join()
@@ -169,7 +175,22 @@ function main() -> int : (ExecError, StreamError, ThreadError, TimeError) {{
         program.write_text(source, encoding="utf-8")
         subprocess.run([compiler, program, "-o", executable], cwd=root, check=True)
         started = time.monotonic()
-        result = subprocess.run([executable], cwd=root, text=True, capture_output=True, timeout=20, check=False)
+        sentinel_read, sentinel_write = os.pipe()
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                sentinel = msvcrt.get_osfhandle(sentinel_read)
+                os.set_handle_inheritable(sentinel, True)
+            else:
+                sentinel = sentinel_read
+                os.set_inheritable(sentinel, True)
+            environment = os.environ.copy()
+            environment["STRUT_SENTINEL_DESCRIPTOR"] = str(sentinel)
+            result = subprocess.run([executable], cwd=root, env=environment, close_fds=False, text=True, capture_output=True, timeout=20, check=False)
+        finally:
+            os.close(sentinel_read)
+            os.close(sentinel_write)
         elapsed = time.monotonic() - started
         if result.returncode != 0 or result.stdout != "process lifecycle certification passed\n" or result.stderr:
             raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
