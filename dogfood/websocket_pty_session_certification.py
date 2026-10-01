@@ -399,6 +399,7 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
                         f"non-x={len(non_x)} sample={non_x[:160]!r}"
                     )
             complete_session(plain_port, "exit", "exit:7")
+            time.sleep(0.3)
             baseline = sample(plain)
             for _ in range(sequential):
                 complete_session(plain_port, "exit", "exit:7")
