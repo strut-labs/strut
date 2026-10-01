@@ -421,7 +421,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         escaped_copy.close();
     }}
     print("RESOURCE_AFTER"); out.flush();
-    sleep_ms(500);
+    sleep_ms(3500);
     print("PTY lifecycle certification passed"); out.flush();
     return 0;
 }}
