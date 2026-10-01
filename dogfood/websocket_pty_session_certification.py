@@ -106,6 +106,10 @@ def interactive_session(port, marker, context=None, control="kill"):
         receive_output(connection, wire.strip(), output)
         send_text(connection, control)
         receive_until(connection, control, output)
+        if sys.platform == "win32" and control == "terminate":
+            send_text(connection, "close")
+            finish_server_close(connection)
+            return
         receive_until(connection, "exit", output)
         finish_server_close(connection)
 
