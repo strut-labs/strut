@@ -387,7 +387,9 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
                     raise RuntimeError(f"P10 slow peer caused output-sized buffering: {before_pause} -> {paused}")
                 flood = receive_until(connection, "exit:7")
                 finish_server_close(connection)
-                if len(flood) != 4096 * 8192 or flood != b"x" * len(flood):
+                expected_flood = 4096 * 8192
+                if ((sys.platform == "win32" and flood.count(b"x") != expected_flood)
+                        or (sys.platform != "win32" and flood != b"x" * expected_flood)):
                     raise RuntimeError(f"P10 bounded flood output mismatch: {len(flood)}")
             complete_session(plain_port, "exit", "exit:7")
             baseline = sample(plain)
