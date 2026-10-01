@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def escaped(value):
@@ -194,6 +195,8 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
                 raise RuntimeError(f"ConPTY certification timed out stdout={error.stdout!r} stderr={error.stderr!r}") from error
             if result.returncode != 0 or result.stdout != "ConPTY certification passed\n" or result.stderr:
                 raise RuntimeError(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}")
+            # Windows completes Job and ConPTY teardown asynchronously after the owner exits.
+            time.sleep(1)
         print("P9 Windows ConPTY certification: spawn overloads, argv/env/cwd/geometry, merged output, interactive input, PATH and failure handling, cancellation, close/wait races, duplicate readers, shared ownership, and cleanup churn passed")
         return
 
