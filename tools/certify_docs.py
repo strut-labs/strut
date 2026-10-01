@@ -16,13 +16,13 @@ EXAMPLES = ROOT / "examples" / "docs"
 START = "<!-- strut-example:{name}:start -->"
 END = "<!-- strut-example:{name}:end -->"
 SITE_REQUIREMENTS = {
-    "content/docs/status.html": ("v0.0.3", "84458dd", "Windows ConPTY", "WebSocket server"),
+    "content/docs/status.html": ("v0.0.3", "d9e6c47", "Windows ConPTY", "WebSocket server"),
     "content/docs/crypto.html": ("secure_random_bytes", "hmac_sha256", "base64url_decode", "does not provide SHA-1"),
     "content/docs/http.html": ("http_request_stream", "request_body_length", "cancellation_token", "Unix-domain sockets"),
     "content/docs/http-server.html": ("get_request_stream", "http_serve_file", "http_write_ndjson", "listen_tls"),
     "content/docs/websockets.html": ("socket.accept", "read_text", "websocket_limits", "permessage-deflate"),
     "content/docs/processes.html": ("process(string program", "cancellation_token", "CreateProcessW", "Job Object"),
-    "content/docs/pty.html": ("pty_spawn", "terminal.resize", "glibc 2.34", "unsupported on Windows until P9 ConPTY"),
+    "content/docs/pty.html": ("pty_spawn", "terminal.resize", "glibc 2.34", "Windows 10 version 1809", "Windows Server 2019"),
     "content/docs/architecture.html": ("libcurl", "libcrypto", "WebSocket server route", "third-party terminal library"),
     "content/docs/security.html": ("SSRF", "process supervisor", "Windows PTY"),
     "llms.txt": ("current development main", "docs/crypto.html", "docs/websockets.html", "docs/pty.html"),
@@ -113,6 +113,9 @@ def check_site_contract(site: Path) -> list[str]:
     status = site / "content" / "docs" / "status.html"
     if status.exists() and re.search(r"WebSockets?\s+(?:remain|are)\s+[^.]{0,80}(?:deferred|unsupported)", status.read_text(encoding="utf-8"), re.IGNORECASE):
         failures.append("website parity: status still claims WebSockets are deferred or unsupported")
+    pty = site / "content" / "docs" / "pty.html"
+    if pty.exists() and "unsupported on Windows until P9 ConPTY" in pty.read_text(encoding="utf-8"):
+        failures.append("website parity: PTY page still claims Windows ConPTY is unsupported")
     return failures
 
 
