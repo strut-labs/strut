@@ -354,10 +354,14 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     natural_tree.close();
     print("STEP_NATURAL_DONE"); out.flush();
 
+    print("STEP_RESIZE_SPAWN"); out.flush();
     resized := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "resize"]);
     if (!read_until(resized, "ready").contains("ready")) {{ return 2; }}
+    print("STEP_RESIZE_READY"); out.flush();
     resized.resize(51, 133);
+    print("STEP_RESIZE_CALLED"); out.flush();
     if (!drain(resized).contains("resized=51x133") || resized.wait() != 0) {{ return 2; }}
+    print("STEP_RESIZE_DONE"); out.flush();
     bool bad_resize := false;
     invalid_resize := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     try {{ invalid_resize.resize(0, 80); }} catch (PtyError caught) {{ bad_resize = true; }}
@@ -366,16 +370,20 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     try {{ invalid_resize.resize(24, 32768); }} catch (PtyError caught) {{ bad_resize = true; }}
     if (!bad_resize) {{ return 3; }}
     invalid_resize.close();
+    print("STEP_INVALID_RESIZE_DONE"); out.flush();
 
     interrupted := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "interrupt"]);
     if (!read_until(interrupted, "ready").contains("ready")) {{ return 4; }}
+    print("STEP_INTERRUPT_READY"); out.flush();
     interrupted.interrupt();
     if (!drain(interrupted).contains("caught=INT") || interrupted.wait() != 0) {{ return 4; }}
+    print("STEP_INTERRUPT_DONE"); out.flush();
 
     hung_up := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "hangup"]);
     if (!read_until(hung_up, "ready").contains("ready")) {{ return 5; }}
     hung_up.hangup();
     if (!drain(hung_up).contains("eof") || hung_up.wait() != 0) {{ return 5; }}
+    print("STEP_HANGUP_DONE"); out.flush();
 
     terminated := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     if (!read_until(terminated, "ready").contains("ready")) {{ return 6; }}
