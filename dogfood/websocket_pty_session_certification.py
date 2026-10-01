@@ -388,7 +388,9 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
                 flood = receive_until(connection, "exit:7")
                 finish_server_close(connection)
                 expected_flood = 4096 * 8192
-                if ((sys.platform == "win32" and flood.count(b"x") != expected_flood)
+                # ConPTY may repaint a wrapped cell while emitting VT cursor movement.
+                if ((sys.platform == "win32"
+                     and (flood.count(b"x") < expected_flood or len(flood) > expected_flood * 2))
                         or (sys.platform != "win32" and flood != b"x" * expected_flood)):
                     x_count = flood.count(b"x")
                     non_x = bytes(value for value in flood if value != ord("x"))
