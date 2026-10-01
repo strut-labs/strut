@@ -180,16 +180,19 @@ concurrent handlers. Idle publication and shutdown are linearized under the
 listener-generation lock. Matched WebSocket routes transfer that same worker-owned
 transport into one request-scoped RFC 6455 state. Its parser consumes HTTP carry
 bytes first, retains only one bounded reassembly buffer and one convenience-read
-mismatch slot, and serializes frame writes directly to the transport. A separate
-transport-I/O lock keeps TCP/TLS operations serial and prevents concurrent entry
-into one OpenSSL object. Teardown first attempts a one-second server-side closing
+mismatch slot, and serializes frame writes directly to the transport. TCP permits
+one receive and one serialized send to progress concurrently. After a TLS upgrade,
+one nonblocking owner thread exclusively enters the connection's `SSL*` while
+servicing at most one read request and one serialized frame write. Incomplete
+writes retain their exact buffer and priority through OpenSSL retries; timeout,
+failure or interruption makes the connection terminal. Teardown first attempts a one-second server-side closing
 handshake when it can acquire parser ownership without competing with an escaped
 reader. Its cancellable deadline interrupts the socket through the shutdown path,
 and Ping remains serviceable until peer Close. Request invalidation then atomically stops operation admission,
 interrupts the transport, drains active and queued parser/writer/accept operations,
 then clears callbacks before the worker closes or frees the transport. Stop marks
 upgraded connections for immediate socket interruption; no detached reader,
-writer queue or second connection lifecycle is introduced.
+unbounded writer queue or second connection lifecycle is introduced.
 
 Every dispatch owns one internal cancellation source and publishes only its token
 through `http_request`. Normal completion and every terminal request path cancel
