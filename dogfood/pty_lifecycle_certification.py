@@ -313,7 +313,8 @@ def certify_resources(executable, root):
                 after = linux_sample(process.pid)
                 after_fds = linux_fd_targets(process.pid)
             elif line == "RESOURCE_AFTER" and sys.platform == "win32":
-                deadline_after = time.monotonic() + 3
+                # Legacy ClosePseudoConsole can finish well after pipes and the child close.
+                deadline_after = time.monotonic() + 10
                 after = windows_sample(process.pid, include_handle_types=True)
                 while time.monotonic() < deadline_after:
                     if process.poll() is not None:
@@ -567,7 +568,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         escaped_copy.close();
     }}
     print("RESOURCE_AFTER"); out.flush();
-    sleep_ms(3500);
+    sleep_ms(10500);
     print("PTY lifecycle certification passed"); out.flush();
     return 0;
 }}
