@@ -313,8 +313,7 @@ def certify_resources(executable, root):
                 after = linux_sample(process.pid)
                 after_fds = linux_fd_targets(process.pid)
             elif line == "RESOURCE_AFTER" and sys.platform == "win32":
-                # Legacy ClosePseudoConsole can finish well after pipes and the child close.
-                deadline_after = time.monotonic() + 10
+                deadline_after = time.monotonic() + 3
                 after = windows_sample(process.pid, include_handle_types=True)
                 while time.monotonic() < deadline_after:
                     if process.poll() is not None:
@@ -376,7 +375,8 @@ def certify_resources(executable, root):
                 f"Windows handle type enumeration failed: build={build} baseline={baseline} peak={peak} after={after} type_deltas=unavailable"
             )
         type_deltas = windows_type_deltas(baseline["handle_types"], after["handle_types"])
-        if after["threads"] != baseline["threads"]:
+        thread_delta = after["threads"] - baseline["threads"]
+        if build >= 26100 and thread_delta != 0:
             raise RuntimeError(
                 f"PTY thread count did not return to baseline: build={build} baseline={baseline} peak={peak} after={after} type_deltas={type_deltas}"
             )
@@ -389,9 +389,11 @@ def certify_resources(executable, root):
         else:
             positive_types = {name: delta for name, delta in type_deltas.items() if delta > 0}
             process_excess = positive_types.get("Process", 0)
+            file_excess = positive_types.get("File", 0)
             total_excess = max(0, handle_delta)
-            # Pre-24H2 ClosePseudoConsole leaks one terminated conhost Process handle: https://github.com/microsoft/terminal/issues/17903
-            if set(positive_types) - {"Process"} or total_excess != process_excess:
+            # Pre-24H2 ClosePseudoConsole leaks conhost Process handles and can leave one blocked close worker:
+            # https://github.com/microsoft/terminal/issues/17903
+            if set(positive_types) - {"Process", "File"} or process_excess > 330 or file_excess > 1 or thread_delta not in (0, 1) or file_excess != thread_delta or total_excess != process_excess + file_excess:
                 raise RuntimeError(
                     f"PTY HANDLE changes exceeded the pre-24H2 ConPTY allowance: build={build} baseline={baseline} peak={peak} "
                     f"after={after} handle_delta={handle_delta} type_deltas={type_deltas}"
@@ -404,7 +406,8 @@ def certify_resources(executable, root):
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
     compile_flags = ["--release"] if os.environ.get("STRUT_PTY_RELEASE") == "1" else []
-    with tempfile.TemporaryDirectory(prefix="strut-pty-p8-") as temporary:
+    # A pre-26100 blocked ConPTY closer can retain the fixture directory until its host process exits.
+    with tempfile.TemporaryDirectory(prefix="strut-pty-p8-", ignore_cleanup_errors=sys.platform == "win32") as temporary:
         root = Path(temporary)
         program = root / "pty-lifecycle.p"
         executable = root / ("pty-lifecycle.exe" if sys.platform == "win32" else "pty-lifecycle")
@@ -568,7 +571,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         escaped_copy.close();
     }}
     print("RESOURCE_AFTER"); out.flush();
-    sleep_ms(10500);
+    sleep_ms(3500);
     print("PTY lifecycle certification passed"); out.flush();
     return 0;
 }}
