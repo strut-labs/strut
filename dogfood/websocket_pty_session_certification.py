@@ -323,10 +323,10 @@ def main():
             }} else {{
                 string control := message?.text ?? "";
                 if (control == "resize") {{ terminal.resize(51, 133); socket.write_text("resized"); }}
-                else if (control == "interrupt") {{ terminal.interrupt(); socket.write_text("interrupt"); }}
-                else if (control == "terminate") {{ terminal.terminate(); socket.write_text("terminate"); }}
-                else if (control == "kill") {{ terminal.kill(); socket.write_text("kill"); }}
-                else if (control == "hangup") {{ terminal.hangup(); socket.write_text("hangup"); }}
+                else if (control == "interrupt") {{ socket.write_text("interrupt"); terminal.interrupt(); }}
+                else if (control == "terminate") {{ socket.write_text("terminate"); terminal.terminate(); }}
+                else if (control == "kill") {{ socket.write_text("kill"); terminal.kill(); }}
+                else if (control == "hangup") {{ socket.write_text("hangup"); terminal.hangup(); }}
                 else if (control == "close") {{ finished = true; }}
                 else {{ socket.close(1003, "unknown control"); finished = true; }}
             }}
@@ -343,7 +343,7 @@ def main():
 function main(string command, string[] args) -> int : (NetworkError, WebSocketError, PtyError, ThreadError, TlsError) {{
     channel<bool> shutdown;
     app := http_server();
-    app.timeouts(5000, 5000, 5000, 3000);
+    app.timeouts(30000, 30000, 30000, 3000);
     app.limits(1048576, 65536, 100, 32);
     app.websocket_limits(16777216, 16777216);
     app.websocket("/denied/:mode", (http_request request, websocket socket) => {{ token := request.cancellation; copy := socket; return; }});
