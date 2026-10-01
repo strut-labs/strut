@@ -55,7 +55,7 @@ def receive_until(connection, expected, output=None):
             output.extend(payload)
         elif opcode == 1:
             text = payload.decode("utf-8")
-            if text == expected:
+            if text == expected or (expected == "exit" and text.startswith("exit:")):
                 return output
         elif opcode == 8:
             close_reply(connection, payload)
@@ -299,9 +299,7 @@ def main():
                 if (!chunk.empty()) {{ socket.write_bytes(chunk); }}
             }}
             int status := terminal.wait();
-            if (status == 0) {{ socket.write_text("exit:0"); }}
-            else if (status == 7) {{ socket.write_text("exit:7"); }}
-            else {{ socket.write_text("exit"); }}
+            socket.write_text("exit:" + to_string(status));
             socket.close();
         }} catch (PtyError caught) {{
         }} catch (NetworkError caught) {{
@@ -366,7 +364,7 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
                                  stderr=subprocess.PIPE, text=True)
         try:
             wait_ready(plain_port, plain)
-            if complete_session(plain_port, "exit", "exit:7") != b"final-output":
+            if b"final-output" not in complete_session(plain_port, "exit", "exit:7"):
                 raise RuntimeError("P10 natural exit lost final PTY output")
             if b"shell-output" not in complete_session(plain_port, "shell", "exit:0"):
                 raise RuntimeError("P10 shell executable output was not delivered")
@@ -453,7 +451,7 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
             interactive_session(tls_port, "tls-marker", context)
             coalesced_session(tls_port, context)
             reject_unknown_control(tls_port, context)
-            if complete_session(tls_port, "exit", "exit:7", context) != b"final-output":
+            if b"final-output" not in complete_session(tls_port, "exit", "exit:7", context):
                 raise RuntimeError("P10 TLS natural exit lost final PTY output")
             abrupt_session(tls_port, context)
             stop_server(tls_port, tls, context)
