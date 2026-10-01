@@ -40,7 +40,113 @@ def linux_sample(pid):
         return None
 
 
-def windows_sample(pid):
+def windows_handle_types(pid):
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    ntdll = ctypes.WinDLL("ntdll")
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.DuplicateHandle.argtypes = [
+        wintypes.HANDLE,
+        wintypes.HANDLE,
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.HANDLE),
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.DWORD,
+    ]
+    kernel32.DuplicateHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    ntdll.NtQuerySystemInformation.argtypes = [wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG, wintypes.PULONG]
+    ntdll.NtQuerySystemInformation.restype = wintypes.LONG
+    ntdll.NtQueryObject.argtypes = [wintypes.HANDLE, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG, wintypes.PULONG]
+    ntdll.NtQueryObject.restype = wintypes.LONG
+
+    class HandleHeader(ctypes.Structure):
+        _fields_ = [("count", ctypes.c_size_t), ("reserved", ctypes.c_size_t)]
+
+    class HandleEntry(ctypes.Structure):
+        _fields_ = [
+            ("object", ctypes.c_void_p),
+            ("pid", ctypes.c_size_t),
+            ("handle", ctypes.c_size_t),
+            ("access", wintypes.ULONG),
+            ("backtrace", wintypes.USHORT),
+            ("type_index", wintypes.USHORT),
+            ("attributes", wintypes.ULONG),
+            ("reserved", wintypes.ULONG),
+        ]
+
+    class UnicodeString(ctypes.Structure):
+        _fields_ = [("length", wintypes.USHORT), ("maximum_length", wintypes.USHORT), ("buffer", ctypes.c_void_p)]
+
+    def nt_error(operation, status):
+        return OSError(f"{operation} failed with NTSTATUS 0x{status & 0xffffffff:08x}")
+
+    size = 1 << 16
+    while True:
+        buffer = ctypes.create_string_buffer(size)
+        needed = wintypes.ULONG()
+        status = ntdll.NtQuerySystemInformation(64, buffer, size, ctypes.byref(needed))
+        if status == 0:
+            break
+        if status & 0xFFFFFFFF != 0xC0000004:
+            raise nt_error("NtQuerySystemInformation(SystemExtendedHandleInformation)", status)
+        size = max(size * 2, needed.value)
+
+    header = HandleHeader.from_buffer(buffer)
+    required = ctypes.sizeof(HandleHeader) + header.count * ctypes.sizeof(HandleEntry)
+    if required > size:
+        raise RuntimeError(f"truncated system handle snapshot: need {required} bytes, have {size}")
+    entries = (HandleEntry * header.count).from_buffer(buffer, ctypes.sizeof(HandleHeader))
+    representatives = {}
+    counts = {}
+    for entry in entries:
+        if entry.pid == pid:
+            counts[entry.type_index] = counts.get(entry.type_index, 0) + 1
+            representatives.setdefault(entry.type_index, entry.handle)
+
+    process = kernel32.OpenProcess(0x0040, False, pid)
+    if not process:
+        raise ctypes.WinError(ctypes.get_last_error())
+    names = {}
+    try:
+        current = kernel32.GetCurrentProcess()
+        for type_index, target_handle in representatives.items():
+            duplicate = wintypes.HANDLE()
+            if not kernel32.DuplicateHandle(process, wintypes.HANDLE(target_handle), current, ctypes.byref(duplicate), 0, False, 0x2):
+                names[type_index] = f"<unresolved-type-{type_index}>"
+                continue
+            try:
+                object_size = 256
+                while True:
+                    object_buffer = ctypes.create_string_buffer(object_size)
+                    needed = wintypes.ULONG()
+                    status = ntdll.NtQueryObject(duplicate, 2, object_buffer, object_size, ctypes.byref(needed))
+                    if status == 0:
+                        type_name = UnicodeString.from_buffer(object_buffer)
+                        names[type_index] = ctypes.string_at(type_name.buffer, type_name.length).decode("utf-16-le")
+                        break
+                    if status & 0xFFFFFFFF not in (0xC0000004, 0x80000005, 0xC0000023):
+                        names[type_index] = f"<unresolved-type-{type_index}>"
+                        break
+                    object_size = max(object_size * 2, needed.value)
+            finally:
+                kernel32.CloseHandle(duplicate)
+    finally:
+        kernel32.CloseHandle(process)
+
+    result = {}
+    for type_index, count in counts.items():
+        name = names.get(type_index, f"<unresolved-type-{type_index}>")
+        result[name] = result.get(name, 0) + count
+    return result
+
+
+def windows_sample(pid, include_handle_types=False):
     from ctypes import wintypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -91,7 +197,19 @@ def windows_sample(pid):
             present = kernel32.Thread32Next(snapshot, ctypes.byref(entry))
     finally:
         kernel32.CloseHandle(snapshot)
-    return {"handles": handles.value, "threads": threads}
+    result = {"handles": handles.value, "threads": threads}
+    if include_handle_types:
+        try:
+            result["handle_types"] = windows_handle_types(pid)
+        except Exception as error:
+            result["handle_types"] = None
+            result["handle_types_error"] = f"{type(error).__name__}: {error}"
+    return result
+
+
+def windows_type_deltas(baseline, after):
+    names = set(baseline) | set(after)
+    return {name: after.get(name, 0) - baseline.get(name, 0) for name in sorted(names) if after.get(name, 0) != baseline.get(name, 0)}
 
 
 def process_exists(pid):
@@ -189,20 +307,25 @@ def certify_resources(executable, root):
             if line == "RESOURCE_BASELINE" and sys.platform.startswith("linux"):
                 baseline = linux_sample(process.pid)
             elif line == "RESOURCE_BASELINE" and sys.platform == "win32":
-                baseline = windows_sample(process.pid)
+                baseline = windows_sample(process.pid, include_handle_types=True)
             elif line == "RESOURCE_AFTER" and sys.platform.startswith("linux"):
                 time.sleep(0.05)
                 after = linux_sample(process.pid)
                 after_fds = linux_fd_targets(process.pid)
             elif line == "RESOURCE_AFTER" and sys.platform == "win32":
                 deadline_after = time.monotonic() + 3
-                after = windows_sample(process.pid)
+                after = windows_sample(process.pid, include_handle_types=True)
                 while time.monotonic() < deadline_after:
                     if process.poll() is not None:
                         break
-                    sample = windows_sample(process.pid)
+                    sample = windows_sample(process.pid, include_handle_types=True)
                     if sample is not None and sample["threads"] > 0:
-                        after = sample if after is None else {name: min(after[name], sample[name]) for name in after}
+                        if after is None or sample["handles"] < after["handles"] or (
+                            sample["handles"] == after["handles"]
+                            and after.get("handle_types") is None
+                            and sample.get("handle_types") is not None
+                        ):
+                            after = sample
                     time.sleep(0.05)
             elif line == "PTY lifecycle certification passed":
                 seen_done = True
@@ -244,13 +367,35 @@ def certify_resources(executable, root):
             raise RuntimeError(f"PTY RSS did not return within allowance: baseline={baseline} after={after} allowance={allowance}")
         print(f"P8 PTY resources Linux: baseline={baseline} peak={peak} after={after} rss_allowance_kib={allowance} thread_allowance={thread_allowance}")
     elif sys.platform == "win32":
+        build = sys.getwindowsversion().build
         if baseline is None or peak is None or after is None:
-            raise RuntimeError(f"missing Windows resource samples: baseline={baseline} peak={peak} after={after}")
-        if after["handles"] != baseline["handles"]:
-            raise RuntimeError(f"PTY HANDLE count did not return to baseline: baseline={baseline} peak={peak} after={after}")
+            raise RuntimeError(f"missing Windows resource samples: build={build} baseline={baseline} peak={peak} after={after} type_deltas=unavailable")
+        if baseline.get("handle_types") is None or after.get("handle_types") is None:
+            raise RuntimeError(
+                f"Windows handle type enumeration failed: build={build} baseline={baseline} peak={peak} after={after} type_deltas=unavailable"
+            )
+        type_deltas = windows_type_deltas(baseline["handle_types"], after["handle_types"])
         if after["threads"] != baseline["threads"]:
-            raise RuntimeError(f"PTY thread count did not return to baseline: baseline={baseline} peak={peak} after={after}")
-        print(f"P9 PTY resources Windows: baseline={baseline} peak={peak} after={after}")
+            raise RuntimeError(
+                f"PTY thread count did not return to baseline: build={build} baseline={baseline} peak={peak} after={after} type_deltas={type_deltas}"
+            )
+        handle_delta = after["handles"] - baseline["handles"]
+        if build >= 26100:
+            if handle_delta != 0 or type_deltas:
+                raise RuntimeError(
+                    f"PTY HANDLE count did not return to baseline: build={build} baseline={baseline} peak={peak} after={after} type_deltas={type_deltas}"
+                )
+        else:
+            positive_types = {name: delta for name, delta in type_deltas.items() if delta > 0}
+            process_excess = positive_types.get("Process", 0)
+            total_excess = max(0, handle_delta)
+            # Pre-24H2 ClosePseudoConsole leaks one terminated conhost Process handle: https://github.com/microsoft/terminal/issues/17903
+            if set(positive_types) - {"Process"} or total_excess != process_excess:
+                raise RuntimeError(
+                    f"PTY HANDLE changes exceeded the pre-24H2 ConPTY allowance: build={build} baseline={baseline} peak={peak} "
+                    f"after={after} handle_delta={handle_delta} type_deltas={type_deltas}"
+                )
+        print(f"P9 PTY resources Windows: build={build} baseline={baseline} peak={peak} after={after} type_deltas={type_deltas}")
     else:
         print("P8 PTY resources: native counters unsupported on this platform; functional fixture executed")
 
