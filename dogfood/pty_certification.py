@@ -38,7 +38,8 @@ def main():
                 subprocess.run([executable], cwd=root, check=True)
             print("P9 Windows ConPTY unsupported-platform certification: all spawn overloads returned the deterministic Windows 10 1809 requirement")
             return
-        with tempfile.TemporaryDirectory(prefix="strut-conpty-") as temporary:
+        # Pre-26100 ClosePseudoConsole can leave conhost holding the fixture directory until host exit.
+        with tempfile.TemporaryDirectory(prefix="strut-conpty-", ignore_cleanup_errors=sys.getwindowsversion().build < 26100) as temporary:
             root = Path(temporary)
             work = root / "pty-cwd"
             work.mkdir()
