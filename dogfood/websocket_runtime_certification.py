@@ -139,7 +139,7 @@ def exercise_interop(port, context=None):
                 raise RuntimeError(f"canonical extended {size}-byte frame was rejected")
 
     for path, size in (("/extended16", 126), ("/extended64", 65536)):
-        with connect(port, context, path=path) as connection:
+        with connect(port, context, initial=b"\x81", path=path) as connection:
             frame = receive_frame(connection)
             if frame != (True, 1, b"x" * size):
                 raise RuntimeError(f"outgoing extended framing failed for {size} bytes")
@@ -213,6 +213,22 @@ def exercise_concurrent_writes(port):
             raise RuntimeError(f"concurrent writes produced invalid frames: {frames!r}")
         if sorted(payload for _, _, payload in frames) != [b"left", b"right"]:
             raise RuntimeError(f"concurrent writes interleaved payloads: {frames!r}")
+
+
+def exercise_blocked_read_output(port, context=None):
+    for path in ("/blocked-write", "/blocked-close"):
+        started = time.monotonic()
+        with connect(port, context, path=path) as connection:
+            frame = receive_frame(connection)
+            if path == "/blocked-write" and frame != (True, 1, b"released"):
+                raise RuntimeError(f"blocked write did not progress: {frame!r}")
+            if path == "/blocked-close" and (frame[1], frame[2]) != (
+                    8, struct.pack("!H", 1000) + b"released"):
+                raise RuntimeError(f"blocked close did not progress: {frame!r}")
+            connection.sendall(b"\x80\x11\x22\x33\x44" + client_frame(8, struct.pack("!H", 1000)))
+        if time.monotonic() - started > 2:
+            transport = "TLS " if context else ""
+            raise RuntimeError(f"{transport}{path} waited for the configured read timeout")
 
 
 def exercise_convenience_mismatch(port):
@@ -331,7 +347,7 @@ def main():
     channel<bool> shutdown;
     channel<thread> escaped_threads;
     channel<bool> escaped_starting;
-    app.timeouts(300, 300, 300, 1000);
+    app.timeouts(5000, 5000, 5000, 1000);
     app.websocket_limits(65536, 131072);
     app.websocket("/text", (http_request request, websocket socket) => {{
         socket.accept();
@@ -449,16 +465,7 @@ def main():
                 peak = tuple(max(old, new) if old is not None and new is not None else old or new for old, new in zip(peak, sample))
             after = require_resources_return(server, baseline, peak)
             print(f"WebSocket resource counts after {stress_iterations} cycles (FD/HANDLE, RSS KiB, threads): {baseline} -> {peak} -> {after}")
-            for path in ("/blocked-write", "/blocked-close"):
-                started = time.monotonic()
-                with connect(port, path=path) as connection:
-                    frame = receive_frame(connection)
-                    if path == "/blocked-write" and frame != (True, 1, b"released"):
-                        raise RuntimeError(f"blocked write did not resume: {frame!r}")
-                    if path == "/blocked-close" and (frame[1], frame[2]) != (8, struct.pack("!H", 1000) + b"released"):
-                        raise RuntimeError(f"blocked close did not resume: {frame!r}")
-                if time.monotonic() - started > 2:
-                    raise RuntimeError(f"{path} was not bounded by the configured read timeout")
+            exercise_blocked_read_output(port)
             with connect(port, path="/shutdown"):
                 pass
             stdout, stderr = server.communicate(timeout=15)
@@ -497,12 +504,22 @@ def main():
             exercise_disconnects(tls_port, context)
             exercise_server_closing(tls_port, context)
             exercise_active_return_invalidation(tls_port, context)
-            for path in ("/blocked-write", "/blocked-close"):
-                started = time.monotonic()
-                with connect(tls_port, context, path=path) as connection:
-                    receive_frame(connection)
-                if time.monotonic() - started > 2:
-                    raise RuntimeError(f"TLS {path} was not bounded by the configured read timeout")
+            exercise_blocked_read_output(tls_port, context)
+            tls_baseline = resource_counts(tls_server)
+            tls_peak = tls_baseline
+            sanitized = "-fsanitize=" in os.environ.get("STRUT_CXXFLAGS", "")
+            tls_stress_iterations = 20 if sanitized else 200
+            for _ in range(tls_stress_iterations):
+                with connect(tls_port, context, path="/return-close") as connection:
+                    if close_code(connection) != 1000:
+                        raise RuntimeError("TLS stress close handshake failed")
+                    connection.sendall(client_frame(8, struct.pack("!H", 1000)))
+                sample = resource_counts(tls_server)
+                tls_peak = tuple(max(old, new) if old is not None and new is not None else old or new
+                                 for old, new in zip(tls_peak, sample))
+            tls_after = require_resources_return(tls_server, tls_baseline, tls_peak)
+            print(f"TLS WebSocket resource counts after {tls_stress_iterations} cycles "
+                  f"(FD/HANDLE, RSS KiB, threads): {tls_baseline} -> {tls_peak} -> {tls_after}")
             with connect(tls_port, context, path="/shutdown"):
                 pass
             stdout, stderr = tls_server.communicate(timeout=10)
