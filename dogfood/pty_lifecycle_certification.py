@@ -530,6 +530,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     if (!read_until(killed, "ready").contains("ready")) {{ return 7; }}
     killed.kill();
     if (killed.wait() != 137 || killed.running() || killed.exit_code() != 137) {{ return 7; }}
+    killed.close();
 
     cancellation_source wait_source;
     cancelled_wait := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"], wait_source.token());
