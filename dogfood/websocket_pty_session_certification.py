@@ -390,7 +390,12 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
                 expected_flood = 4096 * 8192
                 if ((sys.platform == "win32" and flood.count(b"x") != expected_flood)
                         or (sys.platform != "win32" and flood != b"x" * expected_flood)):
-                    raise RuntimeError(f"P10 bounded flood output mismatch: {len(flood)}")
+                    x_count = flood.count(b"x")
+                    non_x = bytes(value for value in flood if value != ord("x"))
+                    raise RuntimeError(
+                        f"P10 bounded flood output mismatch: total={len(flood)} x={x_count} "
+                        f"non-x={len(non_x)} sample={non_x[:160]!r}"
+                    )
             complete_session(plain_port, "exit", "exit:7")
             baseline = sample(plain)
             for _ in range(sequential):
