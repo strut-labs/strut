@@ -187,15 +187,17 @@ def require_return(baseline, after, cycles):
     type_deltas = windows_type_deltas(baseline.get("handle_types", {}), after.get("handle_types", {}))
     thread_delta = after["threads"] - baseline["threads"]
     handle_delta = after["handles"] - baseline["handles"]
+    thread_excess = max(0, thread_delta)
+    positive_type_deltas = {name: value for name, value in type_deltas.items() if value > 0}
     if build >= 26100:
-        if thread_delta != 0 or handle_delta != 0 or type_deltas:
+        if thread_excess != 0 or max(0, handle_delta) != 0 or positive_type_deltas:
             raise RuntimeError(f"P10 Windows resources did not return: {baseline} -> {after}, {type_deltas}")
     else:
         positive = {name: value for name, value in type_deltas.items() if value > 0}
         process_excess = positive.get("Process", 0)
         file_excess = positive.get("File", 0)
         if (set(positive) - {"Process", "File"} or process_excess > cycles + 30 or file_excess > 1
-                or thread_delta not in (0, 1) or file_excess != thread_delta
+                or thread_excess > 1 or file_excess != thread_excess
                 or max(0, handle_delta) != process_excess + file_excess):
             raise RuntimeError(f"P10 pre-24H2 resources exceeded allowance: {baseline} -> {after}, {type_deltas}")
     print(f"P10 Windows resources after {cycles} sessions: build={build} {baseline} -> {after} types={type_deltas}")

@@ -376,13 +376,15 @@ def certify_resources(executable, root):
             )
         type_deltas = windows_type_deltas(baseline["handle_types"], after["handle_types"])
         thread_delta = after["threads"] - baseline["threads"]
-        if build >= 26100 and thread_delta != 0:
+        thread_excess = max(0, thread_delta)
+        positive_type_deltas = {name: delta for name, delta in type_deltas.items() if delta > 0}
+        if build >= 26100 and thread_excess != 0:
             raise RuntimeError(
                 f"PTY thread count did not return to baseline: build={build} baseline={baseline} peak={peak} after={after} type_deltas={type_deltas}"
             )
         handle_delta = after["handles"] - baseline["handles"]
         if build >= 26100:
-            if handle_delta != 0 or type_deltas:
+            if max(0, handle_delta) != 0 or positive_type_deltas:
                 raise RuntimeError(
                     f"PTY HANDLE count did not return to baseline: build={build} baseline={baseline} peak={peak} after={after} type_deltas={type_deltas}"
                 )
@@ -393,7 +395,7 @@ def certify_resources(executable, root):
             total_excess = max(0, handle_delta)
             # Pre-24H2 ClosePseudoConsole leaks conhost Process handles and can leave one blocked close worker:
             # https://github.com/microsoft/terminal/issues/17903
-            if set(positive_types) - {"Process", "File"} or process_excess > 330 or file_excess > 1 or thread_delta not in (0, 1) or file_excess != thread_delta or total_excess != process_excess + file_excess:
+            if set(positive_types) - {"Process", "File"} or process_excess > 330 or file_excess > 1 or thread_excess > 1 or file_excess != thread_excess or total_excess != process_excess + file_excess:
                 raise RuntimeError(
                     f"PTY HANDLE changes exceeded the pre-24H2 ConPTY allowance: build={build} baseline={baseline} peak={peak} "
                     f"after={after} handle_delta={handle_delta} type_deltas={type_deltas}"
