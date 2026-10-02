@@ -289,6 +289,30 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   application composition without a bridge API, canonical API examples). The compiler
   website SHA is intentionally immutable and must advance whenever a checkpoint
   changes canonical public API documentation.
+- APF-0D: the Windows pre-24H2 and 2610+ PTY/WebSocket resource-retention checks
+  reject only positive resource excess, not ambient decreases; a decreasing
+  thread/handle count between samples is no longer reported as retention.
+
+- **APF-H1 — Component closure + showcase certification** (complete): a builtin API
+  brings along the standard modules its documented public types require, and the
+  canonical showcase examples are certified.
+- APF-H1 component closure: `embed_dir()` returns `map<string,string>` but callers
+  previously received `requires standard module <map>` unless they manually added
+  `include <map>`. The compiler now collects the standard modules referenced by every
+  used builtin callable's parameters/results and builtin field types before analysis,
+  so the API satisfies its own module requirement. Plain `map`/`set` declarations still
+  require an explicit include when no builtin brings the module; runtime component
+  slicing is unchanged.
+- APF-H1 showcase certification: `examples/embed`, `examples/static-site` and
+  `examples/one-binary-todo` are now certified by `tools/certify_showcase.py`
+  (manifest-driven, compiled from their own directories so relative asset paths
+  resolve) in the cross-platform matrix. They previously sat outside every
+  certification path, which is how three showcase examples broke while the suite
+  stayed green.
+- APF-H1 API discoverability: `strut api` and `api --json` report the standard
+  modules a callable's signature types require (`requires_modules` / "requires
+  include <...>"), so agents can discover the required include without reading
+  compiler source.
 
 - **APF-1 — Struct encapsulation** (planned): private struct fields/methods and facade
   construction semantics. Excludes selective exports, method overloading, and the
