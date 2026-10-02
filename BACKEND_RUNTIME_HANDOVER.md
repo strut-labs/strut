@@ -331,11 +331,16 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   server using `Connection: close`, so the workload never spuriously saturates from a
   preceding connection's teardown. The restart cycle drives each iteration with an
   explicit `app.stop()` instead of `max_requests=1` auto-stop.
-- APF-H2 teardown transient: `http_websocket_certification.py`'s `/escape` upgrade can
-  race the preceding disconnected WebSocket's teardown and either refuse the new
-  connection or close it with zero bytes. `exchange()` gained a bounded retry that
-  covers both transients for this assertion; real 403/500/malformed 101 responses
-  still fail immediately. Applied only to the `/escape` assertion.
+- APF-H2 WebSocket invariant separation: `http_websocket_certification.py`'s `/escape`
+  upgrade previously followed a disconnected WebSocket connection in the same tight
+  sequence, and its rare failure (refused or zero-byte response on a loaded host) was
+  initially retried. Investigation showed the 101 is written synchronously inside
+  `accept()`, so a zero-byte response would mean the connection was closed before
+  handler dispatch, which only happens on shutdown, not during this test - the runtime
+  is correct and no defect was demonstrated. The fixture now attempts `/escape` as a
+  single clean upgrade that must return a valid 101 on the first attempt, and the
+  peer-disconnect cleanup connection is moved to its own phase afterward so the two
+  invariants no longer race. No runtime change.
 - APF-H2 evidence: each affected fixture passes 25+ consecutive runs under 1-CPU
   contention where it previously failed 50-70% of the time. The exact-SHA regression
   workflow also gained `fetch-depth: 0` so arbitrary compiler SHAs check out reliably.
