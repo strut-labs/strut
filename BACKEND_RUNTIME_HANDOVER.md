@@ -332,10 +332,10 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   preceding connection's teardown. The restart cycle drives each iteration with an
   explicit `app.stop()` instead of `max_requests=1` auto-stop.
 - APF-H2 teardown transient: `http_websocket_certification.py`'s `/escape` upgrade can
-  race the preceding disconnected WebSocket's teardown and return a zero-byte response.
-  `exchange()` gained a bounded `retry_empty` option that retries only a connection
-  established then closed with no bytes (a teardown transient); real 403/500/malformed
-  101 responses still fail immediately. Applied only to the `/escape` assertion.
+  race the preceding disconnected WebSocket's teardown and either refuse the new
+  connection or close it with zero bytes. `exchange()` gained a bounded retry that
+  covers both transients for this assertion; real 403/500/malformed 101 responses
+  still fail immediately. Applied only to the `/escape` assertion.
 - APF-H2 evidence: each affected fixture passes 25+ consecutive runs under 1-CPU
   contention where it previously failed 50-70% of the time. The exact-SHA regression
   workflow also gained `fetch-depth: 0` so arbitrary compiler SHAs check out reliably.
