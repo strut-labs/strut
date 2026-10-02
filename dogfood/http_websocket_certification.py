@@ -247,7 +247,7 @@ function main() -> int : (NetworkError, PolicyError) {{
             disconnected = socket.create_connection(("127.0.0.1", port), timeout=2)
             disconnected.sendall(opening())
             disconnected.close()
-            require_switch(exchange(port, opening(path="/escape"), retry_empty=True))
+            require_switch(exchange(port, opening(path="/escape"), retry=True, retry_empty=True))
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or "WebSocket handle is no longer active" not in stdout:
                 raise RuntimeError(f"escaped WebSocket remained usable ({server.returncode})\n{stdout}\n{stderr}")
