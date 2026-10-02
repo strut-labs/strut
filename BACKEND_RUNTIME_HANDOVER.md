@@ -326,7 +326,10 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   readiness probe or extra admitted connection could make the server exit one request
   early (ConnectionRefused/empty reply on Windows, spurious 503 under contention).
   Both now run the server with an unlimited budget and terminate it explicitly after the
-  assertions. The `backend_baseline` restart cycle drives each iteration with an
+  assertions. `backend_baseline_certification.py` runs the route/saturation assertions
+  on a tight-limit server and the 500 sequential workload on a separate generous-limit
+  server using `Connection: close`, so the workload never spuriously saturates from a
+  preceding connection's teardown. The restart cycle drives each iteration with an
   explicit `app.stop()` instead of `max_requests=1` auto-stop.
 - APF-H2 teardown transient: `http_websocket_certification.py`'s `/escape` upgrade can
   race the preceding disconnected WebSocket's teardown and return a zero-byte response.
