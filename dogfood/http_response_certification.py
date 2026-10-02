@@ -98,7 +98,6 @@ def main():
         ("/bad-status-low", b""),
         ("/bad-status-high", b""),
     ]
-    admitted = 1 + 3 + len(invalid) * 2
     source = f'''include <map>;
 
 function response_with_header(string name, string value) -> http_server_response {{
@@ -112,7 +111,7 @@ function response_with_header(string name, string value) -> http_server_response
 function main() -> void : NetworkError {{
     app := http_server();
     app.timeouts(5000, 5000, 5000, 2000);
-    app.limits(1024, 4096, 16, 2);
+    app.limits(1024, 4096, 16, 8);
     app.post("/health", (http_request request) => {{ return http_text("healthy"); }});
     app.post("/safe", (http_request request) => {{
         response := response_with_header("X-Test", "safe");
@@ -181,7 +180,7 @@ function main() -> void : NetworkError {{
         response.status = 600;
         return response;
     }});
-    app.listen("127.0.0.1", {port}, {admitted});
+    app.listen("127.0.0.1", {port});
 }}
 '''
     with tempfile.TemporaryDirectory(prefix="strut-http-response-") as temporary:
@@ -207,7 +206,12 @@ function main() -> void : NetworkError {{
                 if b"Injected:" in rejected or b"unsafe" in rejected:
                     raise RuntimeError(f"attacker-controlled metadata reached the wire: {rejected!r}")
                 assert_safe_response(raw_request(port, "/health"), 200, b"healthy")
-            stdout, stderr = server.communicate(timeout=10)
+            server.terminate()
+            try:
+                stdout, stderr = server.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or stdout or stderr:
                 raise RuntimeError(
                     f"response server failed: exit={server.returncode} stdout={stdout!r} stderr={stderr!r}"
