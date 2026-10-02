@@ -206,15 +206,17 @@ function main() -> void : NetworkError {{
                 if b"Injected:" in rejected or b"unsafe" in rejected:
                     raise RuntimeError(f"attacker-controlled metadata reached the wire: {rejected!r}")
                 assert_safe_response(raw_request(port, "/health"), 200, b"healthy")
+            if server.poll() is not None:
+                raise RuntimeError(f"response server exited before test completion: {server.returncode}")
             server.terminate()
             try:
                 stdout, stderr = server.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 server.kill()
                 stdout, stderr = server.communicate(timeout=10)
-            if server.returncode != 0 or stdout or stderr:
+            if stdout or stderr:
                 raise RuntimeError(
-                    f"response server failed: exit={server.returncode} stdout={stdout!r} stderr={stderr!r}"
+                    f"response server emitted unexpected output: stdout={stdout!r} stderr={stderr!r}"
                 )
         finally:
             if server.poll() is None:
