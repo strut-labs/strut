@@ -95,6 +95,52 @@ def main():
         run([compiler, "main.p", "-o", official_app], official_project, official_env)
         assert run([official_app], official_project, official_env).stdout.strip() == "22"
 
+        semver_official_root = root / "semver official repositories"
+        semver_official_root.mkdir()
+        semver_repo, _ = make_repo(semver_official_root, "semver-lib", {
+            "name": "semver-lib", "version": "0.1.0", "entry": "main.p"
+        }, "function semver_lib_value() -> int { return 1; }\n")
+        run(["git", "tag", "v0.1.0"], semver_repo)
+        write_json(semver_repo / "strut.json", {"name": "semver-lib", "version": "0.2.0", "entry": "main.p"})
+        run(["git", "add", "strut.json"], semver_repo)
+        run(["git", "commit", "--quiet", "-m", "v0.2"], semver_repo)
+        run(["git", "tag", "v0.2.0"], semver_repo)
+        write_json(semver_repo / "strut.json", {"name": "semver-lib", "version": "0.1.9", "entry": "main.p"})
+        run(["git", "add", "strut.json"], semver_repo)
+        run(["git", "commit", "--quiet", "-m", "v0.1.9"], semver_repo)
+        run(["git", "tag", "v0.1.9"], semver_repo)
+        write_json(semver_repo / "strut.json", {"name": "semver-lib", "version": "0.0.3", "entry": "main.p"})
+        run(["git", "add", "strut.json"], semver_repo)
+        run(["git", "commit", "--quiet", "-m", "v0.0.3"], semver_repo)
+        run(["git", "tag", "v0.0.3"], semver_repo)
+        semver_project = root / "semver official"
+        semver_project.mkdir()
+        write_json(semver_project / "strut.json", {
+            "name": "semver-app", "version": "0.1.0", "entry": "main.p", "dependencies": {}
+        })
+        (semver_project / "main.p").write_text(
+            "include <semver-lib>;\nfunction main() -> int { print(semver_lib_value()); return 0; }\n", encoding="utf-8")
+        semver_env = os.environ.copy()
+        semver_env["STRUT_HOME"] = str(root / "semver home")
+        semver_env["STRUT_OFFICIAL_PACKAGE_BASE"] = str(semver_official_root)
+        caret_zero = run([compiler, "install", "semver-lib@^0.1.0"], semver_project, semver_env)
+        assert "installed official package semver-lib 0.1.9" in caret_zero.stdout, caret_zero.stdout
+        caret_zero_lock = json.loads((semver_project / "strut.lock.json").read_text(encoding="utf-8"))
+        assert caret_zero_lock["packages"][0]["version"] == "0.1.9"
+        run([compiler, "update"], semver_project, semver_env)
+        caret_zero_lock_after = json.loads((semver_project / "strut.lock.json").read_text(encoding="utf-8"))
+        assert caret_zero_lock_after["packages"][0]["version"] == "0.1.9", "update must not escape ^0.1.0"
+        write_json(semver_project / "strut.json", {
+            "name": "semver-app", "version": "0.1.0", "entry": "main.p",
+            "dependencies": {"semver-lib": "^0.0.3"}
+        })
+        run([compiler, "update"], semver_project, semver_env)
+        caret_patch_lock = json.loads((semver_project / "strut.lock.json").read_text(encoding="utf-8"))
+        assert caret_patch_lock["packages"][0]["version"] == "0.0.3", "update must not escape ^0.0.3"
+        semver_app = executable(semver_project / "semver-app")
+        run([compiler, "main.p", "-o", semver_app], semver_project, semver_env)
+        assert run([semver_app], semver_project, semver_env).stdout.strip() == "1"
+
         seed = root / "seed project"
         seed.mkdir()
         manifest = {"name": "package-app", "version": "0.1.0", "entry": "main.p", "dependencies": {

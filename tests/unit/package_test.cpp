@@ -60,6 +60,27 @@ int main(){
  setenv("STRUT_OFFICIAL_PACKAGE_BASE",official_base.string().c_str(),1);
 #endif
  strut::PackageSource official_source;std::string official_version;req(strut::resolve_official_package_source("sqlite","^1.0.0",official_source,official_version,error),error.c_str());req(official_version=="1.2.0"&&official_source.kind=="official"&&std::filesystem::path(official_source.url).lexically_normal()==official_repo.lexically_normal(),"official highest compatible tag");strut::PackageManifest official_app;official_app.name="official-app";official_app.version="0.1.0";official_app.dependencies["sqlite"]="^1.0.0";official_app.dependency_sources["sqlite"]=official_source;req(strut::write_package_manifest_file(root/"official.json",official_app,error),error.c_str());req(read(root/"official.json").find("\"git\"")==std::string::npos,"official manifest keeps shorthand");req(strut::write_lockfile(root,official_app,error),error.c_str());strut::PackageLock official_lock;req(strut::load_package_lock_file(root/"strut.lock.json",official_lock,error),error.c_str());req(official_lock.packages.size()==1&&official_lock.packages[0].source_kind=="official"&&std::filesystem::path(official_lock.packages[0].source).lexically_normal()==official_repo.lexically_normal(),"official canonical lock identity");req(!strut::resolve_official_package_source("missing","*",official_source,official_version,error)&&error.find("missing")!=std::string::npos,"official missing package diagnostic");
+cache_fixture(root,"semver-0.0.3",R"({"name":"semver-pkg","version":"0.0.3"})");cache_fixture(root,"semver-0.0.4",R"({"name":"semver-pkg","version":"0.0.4"})");cache_fixture(root,"semver-0.0.9",R"({"name":"semver-pkg","version":"0.0.9"})");cache_fixture(root,"semver-0.1.0",R"({"name":"semver-pkg","version":"0.1.0"})");cache_fixture(root,"semver-0.2.0",R"({"name":"semver-pkg","version":"0.2.0"})");cache_fixture(root,"semver-0.1.9",R"({"name":"semver-pkg","version":"0.1.9"})");cache_fixture(root,"semver-0.2.9",R"({"name":"semver-pkg","version":"0.2.9"})");cache_fixture(root,"semver-1.2.3",R"({"name":"semver-pkg","version":"1.2.3"})");cache_fixture(root,"semver-1.9.0",R"({"name":"semver-pkg","version":"1.9.0"})");cache_fixture(root,"semver-2.0.0",R"({"name":"semver-pkg","version":"2.0.0"})");
+auto resolved_version=[](const std::string& name,const std::string& requirement,std::string& error)->std::string{auto path=strut::resolve_cached_package(name,requirement,&error);return path?path->parent_path().filename().string():std::string{};};
+ std::string semver_error;
+ req(resolved_version("semver-pkg","^1.2.3",semver_error)=="1.9.0","^1.2.3 accepts 1.9.0");
+ req(resolved_version("semver-pkg","^1.2.3",semver_error)!="2.0.0","^1.2.3 rejects 2.0.0");
+ req(resolved_version("semver-pkg","^0.2.3",semver_error)=="0.2.9","^0.2.3 accepts 0.2.9");
+ req(resolved_version("semver-pkg","^0.2.3",semver_error)!="0.2.0","^0.2.3 rejects 0.2.0");
+ req(resolved_version("semver-pkg","^0.0.3",semver_error)=="0.0.3","^0.0.3 accepts 0.0.3");
+ req(resolved_version("semver-pkg","^0.0.3",semver_error)!="0.0.4","^0.0.3 rejects 0.0.4");
+ req(resolved_version("semver-pkg","^0.0.3",semver_error)!="0.0.9","^0.0.3 rejects 0.0.9");
+ req(resolved_version("semver-pkg","^0.0.3",semver_error)!="0.1.0","^0.0.3 rejects 0.1.0");
+ req(resolved_version("semver-pkg","^0.1.0",semver_error)!="0.2.0","^0.1.0 rejects 0.2.0");
+ req(resolved_version("semver-pkg","^0.1.0",semver_error)=="0.1.9","^0.1.0 accepts 0.1.9");
+ req(resolved_version("semver-pkg","~1.2.3",semver_error)=="1.2.3","~1.2.3 accepts 1.2.3");
+ req(resolved_version("semver-pkg","~1.2.3",semver_error)!="1.9.0","~1.2.3 rejects 1.9.0");
+ req(resolved_version("semver-pkg","~0.1.0",semver_error)=="0.1.9","~0.1.0 accepts 0.1.9");
+ req(resolved_version("semver-pkg","~0.1.0",semver_error)!="0.2.0","~0.1.0 rejects 0.2.0");
+ req(resolved_version("semver-pkg","0.1.0",semver_error)=="0.1.0","exact version resolves");
+ req(resolved_version("semver-pkg","*",semver_error)=="2.0.0","* resolves highest");
+ req(resolved_version("semver-pkg","^0.1.0",semver_error)=="0.1.9","^0.1.0 highest compatible");
+ req(resolved_version("semver-pkg","^0.0.3",semver_error)=="0.0.3","^0.0.3 highest compatible");
  std::filesystem::create_directories(home/"cache/packages/broken/1.0.0");std::ofstream(home/"cache/packages/broken/1.0.0/strut.json")<<R"({"name":"other","version":"1.0.0"})";strut::PackageManifest broken;broken.name="project";broken.version="0.1.0";broken.dependencies["broken"]="1.0.0";req(!strut::write_lockfile(root,broken,error),"broken cache rejected");
  strut::PackageManifest traversal;traversal.name="project";traversal.version="0.1.0";traversal.dependencies["../escape"]="1.0.0";req(!strut::write_lockfile(root,traversal,error)&&error.find("package name")!=std::string::npos,"programmatic dependency traversal rejected");
  const auto symlink_package=root/"symlink-package";std::filesystem::create_directories(symlink_package);std::ofstream(symlink_package/"strut.json")<<R"({"name":"symlinked","version":"1.0.0"})";std::error_code symlink_error;std::filesystem::create_symlink(root/"outside",symlink_package/"escape",symlink_error);if(!symlink_error){std::filesystem::path ignored;strut::PackageManifest ignored_manifest;req(!strut::cache_local_package(symlink_package,ignored,ignored_manifest,error)&&error.find("symbolic link")!=std::string::npos,"symlink escape rejected");}
