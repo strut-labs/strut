@@ -30,8 +30,11 @@ Projects/packages use `strut.json`. JSONIC is the canonical parser used by the b
 Dependency requirements intentionally start small and deterministic:
 
 - `1.2.3` — exact version.
-- `^1.2.3` — compatible release within the same non-zero major version (with normal semver zero-major tightening when the resolver lands).
+- `^1.2.3` — compatible release within the same non-zero major version.
+- `^0.2.3` — compatible release within the same minor version (zero-major caret tightening).
+- `^0.0.3` — exact patch compatibility within `0.0.x` (zero-major, zero-minor caret tightening).
 - `~1.2.3` — patch-compatible release within the same minor version.
+- `~0.2.3` — patch-compatible release within the same minor version.
 - `*` — any published version; allowed but discouraged for reproducible applications because the lockfile still resolves it to one exact version.
 
 No `latest`, git-branch-as-version, or arbitrary executable version scripts are part of the package contract.

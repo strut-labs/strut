@@ -265,6 +265,52 @@ Continue only from measured workloads: compiler diagnostics and optimisation, br
 
 Recommendation only: let P1-P10 stand as the completed **backend runtime foundation** campaign. Start a separately named **application foundation** campaign with a Warden-shaped acceptance gate, then package-focused session/auth/CSRF/JWT work, then OAuth/OIDC plus SSE/multipart, and only then production certification. A new namespace makes the package/application default visible and avoids implying that an undefined P11 already exists. If maintainers later choose to continue P numbering, they must first freeze a P11 contract in this document; historical P1-P10 numbering must not change.
 
+### Application & Package Foundation (APF) campaign
+
+The APF campaign follows the backend runtime foundation. It is a separate namespace; its
+checkpoints are not P-numbered and do not renumber the P1-P10 history.
+
+- **APF-0 — Foundation correctness** (complete): namespace-scope aggregate/facade
+  initialization, SemVer zero-major caret/tilde tightening, and the documentation
+  certification baseline.
+- APF-0A: struct literals, JSON literals, lambda values and embedded-asset values at
+  module scope now lower through captureless lambdas (or capture by value inside
+  function bodies) instead of an illegal namespace-scope capture-default. Equivalent
+  function-scope semantics are preserved; runtime slicing is unchanged.
+- APF-0B: the package resolver implements the documented SemVer contract, including
+  zero-major tightening (`^0.2.3` excludes `0.3.0`; `^0.0.3` is exact patch range).
+  Lockfile schema, exact versions, `*`, immutable locks and content checksums are
+  unchanged.
+- APF-0C: compiler CI now certifies the audited immutable website source
+  `7903da7e88550f02117224678c4ff99e6c4fbc93`; `tools/certify_docs.py` no longer
+  treats the historical P9 checkpoint `d9e6c47` as a required website needle and
+  instead asserts stable semantic facts (current-development channel, `v0.0.3` as
+  latest tagged release, full-duplex WebSockets, Windows ConPTY, WebSocket-to-PTY as
+  application composition without a bridge API, canonical API examples). The compiler
+  website SHA is intentionally immutable and must advance whenever a checkpoint
+  changes canonical public API documentation.
+
+- **APF-1 — Struct encapsulation** (planned): private struct fields/methods and facade
+  construction semantics. Excludes selective exports, method overloading, and the
+  higher-order checked-error model.
+- **APF-2 — Warden-shaped application validation** (planned): realistic backend +
+  CLI/admin dogfood with early soak/adversarial testing.
+- **APF-3 — Package visibility design** (planned): design only, using S0 as prior
+  art/test specification.
+- **APF-4 — Package-enablement correctness** (planned): individually gated work
+  (higher-order checked errors, method error propagation, SQLite hardening, TTY
+  detection, Unicode iteration, and any map-key/overloading work justified by APF-2).
+- **APF-5 — Package ecosystem** (planned): sessions/auth/CSRF/JWT/SSE/multipart/
+  OAuth/OIDC, biased to packages/application code.
+- **APF-6 — Production/backend certification** (planned): soak, long-lived
+  connections, slow peers, failure/restart, resources, deployment, performance, and
+  justified runtime-hardening decisions.
+
+Higher-order checked errors are a confirmed language soundness gap (function values do
+not carry a checked-error set, allowing a callback whose creation error was handled to
+cross an apparently no-throw boundary). It is deliberately deferred to APF-4a, not
+addressed during APF-0.
+
 ### Documentation and publication
 
 The website source is `strut-labs.github.io` branch `stage`; generated output is the nested `public/` repository on branch `main`. Edit source, run `nift build`, `nift status`, `python3 check_site.py`, compiler documentation certification and `git diff --check`, then commit both repositories. Publish generated `public/main` before source `stage` so source CI compares against the matching `SOURCE_DIGEST`. Pin current-development claims to the accepted compiler checkpoint and keep `v0.0.3` release claims separate.
