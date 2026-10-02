@@ -302,17 +302,21 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   used builtin callable's parameters/results and builtin field types before analysis,
   so the API satisfies its own module requirement. Plain `map`/`set` declarations still
   require an explicit include when no builtin brings the module; runtime component
-  slicing is unchanged.
+  slicing is unchanged. Builtin module satisfaction happens only when semantic
+  resolution actually refers to the builtin: a user-defined function that shadows a
+  builtin name does not satisfy that builtin's modules.
 - APF-H1 showcase certification: `examples/embed`, `examples/static-site` and
   `examples/one-binary-todo` are now certified by `tools/certify_showcase.py`
   (manifest-driven, compiled from their own directories so relative asset paths
   resolve) in the cross-platform matrix. They previously sat outside every
   certification path, which is how three showcase examples broke while the suite
   stayed green.
-- APF-H1 API discoverability: `strut api` and `api --json` report the standard
-  modules a callable's signature types require (`requires_modules` / "requires
-  include <...>"), so agents can discover the required include without reading
-  compiler source.
+- APF-H1 API discoverability: `strut api` and `api --json` distinguish caller-required
+  from signature-supplied modules. `requires_modules` means the caller must explicitly
+  include the module (filesystem, encoding, crypto); `signature_modules` are the
+  collection modules a builtin's public signature types bring automatically (embed_dir
+  and http_server.static supply `map`). sqlite and http are auto-available and require
+  nothing. Agents can discover the required include without reading compiler source.
 
 - **APF-1 — Struct encapsulation** (planned): private struct fields/methods and facade
   construction semantics. Excludes selective exports, method overloading, and the
