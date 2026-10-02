@@ -153,7 +153,7 @@ std::array<unsigned,3> semver_parts(const std::string& value, bool& ok) {
     ok=off==value.size(); return out;
 }
 bool satisfies(const std::string& version, const std::string& requirement) {
-    bool vok=false, rok=false; auto v=semver_parts(version,vok); std::string base=requirement; char mode=0; if(!base.empty()&&(base[0]=='^'||base[0]=='~')){mode=base[0];base.erase(base.begin());} if(requirement=="*") return true; auto r=semver_parts(base,rok); if(!vok||!rok)return false; if(!mode)return v==r; if(v<r)return false; if(mode=='^') return v[0]==r[0]; return v[0]==r[0]&&v[1]==r[1];
+    bool vok=false, rok=false; auto v=semver_parts(version,vok); std::string base=requirement; char mode=0; if(!base.empty()&&(base[0]=='^'||base[0]=='~')){mode=base[0];base.erase(base.begin());} if(requirement=="*") return true; auto r=semver_parts(base,rok); if(!vok||!rok)return false; if(!mode)return v==r; if(v<r)return false; if(mode=='^'){if(r[0]>0)return v[0]==r[0];if(r[1]>0)return v[0]==0&&v[1]==r[1];return v[0]==0&&v[1]==0&&v[2]==r[2];} return v[0]==r[0]&&v[1]==r[1];
 }
 }
 
