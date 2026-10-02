@@ -43,5 +43,6 @@ const std::vector<std::string>& standard_modules();
 const std::vector<std::string>& api_named_types();
 std::string api_signature(const ApiCallable& callable, const ApiOverload& overload);
 bool api_matches(const ApiCallable& callable, std::string_view query);
+std::vector<std::string> api_required_modules(const ApiCallable& callable);
 
 } // namespace strut

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
+#include <set>
 
 namespace strut { namespace {
 TypeId t(std::string_view value){return intern_type(value);}
@@ -257,4 +259,16 @@ const std::vector<std::string>& standard_modules(){static const std::vector<std:
 const std::vector<std::string>& api_named_types(){static const std::vector<std::string> value={"http_request","http_request_body","http_values","http_cookie","http_server_response","http_response_writer","http_server","websocket","websocket_message","WebSocketError","SqliteError","sqlite_db","EmbedError","FilesystemError","StreamError","EnvironmentError","TimeError","ExecError","PtyError","exec_result","process","pty","thread","ThreadError","process_in","process_out","mutex","MutexError","CancellationError","cancellation_source","cancellation_token","CryptoError","EncodingError","NetworkError","tcp_socket","tcp_listener","TlsError","tls_stream","HttpError","http_response","http_response_head","istream","ostream","sstream","ifstream","ofstream","bytes"};return value;}
 std::string api_signature(const ApiCallable& c,const ApiOverload& o){std::string value=c.owner.empty()?c.name:c.name.substr(c.name.find('.')+1);value+="(";for(std::size_t i=0;i<o.parameters.size();++i){if(i)value+=", ";value+=type_spelling(o.parameters[i].type)+" "+o.parameters[i].name;if(o.parameters[i].optional)value+="?";}return value+") -> "+type_spelling(o.return_type);}
 bool api_matches(const ApiCallable& c,std::string_view query){if(query.empty())return true;const auto q=lower(query);if(q=="checked-errors")return !c.checked_errors.empty();return lower(c.name).find(q)!=std::string::npos||lower(c.category).find(q)!=std::string::npos||lower(c.module).find(q)!=std::string::npos||lower(c.owner).find(q)!=std::string::npos||lower(c.summary).find(q)!=std::string::npos;}
+
+std::vector<std::string> api_required_modules(const ApiCallable& callable) {
+    std::set<std::string> modules;
+    auto collect=[&](TypeId id){std::function<void(TypeId)> visit=[&](TypeId node){const auto& n=type_node(node);if(n.kind==TypeNodeKind::tuple)modules.insert("tuple");if(n.kind==TypeNodeKind::generic){const auto& head=n.name;if(head=="map"||head=="ordered_map"||head=="set"||head=="ordered_set"||head=="queue"||head=="stack"||head=="deque"||head=="list"||head=="priority_queue")modules.insert(head);}for(auto child:n.children)visit(child);};visit(id);};
+    for(const auto& overload:callable.overloads){
+        for(const auto& parameter:overload.parameters)collect(parameter.type);
+        collect(overload.return_type);
+    }
+    const auto& standard=standard_modules();
+    if(std::find(standard.begin(),standard.end(),callable.module)!=standard.end())modules.insert(callable.module);
+    return std::vector<std::string>(modules.begin(),modules.end());
+}
 } // namespace strut
