@@ -61,8 +61,7 @@ def main():
     app.limits(32, 1024, 8, 2);
     app.get("/get", (http_request request) => { return http_text("get"); });
     app.post("/post", (http_request request) => { return http_text(request.body); });
-    app.listen("127.0.0.1", %d, 509);
-    if (app.running()) { return 1; }
+    app.listen("127.0.0.1", %d);
     return 0;
 }
 """ % port
@@ -115,7 +114,12 @@ def main():
             if sequential != [(200, b"get")] * 500:
                 raise RuntimeError("sustained sequential request baseline failed")
 
-            stdout, stderr = server.communicate(timeout=8)
+            server.terminate()
+            try:
+                stdout, stderr = server.communicate(timeout=8)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                stdout, stderr = server.communicate(timeout=8)
             if server.returncode != 0:
                 raise RuntimeError(
                     f"baseline server returned {server.returncode}\n{stdout}\n{stderr}"
@@ -131,10 +135,11 @@ def main():
     app.get("/health", (http_request request) => { return http_text("ok"); });
     int count := 0;
     while (count < 20) {
-        listener := thread(() => { app.listen("127.0.0.1", %d, 1); });
+        listener := thread(() => { app.listen("127.0.0.1", %d); });
         while (!app.running()) { sleep_ms(1); }
         response := http_get("http://127.0.0.1:%d/health");
         if (response.status != 200 || response.body != "ok") { return 2; }
+        app.stop();
         listener.join();
         if (app.running()) { return 1; }
         count++;
