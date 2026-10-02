@@ -8,6 +8,7 @@
 #include "strut/ast.h"
 #include "strut/lexer.h"
 #include "strut/type.h"
+#include "strut/api_registry.h"
 
 namespace strut {
 
@@ -57,6 +58,11 @@ private:
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
     void require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const;
     void require_module(SemanticResult& result, std::string_view module, SourceSpan span, std::string_view facility) const;
+    void satisfy_type_modules(const std::string& type_name);
+    void satisfy_callable_modules(const ApiCallable& callable);
+    void collect_builtin_modules(const Program& program);
+    void collect_statement_builtin_modules(const Stmt& statement);
+    void collect_expression_builtin_modules(const Expr& expression);
 
     std::unordered_map<std::string, std::string> aliases_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
@@ -77,6 +83,7 @@ private:
     int catch_all_depth_ = 0;
     bool enforce_standard_modules_ = false;
     std::unordered_set<std::string> standard_modules_;
+    std::unordered_set<std::string> builtin_satisfied_modules_;
 };
 
 } // namespace strut
