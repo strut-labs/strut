@@ -55,6 +55,8 @@ def raw_request(port, payload):
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
     port = available_port()
+    # Server A has a tight connection limit so the saturation test is deterministic:
+    # two held partial connections fill both slots and the next request must be 503.
     source = """function main() -> int : (NetworkError, TimeError) {
     app := http_server();
     app.timeouts(2000, 2000, 2000, 2000);
@@ -107,27 +109,68 @@ def main():
             for blocked in blockers:
                 blocked.close()
 
-            started = time.monotonic()
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                sequential = list(pool.map(lambda _: request(port), range(500)))
-            elapsed = time.monotonic() - started
-            if sequential != [(200, b"get")] * 500:
-                raise RuntimeError("sustained sequential request baseline failed")
-
+            if server.poll() is not None:
+                raise RuntimeError(f"baseline server exited before test completion: {server.returncode}")
             server.terminate()
             try:
                 stdout, stderr = server.communicate(timeout=8)
             except subprocess.TimeoutExpired:
                 server.kill()
                 stdout, stderr = server.communicate(timeout=8)
-            if server.returncode != 0:
+            if stdout or stderr:
                 raise RuntimeError(
-                    f"baseline server returned {server.returncode}\n{stdout}\n{stderr}"
+                    f"baseline server emitted unexpected output: stdout={stdout!r} stderr={stderr!r}"
                 )
         finally:
             if server.poll() is None:
                 server.kill()
                 server.wait()
+
+        # Server B runs the sustained workload on a fresh instance with a generous
+        # connection limit, so the 500 sequential requests never spuriously saturate
+        # from a preceding connection's teardown. Each request uses Connection: close
+        # so it fully releases before the next one connects.
+        workload_port = available_port()
+        workload_source = """function main() -> int : (NetworkError, TimeError) {
+    app := http_server();
+    app.timeouts(2000, 2000, 2000, 2000);
+    app.limits(32, 1024, 8, 8);
+    app.get("/get", (http_request request) => { return http_text("get"); });
+    app.listen("127.0.0.1", %d);
+    return 0;
+}
+""" % workload_port
+        workload_program = root / "workload-server.p"
+        workload_executable = root / ("workload-server.exe" if sys.platform == "win32" else "workload-server")
+        workload_program.write_text(workload_source, encoding="utf-8")
+        subprocess.run([compiler, workload_program, "-o", workload_executable], check=True, cwd=root)
+        workload = subprocess.Popen(
+            [workload_executable], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        try:
+            wait_until_listening(workload_port)
+            started = time.monotonic()
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                sequential = list(pool.map(lambda _: request(workload_port, headers={"Connection": "close"}), range(500)))
+            elapsed = time.monotonic() - started
+            if sequential != [(200, b"get")] * 500:
+                raise RuntimeError("sustained sequential request baseline failed")
+            if workload.poll() is not None:
+                raise RuntimeError(f"workload server exited before test completion: {workload.returncode}")
+            workload.terminate()
+            try:
+                stdout, stderr = workload.communicate(timeout=8)
+            except subprocess.TimeoutExpired:
+                workload.kill()
+                stdout, stderr = workload.communicate(timeout=8)
+            if stdout or stderr:
+                raise RuntimeError(
+                    f"workload server emitted unexpected output: stdout={stdout!r} stderr={stderr!r}"
+                )
+        finally:
+            if workload.poll() is None:
+                workload.kill()
+                workload.wait()
 
         restart_port = available_port()
         restart_source = """function main() -> int : (NetworkError, HttpError, ThreadError, TimeError) {
