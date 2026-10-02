@@ -128,6 +128,7 @@ jobs:
           STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
         run: |
           python3 dogfood/check.py build/strut
+          python3 tools/certify_showcase.py build/strut
           python3 dogfood/diagnostics.py build/strut
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after --attempt attempt-1.p
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after --attempt attempt-1.p
@@ -201,6 +202,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           python dogfood/check.py build/Release/strut.exe
+          python tools/certify_showcase.py build/Release/strut.exe
           python dogfood/diagnostics.py build/Release/strut.exe
           python dogfood/package_certification.py build/Release/strut.exe
           python dogfood/crypto_certification.py build/Release/strut.exe
@@ -251,6 +253,7 @@ jobs:
           STRUT_CXXFLAGS: -Wall -Wextra -Wpedantic -Werror
         run: |
           python3 dogfood/check.py build/strut
+          python3 tools/certify_showcase.py build/strut
           python3 dogfood/diagnostics.py build/strut
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-ai-dx-after --attempt attempt-1.p
           python3 dogfood/benchmark.py build/strut dogfood/attempts/0.0.1-advanced-after --attempt attempt-1.p

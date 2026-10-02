@@ -1,0 +1,7 @@
+{
+  "examples": [
+    {"name": "embed-basic", "source": "embed/basic.p", "mode": "run", "cwd": "embed"},
+    {"name": "static-site", "source": "static-site/app.p", "mode": "compile", "cwd": "static-site"},
+    {"name": "one-binary-todo", "source": "one-binary-todo/app.p", "mode": "compile", "cwd": "one-binary-todo"}
+  ]
+}
