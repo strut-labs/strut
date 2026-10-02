@@ -99,6 +99,14 @@ int main(){
     require(api_matches(*api_callable("http_get"),"http"),"module filtering");
     require(api_matches(*api_callable("http_get"),"checked-errors"),"checked-error filtering");
     require(api_matches(*api_callable("sha256"),"crypto"),"crypto module filtering");
+    require(api_callable("embed_dir")&&api_required_modules(*api_callable("embed_dir")).empty(),"embed_dir has no caller-required module");
+    require(api_callable("embed_dir")&&std::find(api_signature_modules(*api_callable("embed_dir")).begin(),api_signature_modules(*api_callable("embed_dir")).end(),"map")!=api_signature_modules(*api_callable("embed_dir")).end(),"embed_dir supplies signature module map");
+    require(api_callable("sha256")&&api_required_modules(*api_callable("sha256"))==std::vector<std::string>{"crypto"},"sha256 requires crypto");
+    require(api_callable("sha256")&&api_signature_modules(*api_callable("sha256")).empty(),"sha256 supplies no signature module");
+    require(api_callable("base64_encode")&&api_required_modules(*api_callable("base64_encode"))==std::vector<std::string>{"encoding"},"base64 requires encoding");
+    require(api_callable("exists")&&api_required_modules(*api_callable("exists"))==std::vector<std::string>{"filesystem"},"filesystem requires filesystem");
+    require(api_callable("sqlite_open")&&api_required_modules(*api_callable("sqlite_open")).empty(),"sqlite_open is auto-available with no caller-required module");
+    require(api_callable("http_get")&&api_required_modules(*api_callable("http_get")).empty(),"http_get is auto-available with no caller-required module");
     require(overloadable_operator("++",OperatorFixity::prefix),"prefix increment metadata");
     require(overloadable_operator("++",OperatorFixity::postfix),"postfix increment metadata");
     require(overloadable_operator("--",OperatorFixity::prefix)&&overloadable_operator("--",OperatorFixity::postfix),"decrement fixity metadata");

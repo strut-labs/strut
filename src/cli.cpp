@@ -116,6 +116,7 @@ json::Document api_index(std::string_view query) {
         json::Document signatures=json::Document::make_array();for(const auto& overload:callable.overloads)signatures.array.emplace_back(api_signature(callable,overload));item["signatures"]=signatures;if(!callable.overloads.empty())item["signature"]=api_signature(callable,callable.overloads.front());
         json::Document errors=json::Document::make_array();for(const auto& error:callable.checked_errors)errors.array.emplace_back(error);item["checked_errors"]=errors;
         json::Document required_modules=json::Document::make_array();for(const auto& module:api_required_modules(callable))required_modules.array.emplace_back(module);item["requires_modules"]=required_modules;
+        json::Document signature_modules=json::Document::make_array();for(const auto& module:api_signature_modules(callable))signature_modules.array.emplace_back(module);item["signature_modules"]=signature_modules;
         json::Document components=json::Document::make_array();json::Document dependencies=json::Document::make_array();
         for(auto id:callable.runtime_components)if(const auto* component=runtime_component(id))components.array.emplace_back(std::string(component->name));
         for(auto lib:resolve_runtime_components(callable.runtime_components).link_libraries()){std::string dependency(lib);if(dependency=="curl")dependency="libcurl";else if(dependency=="sqlite3")dependency="SQLite3";else if(dependency=="crypto")dependency="OpenSSL libcrypto";else if(dependency=="ssl")dependency="OpenSSL libssl";dependencies.array.emplace_back(dependency);}
@@ -147,6 +148,7 @@ void print_api_index(std::string_view query,std::ostream& out){
         if(!callable.module.empty())out<<" ["<<callable.module<<']';
         if(!callable.checked_errors.empty()){out<<" throws ";for(std::size_t i=0;i<callable.checked_errors.size();++i){if(i)out<<", ";out<<callable.checked_errors[i];}}
         auto required=api_required_modules(callable);if(!required.empty()){out<<" requires include <";for(std::size_t i=0;i<required.size();++i){if(i)out<<">, <";out<<required[i];}out<<">";}
+        auto signature=api_signature_modules(callable);if(!signature.empty()){out<<" supplies signature module <";for(std::size_t i=0;i<signature.size();++i){if(i)out<<">, <";out<<signature[i];}out<<"> automatically";}
         out<<"\n\n";
     }
     for(const auto& op:operator_table()){
