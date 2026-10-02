@@ -16,13 +16,13 @@ EXAMPLES = ROOT / "examples" / "docs"
 START = "<!-- strut-example:{name}:start -->"
 END = "<!-- strut-example:{name}:end -->"
 SITE_REQUIREMENTS = {
-    "content/docs/status.html": ("v0.0.3", "d9e6c47", "Windows ConPTY", "WebSocket server"),
+    "content/docs/status.html": ("v0.0.3", "current development", "full-duplex", "Windows ConPTY", "application-owned WebSocket terminal sessions"),
     "content/docs/crypto.html": ("secure_random_bytes", "hmac_sha256", "base64url_decode", "does not provide SHA-1"),
     "content/docs/http.html": ("http_request_stream", "request_body_length", "cancellation_token", "Unix-domain sockets"),
     "content/docs/http-server.html": ("get_request_stream", "http_serve_file", "http_write_ndjson", "listen_tls"),
-    "content/docs/websockets.html": ("socket.accept", "read_text", "websocket_limits", "permessage-deflate"),
+    "content/docs/websockets.html": ("socket.accept", "read_text", "websocket_limits", "permessage-deflate", "bridge API"),
     "content/docs/processes.html": ("process(string program", "cancellation_token", "CreateProcessW", "Job Object"),
-    "content/docs/pty.html": ("pty_spawn", "terminal.resize", "glibc 2.34", "Windows 10 version 1809", "Windows Server 2019"),
+    "content/docs/pty.html": ("pty_spawn", "terminal.resize", "glibc 2.34", "Windows 10 version 1809", "Windows Server 2019", "bridge API"),
     "content/docs/architecture.html": ("libcurl", "libcrypto", "WebSocket server route", "third-party terminal library"),
     "content/docs/security.html": ("SSRF", "process supervisor", "Windows PTY"),
     "llms.txt": ("current development main", "docs/crypto.html", "docs/websockets.html", "docs/pty.html"),
