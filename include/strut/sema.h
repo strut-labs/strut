@@ -84,6 +84,7 @@ private:
     bool enforce_standard_modules_ = false;
     std::unordered_set<std::string> standard_modules_;
     std::unordered_set<std::string> builtin_satisfied_modules_;
+    std::unordered_set<std::string> user_function_names_;
 };
 
 } // namespace strut

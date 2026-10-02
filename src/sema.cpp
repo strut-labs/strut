@@ -151,7 +151,9 @@ void SemanticAnalyzer::satisfy_callable_modules(const ApiCallable& callable) {
 
 void SemanticAnalyzer::collect_expression_builtin_modules(const Expr& expression) {
     if(expression.kind==Expr::Kind::call&&expression.left&&expression.left->kind==Expr::Kind::identifier){
-        if(const auto* callable=api_callable(expression.left->text))satisfy_callable_modules(*callable);
+        if(user_function_names_.find(expression.left->text)==user_function_names_.end()){
+            if(const auto* callable=api_callable(expression.left->text))satisfy_callable_modules(*callable);
+        }
     }
     if(expression.kind==Expr::Kind::member&&expression.left&&expression.left->kind==Expr::Kind::identifier){
         if(const auto* field=api_field(expression.text,expression.left->text))satisfy_type_modules(type_spelling(field->type));
@@ -621,7 +623,8 @@ bool SemanticAnalyzer::resolve_alias(SemanticResult& result, const std::string& 
 }
 
 SemanticResult SemanticAnalyzer::analyze(const Program& program) {
-    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); checked_error_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); function_candidates_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end()); builtin_satisfied_modules_.clear();
+    SemanticResult result; scopes_.clear(); aliases_.clear(); struct_fields_.clear(); abstract_methods_.clear(); struct_bases_.clear(); enum_members_.clear(); named_types_.clear(); checked_error_types_.clear(); current_function_return_type_.clear(); current_function_errors_.clear(); function_errors_.clear(); function_candidates_.clear(); operator_signatures_.clear(); operator_returns_.clear(); extern_c_functions_.clear(); unsafe_depth_=0; catch_all_depth_=0; enforce_standard_modules_=program.enforce_standard_modules; standard_modules_.clear(); standard_modules_.insert(program.standard_modules.begin(), program.standard_modules.end()); builtin_satisfied_modules_.clear(); user_function_names_.clear();
+    for(const auto& st:program.statements)if(st->kind==Stmt::Kind::function_decl&&st->owner.empty())user_function_names_.insert(st->name);
     collect_builtin_modules(program);
     named_types_.insert(api_named_types().begin(),api_named_types().end());
     for(const auto& field:api_fields())struct_fields_[field.owner][field.name]=type_spelling(field.type);
