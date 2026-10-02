@@ -4,6 +4,29 @@ This document records the backend/runtime expansion that starts after Strut
 0.0.3. It is deliberately separate from the compiler bootstrap checkpoint
 history in `IMPLEMENTATION_HANDOVER.md`.
 
+## Accepted campaign closure
+
+The production backend foundation campaign is complete through P10. P10 is a
+deliberate campaign boundary, not an invitation to infer another numbered
+checkpoint. No repository roadmap freezes a P11 contract.
+
+Accepted immutable P10 implementation baseline:
+
+- compiler: `1d7e15ea1ce18dd95a0fac609c61536491023986`;
+- website source at acceptance: `9189916da5164a31504716956da070af1fa68b62`;
+- published website at acceptance: `f25b016296cdf57a848cca48f0f57e7bfda8bc8a`.
+
+Accepted hosted evidence:
+
+- five-platform compiler certification: <https://github.com/strut-labs/strut/actions/runs/36916992356>;
+- exact-compiler-SHA independent Linux/macOS/Windows regressions: <https://github.com/strut-labs/strut-regression-suite/actions/runs/36948321664>;
+- website source certification: <https://github.com/strut-labs/strut-labs.github.io/actions/runs/36951853937>;
+- Pages build and deployment: <https://github.com/strut-labs/strut-labs.github.io/actions/runs/36951838316>.
+
+The latest tagged release remains `v0.0.3`. The accepted website documents
+P10/current `main`; post-v0.0.3 APIs must not be attributed to the tagged
+release.
+
 ## Frozen ownership boundary
 
 The following are first-class Strut runtime facilities:
@@ -134,9 +157,18 @@ cancellation contracts must not prevent a future event-driven backend.
 - P3: outbound HTTP streaming and cancellation complete.
 - P4: WebSocket upgrade ownership complete.
 - P5: WebSocket server frame/message runtime complete.
+- P6: process lifecycle hardening complete.
+- P7: POSIX PTY primitive complete.
+- P8: PTY lifecycle, resize, signals and cancellation complete.
+- P9: Windows ConPTY complete.
 - P10: bounded WebSocket and PTY application composition complete.
 
-P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time comparison, and strict RFC 4648 Base64/Base64url. Encoding is dependency-free; crypto is implemented by OpenSSL `libcrypto` and does not pull in `libssl`. SHA-1 remains internal-only future WebSocket work.
+Do not renumber this history. In particular, the CP checkpoints above are the
+older backend-runtime expansion sequence and the P checkpoints are the completed
+production-backend campaign; identical numbers across those namespaces do not
+refer to the same work.
+
+P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time comparison, and strict RFC 4648 Base64/Base64url. Encoding is dependency-free; crypto is implemented by OpenSSL `libcrypto` and does not pull in `libssl`. SHA-1 remains internal to the WebSocket handshake and is not a public cryptographic primitive.
 
 ## P5 WebSocket frame/message result
 
@@ -151,6 +183,100 @@ P1 adds binary-first secure random bytes, SHA-256, HMAC-SHA-256, constant-time c
 - P10 adds no bridge API and no `http_websocket`/`pty` runtime dependency edge. A generated application owns two public-API pumps: binary WebSocket input and validated text controls drive one PTY, while a joined output task copies at most 4096 terminal bytes into each synchronous binary WebSocket write.
 - WebSocket transport now permits one blocked reader and one serialized writer to progress concurrently. Plain TCP uses independent socket directions. TLS transfers the upgraded connection to one nonblocking OpenSSL owner with one pending request per direction, exact incomplete-write retries, absolute request deadlines and terminal timeout/failure handling.
 - `dogfood/websocket_pty_session_certification.py` generates both the session server and its PTY child. It covers policy rejection before 101, coalesced upgrade input, plaintext/TLS, shell and executable launch, binary input/output, resize and lifecycle controls, natural exit after final-output drain, clean and abrupt disconnects, a 32 MiB slow-peer path, cancellation of blocked PTY input on shutdown, 1000 sequential sessions where unsanitized, and bounded concurrent sessions with native-resource drain and bounded reusable HTTP workers.
+
+## Campaign closure handover
+
+### Current architecture
+
+- The inbound HTTP/1.0 and HTTP/1.1 server owns strict framing, bounded reusable workers, persistence, request-scoped cancellation, buffered and streaming request/response paths, application helpers, static/range responses, NDJSON, TLS and WebSocket upgrades.
+- Inbound TLS uses OpenSSL with TLS 1.2 or newer. Certificate/key validation occurs before listen; there is no plaintext fallback or server-side mTLS surface.
+- Buffered and streaming outbound HTTP share one libcurl engine, validation policy, redirect policy, limits, TLS verification, error mapping and lifecycle. Async calls use the bounded shared executor.
+- Public crypto provides secure random bytes, SHA-256, HMAC-SHA-256 and constant-time equal; strict Base64/Base64url encoding is dependency-free. SHA-1 is internal to RFC 6455 only.
+- WebSockets provide explicit policy-before-101 ownership, bounded RFC 6455 frames/messages, validated close/control/UTF-8 behavior and synchronous serialized writes.
+- Cancellation has one public source/token model reused by HTTP, process and PTY facilities.
+- Processes use argv-safe launch, Unicode `CreateProcessW` on Windows, process-group/Job ownership, bounded cleanup, concurrent pipe drains and cancellation-aware blocking pipe I/O.
+- PTYs expose one binary API across Linux, macOS and Windows ConPTY, with resize, controls, cancellation, wait/status and bounded lifecycle ownership.
+- One WebSocket reader and one serialized writer may progress concurrently. TCP uses independent socket directions; TLS gives one nonblocking owner thread sole access to `SSL*` with at most one bounded request per direction.
+- WebSocket-to-PTY sessions are application composition. The application owns validated input/control and bounded output pumps, passes request cancellation to the PTY, closes every terminal path and joins its output task.
+- SQLite remains the existing external/system-library integration and composes with the HTTP runtime without another database or networking stack.
+- Typed-IR runtime-component resolution emits transitive slices once and drives native linking. WebSocket and PTY remain independent components.
+
+### Critical invariants
+
+- Do not introduce a duplicate HTTP client, HTTP server, networking or TLS stack.
+- Keep one cancellation model; do not add subsystem-specific public tokens.
+- Keep WebSocket and PTY independent in `runtime_components.cpp`.
+- Do not add a built-in WebSocket/PTY bridge or terminal protocol without a separately approved architecture change.
+- Never enter one upgraded connection's `SSL*` concurrently; the TLS owner remains the sole OpenSSL caller.
+- Permit exactly one active WebSocket reader and serialize all writers; this still allows one read and one write to progress independently.
+- Permit one PTY reader and one PTY writer; reject duplicate same-direction operations.
+- Preserve synchronous bounded backpressure. Do not hide an unbounded queue between network, process or PTY endpoints.
+- Prefer package/application policy for authentication, sessions and protocols. Add compiler/runtime capability only after a real workload proves a missing primitive.
+
+### Accepted platform and API limits
+
+- POSIX PTY foreground lookup and signal delivery cannot be atomic. Background or detached groups may escape leader-group cleanup; stronger containment requires an external supervisor or cgroup. External `SIGCHLD` reaping is unsupported.
+- ConPTY is UTF-8/VT terminal traffic, not arbitrary binary transparency. Its interrupt, hangup, terminate and kill operations are Windows terminal/lifecycle approximations rather than POSIX signals.
+- Windows before build 26100 may retain bounded OS-owned ConPTY process handles because of <https://github.com/microsoft/terminal/issues/17903>. Certification permits only the documented version-aware shape.
+- WebSockets are server-only, with one reader, serialized writers, no extensions/compression, no outbound client and per-I/O frame-parser timeouts rather than a whole-frame deadline.
+- The HTTP client has no public client-certificate, explicit-proxy or Unix-domain-socket options. HTTP/2 is absent. Outbound async work still uses blocking libcurl easy handles on the bounded executor.
+- Process pipes have no public timeout, cancellation does not terminate the child, and POSIX descendants may escape their process group. `pipe_exec` remains a fixed two-stage helper.
+- The latest release is `v0.0.3`; P1-P10 behavior is current-main/unreleased unless a later release explicitly includes it.
+
+### Certification map
+
+- `dogfood/crypto_certification.py`: P1 known answers, binary values, randomness lengths and strict malformed-input handling.
+- `dogfood/http_client_certification.py`: P2 buffered HTTP policy, limits, redirects, methods, TLS and cleanup.
+- `dogfood/http_client_streaming_certification.py`: P3 bounded upload/download, callbacks, cancellation, backpressure, async and repeated cleanup.
+- `dogfood/http_websocket_certification.py`: P4 upgrade policy, subprotocols, ownership, TLS and stop races.
+- `dogfood/websocket_runtime_certification.py`: P5 framing/messages, protocol failures, close behavior, TCP/TLS resources and stress.
+- `dogfood/process_cancellation_certification.py` and `dogfood/process_lifecycle_certification.py`: P6 cancellable pipes, argv/platform behavior, process trees, pipelines and bounded cleanup.
+- `dogfood/pty_certification.py`: P7 PTY spawn, binary/interactive I/O, ownership, cancellation and cleanup.
+- `dogfood/pty_lifecycle_certification.py`: P8 resize, controls, wait/close/cancel races, descendants, churn and resources; it also executes the P9 ConPTY lifecycle paths on Windows.
+- `dogfood/websocket_pty_session_certification.py`: P10 public-API composition, duplex transport, controls, slow peers, final drain, shutdown, 1000-session churn, bounded concurrency and resource return.
+- `dogfood/http_*_certification.py` plus `dogfood/backend_baseline_certification.py`: the accepted strict HTTP server, streaming, persistence, helper, file, NDJSON, cancellation, worker and lifecycle foundations.
+- `.github/workflows/cross-platform.yml`: Linux x64 GCC/Clang, Linux ARM64 GCC, macOS ARM64 AppleClang and Windows x64 MSVC hosted gate.
+- `strut-regression-suite/.github/workflows/cross-platform.yml`: independent exact-ref black-box Linux/macOS/Windows gate.
+- `tools/certify_docs.py`: canonical example compilation, API-registry requirements and website parity.
+
+### Future work inventory, not an implementation roadmap
+
+#### A. Runtime/compiler work genuinely still required
+
+No new runtime primitive is currently proven necessary for the first Warden-shaped workload. Use that workload to test the accepted APIs before changing the compiler. Candidate capabilities to reconsider only with measured evidence include HTTP client certificates, explicit proxies, Unix-domain HTTP, HTTP/2, outbound WebSockets/compression, server mTLS, process timeouts, and event-loop/reactor scaling. Some containment and ConPTY limits are operating-system facts rather than compiler defects.
+
+#### B. Standard/package ecosystem work
+
+Session storage/cookies, CSRF policy, password authentication/hashing, basic JWT, OAuth/OIDC, SSE and multipart/form-data should default to packages. Password hashing may justify a narrowly reviewed native dependency, but not a general authentication framework in the runtime. Certificate automation, reverse-proxy policy and ORM work also remain package or deployment concerns by default.
+
+#### C. Acceptance and dogfood applications
+
+Build one Warden-shaped end-to-end acceptance application first. It should exercise HTTP/TLS, streaming, persistence, cookies, cancellation, SQLite, WebSockets, processes or PTYs where natural, clean shutdown and package ergonomics. Its purpose is to expose missing primitives and ownership friction, not to become a hidden runtime feature or to presuppose Warden's final product architecture.
+
+#### D. Production certification and soak
+
+After package/application acceptance, add long-duration soak, higher connection and session churn, slow and adversarial peers, deployment/restart/upgrade evidence, resource monitoring, proxy/TLS topology, operational failure recovery and repeatable performance baselines. Focused P1-P10 certification is not production-readiness evidence by itself.
+
+#### E. Longer-term general systems-language work
+
+Continue only from measured workloads: compiler diagnostics and optimisation, broader native-library ergonomics, cross compilation, package provenance, debugging/profiling, compatibility policy and eventual self-hosting decisions. Do not distort the language merely to reproduce framework conventions.
+
+### Recommended next campaign structure
+
+Recommendation only: let P1-P10 stand as the completed **backend runtime foundation** campaign. Start a separately named **application foundation** campaign with a Warden-shaped acceptance gate, then package-focused session/auth/CSRF/JWT work, then OAuth/OIDC plus SSE/multipart, and only then production certification. A new namespace makes the package/application default visible and avoids implying that an undefined P11 already exists. If maintainers later choose to continue P numbering, they must first freeze a P11 contract in this document; historical P1-P10 numbering must not change.
+
+### Documentation and publication
+
+The website source is `strut-labs.github.io` branch `stage`; generated output is the nested `public/` repository on branch `main`. Edit source, run `nift build`, `nift status`, `python3 check_site.py`, compiler documentation certification and `git diff --check`, then commit both repositories. Publish generated `public/main` before source `stage` so source CI compares against the matching `SOURCE_DIGEST`. Pin current-development claims to the accepted compiler checkpoint and keep `v0.0.3` release claims separate.
+
+### Repository safety
+
+- Preserve `stash@{0}: On main: preserve interrupted P4 websocket scaffold before S0 revert`.
+- Preserve the existing untracked `dogfood/__pycache__/` and `tools/__pycache__/` directories.
+- Never delete or replace `.git` metadata.
+- Do not use destructive cleanup on project repositories.
+- Do not discard unrelated user or concurrent-agent changes.
+- Do not tag or create a release as part of this closure.
 
 ## P1 crypto and encoding result
 
