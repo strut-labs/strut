@@ -41,7 +41,7 @@ def opening(path="/ws/one", key=KEY, extra=b"", method="GET", version="HTTP/1.1"
     return ("\r\n".join(fields) + "\r\n").encode() + extra + b"\r\n"
 
 
-def exchange(port, request, context=None, retry=False):
+def exchange(port, request, context=None, retry=False, retry_empty=False):
     deadline = time.monotonic() + 8
     while True:
         raw = socket.socket()
@@ -57,6 +57,9 @@ def exchange(port, request, context=None, retry=False):
                 if not chunk:
                     break
                 received += chunk
+            if not received and retry_empty and time.monotonic() < deadline:
+                time.sleep(0.03)
+                continue
             return received
         except OSError:
             if not retry or time.monotonic() >= deadline:
@@ -244,7 +247,7 @@ function main() -> int : (NetworkError, PolicyError) {{
             disconnected = socket.create_connection(("127.0.0.1", port), timeout=2)
             disconnected.sendall(opening())
             disconnected.close()
-            require_switch(exchange(port, opening(path="/escape")))
+            require_switch(exchange(port, opening(path="/escape"), retry_empty=True))
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or "WebSocket handle is no longer active" not in stdout:
                 raise RuntimeError(f"escaped WebSocket remained usable ({server.returncode})\n{stdout}\n{stderr}")
