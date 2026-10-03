@@ -198,7 +198,6 @@ def main():
         int index := 0;
         while (index < 10000) {{ writer.write_bytes(block); index++; }}
     }});
-    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {port});
 }}
 ''',
@@ -334,11 +333,17 @@ def main():
             if not line.startswith(b"HTTP/1.0 400 "):
                 raise RuntimeError(f"HTTP/1.0 error used wrong protocol version: {line!r}")
 
-            request_bytes(port, "/stop")
-            stdout, stderr = server.communicate(timeout=15)
-            if server.returncode != 0 or stdout or stderr:
+            if server.poll() is not None:
+                raise RuntimeError(f"streaming server exited before test completion: {server.returncode}")
+            server.terminate()
+            try:
+                stdout, stderr = server.communicate(timeout=8)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                stdout, stderr = server.communicate(timeout=8)
+            if stdout or stderr:
                 raise RuntimeError(
-                    f"streaming server failed: exit={server.returncode} stdout={stdout!r} stderr={stderr!r}"
+                    f"streaming server emitted unexpected output: stdout={stdout!r} stderr={stderr!r}"
                 )
         finally:
             if server.poll() is None:
