@@ -345,8 +345,14 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   contention where it previously failed 50-70% of the time. The exact-SHA regression
   workflow also gained `fetch-depth: 0` so arbitrary compiler SHAs check out reliably.
 
-- **APF-1 — Struct encapsulation** (planned): private struct fields/methods and facade
-  construction semantics. Excludes selective exports, method overloading, and the
+- **APF-1 — Struct encapsulation** (complete): private struct fields/methods and facade
+  construction semantics. A `private` modifier applies to struct fields and methods (both
+  in-body and `private function Owner::method(...)`); semantic analysis enforces access
+  control (external reads/writes/literals/method calls rejected with canonical diagnostics,
+  same-struct and public-wrapper access allowed), private fields default-construct and are
+  not externally nameable, generated C++ uses `private:`/`public:` sections, and external
+  LSP completion hides private members while internal completion shows them. 13 privacy
+  regression fixtures. Excludes selective exports, method overloading, and the
   higher-order checked-error model.
 - **APF-2 — Warden-shaped application validation** (planned): realistic backend +
   CLI/admin dogfood with early soak/adversarial testing.
