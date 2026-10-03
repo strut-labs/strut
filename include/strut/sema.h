@@ -54,6 +54,8 @@ private:
     TypeInfo resolve_type(std::string_view name) const;
     std::string resolved_type_name(std::string_view name) const;
     bool compatible(const TypeInfo& from, const TypeInfo& to) const;
+    bool is_private_field(const std::string& owner, const std::string& member) const;
+    bool is_private_method(const std::string& owner, const std::string& member) const;
     static std::unordered_map<std::string, Symbol>& namespace_map(Scope& scope, SymbolNamespace name_space);
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
     void require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const;
@@ -66,6 +68,9 @@ private:
 
     std::unordered_map<std::string, std::string> aliases_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> private_fields_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> private_methods_;
+    std::string current_struct_owner_;
     std::unordered_map<std::string, std::unordered_set<std::string>> abstract_methods_;
     std::unordered_map<std::string, std::vector<std::string>> struct_bases_;
     std::unordered_map<std::string, std::unordered_set<std::string>> enum_members_;
