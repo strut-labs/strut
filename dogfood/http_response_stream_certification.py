@@ -198,7 +198,8 @@ def main():
         int index := 0;
         while (index < 10000) {{ writer.write_bytes(block); index++; }}
     }});
-    app.listen("127.0.0.1", {port}, 21);
+    app.get("/stop", (http_request request) => {{ app.stop(); return http_text("stopped"); }});
+    app.listen("127.0.0.1", {port});
 }}
 ''',
         )
@@ -333,6 +334,7 @@ def main():
             if not line.startswith(b"HTTP/1.0 400 "):
                 raise RuntimeError(f"HTTP/1.0 error used wrong protocol version: {line!r}")
 
+            request_bytes(port, "/stop")
             stdout, stderr = server.communicate(timeout=15)
             if server.returncode != 0 or stdout or stderr:
                 raise RuntimeError(
@@ -352,7 +354,7 @@ def main():
     app := http_server();
     app_ref := ref(app);
     app.timeouts(5000, 5000, 5000, 300);
-    app.limits(1024, 4096, 16, 2);
+    app.limits(1024, 4096, 16, 3);
     app.get_stream("/blocked", (http_request request, http_response_writer writer) => {{
         block := bytes(65536);
         int index := 0;
