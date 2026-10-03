@@ -102,7 +102,7 @@ public:
     }
     IRStmtPtr statement(const Stmt& st) {
         auto out = std::make_unique<IRStmt>(); out->kind=convert_stmt_kind(st.kind); out->span=st.span; out->name=st.name; out->op=st.op; out->operator_fixity=st.operator_fixity; out->is_const=st.is_const;
-        out->owner=st.owner; out->is_async=st.is_async; out->is_extern_c=st.is_extern_c; out->is_error=st.is_error; out->generic_parameters=st.generic_parameters; out->bases=st.bases; out->enum_names=st.enum_names; out->enum_values=st.enum_values; out->error_types=st.error_types; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
+        out->owner=st.owner; out->is_async=st.is_async; out->is_extern_c=st.is_extern_c; out->is_error=st.is_error; out->is_private=st.is_private; out->generic_parameters=st.generic_parameters; out->bases=st.bases; out->enum_names=st.enum_names; out->enum_values=st.enum_values; out->error_types=st.error_types; out->parameters=st.parameters; out->fields=st.fields; out->has_body=st.has_body;
         out->type_name = st.declared_type ? st.declared_type->name : ""; out->explicit_type=st.declared_type.has_value();
         if (st.return_type) out->return_type = st.return_type->name;
         if (st.alias_target) { out->alias_target=st.alias_target->name;out->alias_target_id=intern_type(out->alias_target); }

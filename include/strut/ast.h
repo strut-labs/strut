@@ -26,7 +26,7 @@ struct TypeSyntax {
 struct Stmt;
 using StmtPtr = std::unique_ptr<Stmt>;
 struct LambdaData;
-struct Parameter { TypeSyntax type; std::string name; SourceSpan span; };
+struct Parameter { TypeSyntax type; std::string name; SourceSpan span; bool is_private = false; };
 
 struct Expr;
 using ExprPtr = std::unique_ptr<Expr>;
@@ -81,6 +81,7 @@ struct Stmt {
     bool is_async = false;
     bool is_extern_c = false;
     bool is_error = false;
+    bool is_private = false;
 };
 
 struct LambdaData {

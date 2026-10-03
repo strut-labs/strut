@@ -414,14 +414,16 @@ StmtPtr Parser::parse_struct(ParseResult& result) {
     if(match(":")){do{auto base=parse_type(result);if(base.name.empty())return nullptr;st->bases.push_back(base.name);}while(match(","));}
     if(!match("{")){error(result,peek(),"expected '{' after struct name");return nullptr;}
     while(!at_end()&&!check("}")){
+        bool member_private=false;
+        if(match("private")){member_private=true;}
         if(match("function")){
-            auto method=parse_function(result);if(!method)return nullptr;method->owner=st->name;st->body.push_back(std::move(method));continue;
+            auto method=parse_function(result);if(!method)return nullptr;method->owner=st->name;method->is_private=member_private;st->body.push_back(std::move(method));continue;
         }
         auto type=parse_type(result);if(type.name.empty())return nullptr;
         if(peek().kind!=TokenKind::identifier){error(result,peek(),"expected field name");return nullptr;}
         const Token field=advance();
         if(!match(";")){error(result,peek(),"expected ';' after struct field");return nullptr;}
-        st->fields.push_back(Parameter{std::move(type),field.lexeme,field.span});
+        st->fields.push_back(Parameter{std::move(type),field.lexeme,field.span,member_private});
     }
     if(!match("}")){error(result,peek(),"expected '}' after struct");return nullptr;}
     if(match(";")){} // optional compatibility semicolon after a struct definition
@@ -518,6 +520,7 @@ StmtPtr Parser::parse_statement(ParseResult& result){
     if (match("async")) { if(!match("function")){error(result,previous(),"expected function after async");return nullptr;} auto st=parse_function(result); if(st)st->is_async=true; return st; }
     if (match("extern")) { const Token kw=previous(); if(peek().kind!=TokenKind::string_literal || peek().lexeme!="\"C\""){error(result,peek(),"extern currently requires \"C\"");return nullptr;} advance(); if(!match("function")){error(result,peek(),"expected function after extern \"C\"");return nullptr;} auto st=parse_function(result); if(st){st->is_extern_c=true;if(st->has_body)error(result,kw,"extern \"C\" functions must be declarations ending in ';'");} return st; }
     if (match("function")) return parse_function(result);
+    if (match("private")) { if(!match("function")){error(result,previous(),"expected function after private");return nullptr;} auto st=parse_function(result); if(st){if(st->owner.empty()){error(result,previous(),"private applies to struct methods only; use private inside a struct or `private function Owner::method`");return nullptr;}st->is_private=true;} return st; }
     if (match("operator")) return parse_operator(result);
     if (match("{")) return parse_block(result);
     if (match("if")) return parse_if(result);

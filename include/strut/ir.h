@@ -69,6 +69,7 @@ struct IRStmt {
     bool is_async = false;
     bool is_extern_c = false;
     bool is_error = false;
+    bool is_private = false;
     std::string overload_name;
 };
 
