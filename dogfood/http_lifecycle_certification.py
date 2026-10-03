@@ -75,7 +75,11 @@ def main():
         sleep_ms(100);
         return http_text("done");
     });
-    app.listen("127.0.0.1", %d, 6);
+    app.get("/stop", (http_request request) => {
+        app.stop();
+        return http_text("stopped");
+    });
+    app.listen("127.0.0.1", %d);
     if (app.running()) {
         return 1;
     }
@@ -110,6 +114,8 @@ def main():
                 raise RuntimeError("method mismatch did not return 405")
             if segmented_limit_request(port) != (413, "Payload Too Large"):
                 raise RuntimeError("segmented oversized request did not return 413")
+            if request(port, path="/stop") != (200, "stopped"):
+                raise RuntimeError("lifecycle server did not stop through its handler")
             stdout, stderr = server.communicate(timeout=8)
             if server.returncode != 0:
                 raise RuntimeError(f"server returned {server.returncode}\n{stdout}\n{stderr}")
