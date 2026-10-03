@@ -351,9 +351,13 @@ checkpoints are not P-numbered and do not renumber the P1-P10 history.
   control (external reads/writes/literals/method calls rejected with canonical diagnostics,
   same-struct and public-wrapper access allowed), private fields default-construct and are
   not externally nameable, generated C++ uses `private:`/`public:` sections, and external
-  LSP completion hides private members while internal completion shows them. 13 privacy
-  regression fixtures. Excludes selective exports, method overloading, and the
-  higher-order checked-error model.
+  LSP completion hides private members while internal completion shows them. Privacy is
+  owning-struct scoped across inheritance: a derived method cannot access a base private
+  field or call a base private method (bare or `this.`/arrow), derived literals cannot name
+  a base private field and do not require it, and inherited public members remain usable.
+  Arrays and maps of encapsulated structs preserve private state across copy. `deepcopy`
+  is not currently a Strut feature. 20 privacy regression fixtures. Excludes selective
+  exports, method overloading, and the higher-order checked-error model.
 - **APF-2 — Warden-shaped application validation** (planned): realistic backend +
   CLI/admin dogfood with early soak/adversarial testing.
 - **APF-3 — Package visibility design** (planned): design only, using S0 as prior
