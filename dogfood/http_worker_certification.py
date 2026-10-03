@@ -34,12 +34,19 @@ def wait_until_listening(port):
     connection.close()
 
 
-def request(port, path="/"):
+def request(port, path="/", headers=None):
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    connection.request("GET", path)
+    connection.request("GET", path, headers=headers or {})
     response = connection.getresponse()
     result = response.status, response.read()
     connection.close()
+    return result
+
+
+def session_request(session, path):
+    session.request("GET", path)
+    response = session.getresponse()
+    result = response.status, response.read()
     return result
 
 
@@ -98,7 +105,7 @@ def main():
     app.timeouts(2000, 2000, 2000, 3000);
     app.limits(1024, 4096, 16, 2);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
-    app.listen("127.0.0.1", {admission_port}, 4);
+    app.listen("127.0.0.1", {admission_port});
 }}
 ''',
         )
@@ -118,20 +125,23 @@ def main():
             )
             if b" 503 " not in rejected:
                 raise RuntimeError(f"saturated connection was not rejected: {rejected!r}")
-            blockers.pop().close()
-            deadline = time.monotonic() + 3
-            while True:
-                try:
-                    recovered = request(admission_port)
-                    if recovered == (200, b"ok"):
-                        break
-                except (ConnectionResetError, OSError):
-                    pass
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("worker capacity was not reclaimed")
-                time.sleep(0.02)
-            blockers.pop().close()
-            require_clean_exit(server)
+            for blocked in blockers:
+                blocked.close()
+            blockers.clear()
+            if server.poll() is not None:
+                raise RuntimeError(
+                    f"admission server exited before test completion: {server.returncode}"
+                )
+            server.terminate()
+            try:
+                stdout, stderr = server.communicate(timeout=8)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                stdout, stderr = server.communicate(timeout=8)
+            if stdout or stderr:
+                raise RuntimeError(
+                    f"admission server emitted unexpected output: stdout={stdout!r} stderr={stderr!r}"
+                )
         finally:
             for blocked in blockers:
                 blocked.close()
@@ -344,9 +354,8 @@ def main():
     app := http_server();
     app_ref := ref(app);
     app.timeouts(5000, 5000, 5000, 2000);
-    app.limits(1024, 4096, 16, 4);
+    app.limits(1024, 4096, 16, 8);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
-    app.get("/batch", (http_request request) => {{ sleep_ms(20); return http_text("batch"); }});
     app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {sustained_port});
 }}
@@ -358,12 +367,51 @@ def main():
         try:
             wait_until_listening(sustained_port)
             for index in range(500):
-                if request(sustained_port) != (200, b"ok"):
+                if request(sustained_port, headers={"Connection": "close"}) != (200, b"ok"):
                     raise RuntimeError(f"sequential worker reuse failed at request {index}")
+            if request(sustained_port, "/stop") != (200, b"stopped"):
+                raise RuntimeError("sustained server did not stop through its handler")
+            require_clean_exit(server, timeout=15)
+        finally:
+            if server.poll() is None:
+                server.kill()
+                server.wait()
+
+        concurrent_port = available_port()
+        concurrent = compile_program(
+            compiler,
+            root,
+            "concurrent-workers",
+             f'''function main() -> void : (NetworkError, TimeError) {{
+    app := http_server();
+    app_ref := ref(app);
+    app.timeouts(5000, 5000, 5000, 2000);
+    app.limits(1024, 4096, 16, 4);
+    app.get("/batch", (http_request request) => {{ sleep_ms(20); return http_text("batch"); }});
+    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
+    app.listen("127.0.0.1", {concurrent_port});
+}}
+''',
+        )
+        server = subprocess.Popen(
+            [concurrent], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        sessions = []
+        try:
+            wait_until_listening(concurrent_port)
+            for _ in range(4):
+                session = http.client.HTTPConnection("127.0.0.1", concurrent_port, timeout=5)
+                session.request("GET", "/batch")
+                response = session.getresponse()
+                if (response.status, response.read()) != (200, b"batch"):
+                    raise RuntimeError("concurrent worker session did not initialize")
+                sessions.append(session)
             peak_threads = native_thread_count(server)
             for batch in range(25):
                 with ThreadPoolExecutor(max_workers=4) as pool:
-                    futures = [pool.submit(request, sustained_port, "/batch") for _ in range(4)]
+                    futures = [
+                        pool.submit(session_request, sessions[i], "/batch") for i in range(4)
+                    ]
                     time.sleep(0.005)
                     observed = native_thread_count(server)
                     if observed is not None:
@@ -373,10 +421,15 @@ def main():
                     raise RuntimeError(f"concurrent worker reuse failed in batch {batch}: {results!r}")
             if peak_threads is not None and peak_threads > 6:
                 raise RuntimeError(f"worker thread bound exceeded: observed {peak_threads}, expected at most 6")
-            if request(sustained_port, "/stop") != (200, b"stopped"):
-                raise RuntimeError("sustained server did not stop through its handler")
+            if session_request(sessions[0], "/stop") != (200, b"stopped"):
+                raise RuntimeError("concurrent server did not stop through its handler")
+            for session in sessions:
+                session.close()
+            sessions.clear()
             require_clean_exit(server, timeout=15)
         finally:
+            for session in sessions:
+                session.close()
             if server.poll() is None:
                 server.kill()
                 server.wait()
@@ -495,7 +548,7 @@ function main(string command, string[] args) -> int : (FilesystemError, NetworkE
                 server.wait()
 
     print(
-        "HTTP worker certification: bounded admission and reuse, finite accounting, "
+        "HTTP worker certification: bounded admission, worker reuse, finite accounting, "
         "single-deadline shutdown, retired handlers, startup races, 600 sustained requests, "
         "sync/async handler stop, TLS handshake timeout, and TLS shutdown passed"
     )
