@@ -20,6 +20,7 @@ struct Symbol {
     SourceSpan span;
     bool is_const = false;
     std::string type_name;
+    std::string owner;
     TypeId type_id;
     Symbol() = default;
     Symbol(std::string symbol_name, SymbolNamespace ns, SourceSpan source_span, bool constant, std::string spelling)
@@ -56,6 +57,8 @@ private:
     bool compatible(const TypeInfo& from, const TypeInfo& to) const;
     bool is_private_field(const std::string& owner, const std::string& member) const;
     bool is_private_method(const std::string& owner, const std::string& member) const;
+    std::string field_private_owner(const std::string& struct_name, const std::string& field) const;
+    std::string method_private_owner(const std::string& struct_name, const std::string& method) const;
     static std::unordered_map<std::string, Symbol>& namespace_map(Scope& scope, SymbolNamespace name_space);
     bool resolve_alias(SemanticResult& result, const std::string& name, std::unordered_set<std::string>& visiting);
     void require_type_module(SemanticResult& result, std::string_view type_name, SourceSpan span) const;
@@ -70,6 +73,8 @@ private:
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_fields_;
     std::unordered_map<std::string, std::unordered_set<std::string>> private_fields_;
     std::unordered_map<std::string, std::unordered_set<std::string>> private_methods_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_field_owners_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> struct_method_owners_;
     std::string current_struct_owner_;
     std::unordered_map<std::string, std::unordered_set<std::string>> abstract_methods_;
     std::unordered_map<std::string, std::vector<std::string>> struct_bases_;

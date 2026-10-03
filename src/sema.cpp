@@ -106,6 +106,28 @@ bool SemanticAnalyzer::is_private_method(const std::string& owner, const std::st
     auto it=private_methods_.find(owner);
     return it!=private_methods_.end()&&it->second.find(member)!=it->second.end();
 }
+
+std::string SemanticAnalyzer::method_private_owner(const std::string& struct_name, const std::string& method) const {
+    auto mo=struct_method_owners_.find(struct_name);
+    if(mo==struct_method_owners_.end())return {};
+    auto mit=mo->second.find(method);
+    if(mit==mo->second.end())return {};
+    const std::string& owner=mit->second;
+    auto pit=private_methods_.find(owner);
+    if(pit!=private_methods_.end()&&pit->second.find(method)!=pit->second.end())return owner;
+    return {};
+}
+
+std::string SemanticAnalyzer::field_private_owner(const std::string& struct_name, const std::string& field) const {
+    auto oit=struct_field_owners_.find(struct_name);
+    if(oit==struct_field_owners_.end())return {};
+    auto fit=oit->second.find(field);
+    if(fit==oit->second.end())return {};
+    const std::string& owner=fit->second;
+    auto pit=private_fields_.find(owner);
+    if(pit!=private_fields_.end()&&pit->second.find(field)!=pit->second.end())return owner;
+    return {};
+}
 TypeInfo SemanticAnalyzer::resolve_type(std::string_view name) const {
     const std::string resolved = resolved_type_name(name);
     if (is_nullable_type(resolved)) return {TypeKind::named, 0, resolved,intern_type(resolved)};
@@ -228,7 +250,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
         case Expr::Kind::struct_literal: {
             auto* type_symbol=lookup(expr.text,SymbolNamespace::type);if(!type_symbol){result.diagnostics.push_back(Diagnostic{expr.span,"unknown struct type '"+expr.text+"'"});return {};}
             auto ait=abstract_methods_.find(expr.text); if(ait!=abstract_methods_.end()&&!ait->second.empty()){std::string names;for(const auto& n:ait->second){if(!names.empty())names+=", ";names+=n;}result.diagnostics.push_back(Diagnostic{expr.span,"cannot instantiate abstract struct "+expr.text+"; unsatisfied methods: "+names});}
-            auto fit=struct_fields_.find(expr.text);if(fit!=struct_fields_.end()){std::unordered_set<std::string> seen;for(std::size_t i=0;i<expr.names.size();++i){auto field=fit->second.find(expr.names[i]);if(field==fit->second.end()){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"unknown field '"+expr.names[i]+"' for struct "+expr.text});continue;}if(is_private_field(expr.text,expr.names[i])){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"private field '"+expr.names[i]+"' is not accessible here\nhelp: construct "+expr.text+" through a public factory method or a struct literal that omits private fields"});continue;}if(!seen.insert(expr.names[i]).second)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"duplicate struct field '"+expr.names[i]+"'"});auto value=infer_expression(result,*expr.arguments[i]);auto dest=resolve_type(field->second);if(value.valid()&&dest.valid()&&!compatible(value,dest))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"incompatible value for field '"+expr.names[i]+"'"});}for(const auto& field:fit->second)if(seen.find(field.first)==seen.end()&&!is_private_field(expr.text,field.first))result.diagnostics.push_back(Diagnostic{expr.span,"missing field '"+field.first+"' for struct "+expr.text});}
+            auto fit=struct_fields_.find(expr.text);if(fit!=struct_fields_.end()){std::unordered_set<std::string> seen;for(std::size_t i=0;i<expr.names.size();++i){auto field=fit->second.find(expr.names[i]);if(field==fit->second.end()){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"unknown field '"+expr.names[i]+"' for struct "+expr.text});continue;}if(!field_private_owner(expr.text,expr.names[i]).empty()){result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"private field '"+expr.names[i]+"' is not accessible here\nhelp: construct "+expr.text+" through a public factory method or a struct literal that omits private fields"});continue;}if(!seen.insert(expr.names[i]).second)result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"duplicate struct field '"+expr.names[i]+"'"});auto value=infer_expression(result,*expr.arguments[i]);auto dest=resolve_type(field->second);if(value.valid()&&dest.valid()&&!compatible(value,dest))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"incompatible value for field '"+expr.names[i]+"'"});}for(const auto& field:fit->second)if(seen.find(field.first)==seen.end()&&field_private_owner(expr.text,field.first).empty())result.diagnostics.push_back(Diagnostic{expr.span,"missing field '"+field.first+"' for struct "+expr.text});}
             return {TypeKind::named,0,expr.text};
         }
         case Expr::Kind::identifier: {
@@ -236,7 +258,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if(expr.text=="out"||expr.text=="err") return {TypeKind::named,0,"ostream"};
             if(expr.text=="endl") return {TypeKind::named,0,"opaque"};
             auto* symbol = lookup(expr.text, SymbolNamespace::value);
-            if (symbol) return resolve_type(symbol->type_name);
+            if (symbol) {
+                if(!current_struct_owner_.empty()){const auto private_owner=field_private_owner(current_struct_owner_,expr.text);if(!private_owner.empty()&&private_owner!=current_struct_owner_){result.diagnostics.push_back(Diagnostic{expr.span,"private field '"+expr.text+"' is not accessible here\nhelp: expose '"+expr.text+"' through a public method of "+private_owner});}}
+                return resolve_type(symbol->type_name);
+            }
             if (auto* fn=lookup(expr.text,SymbolNamespace::function)) return {TypeKind::named,0,fn->type_name};
             result.diagnostics.push_back(Diagnostic{expr.span, "unknown value '" + expr.text + "'"});
             return {};
@@ -286,7 +311,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                     for(const auto& generic:generics)if(bindings.find(generic)==bindings.end())ok=false;
                     if(ok)viable.emplace_back(candidate,std::move(bindings),std::move(generics),rank);
                 }
-                if(!viable.empty()){std::sort(viable.begin(),viable.end(),[](const auto& a,const auto& b){return std::get<3>(a)<std::get<3>(b);});if(viable.size()>1&&std::get<3>(viable[0])==std::get<3>(viable[1])){std::string message="ambiguous call to '"+expr.left->text+"'; viable candidates:";for(const auto& item:viable)message+="\n  "+function_signature(*std::get<0>(item));result.diagnostics.push_back(Diagnostic{expr.span,std::move(message)});}selected=std::get<0>(viable[0]);selected_bindings=std::get<1>(viable[0]);selected_generics=std::get<2>(viable[0]);}
+                if(!viable.empty()){std::sort(viable.begin(),viable.end(),[](const auto& a,const auto& b){return std::get<3>(a)<std::get<3>(b);});if(viable.size()>1&&std::get<3>(viable[0])==std::get<3>(viable[1])){std::string message="ambiguous call to '"+expr.left->text+"'; viable candidates:";for(const auto& item:viable)message+="\n  "+function_signature(*std::get<0>(item));result.diagnostics.push_back(Diagnostic{expr.span,std::move(message)});}selected=std::get<0>(viable[0]);selected_bindings=std::get<1>(viable[0]);selected_generics=std::get<2>(viable[0]);if(selected&&!selected->owner.empty()&&selected->is_private&&current_struct_owner_!=selected->owner){result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+expr.left->text+"' is not accessible here\nhelp: expose '"+expr.left->text+"' through a public wrapper method of "+selected->owner});}}
             }}
             if(expr.left&&expr.left->kind==Expr::Kind::member&&expr.left->left&&expr.left->left->kind==Expr::Kind::identifier&&expr.left->left->text=="json"){
                 if(expr.left->text=="parse"||expr.left->text=="encode")return builtin_type("json");
@@ -325,7 +350,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(base.name.rfind("deque<",0)==0||base.name.rfind("list<",0)==0){auto elem=base.name.rfind("deque<",0)==0?container_elem("deque<"):container_elem("list<");if(m=="push"||m=="pop"||m=="push_front"||m=="pop_front")return {TypeKind::void_type,0,"void"};if(m=="front"||m=="back")return resolve_type(elem);if(m=="length")return builtin_type("int");if(m=="empty")return builtin_type("bool");}
                 if(base.name.rfind("map<",0)==0||base.name.rfind("ordered_map<",0)==0){if(m=="contains")return builtin_type("bool");if(m=="length")return builtin_type("int");if(m=="remove"||m=="insert")return {TypeKind::void_type,0,"void"};}
                 if(m=="count_by"||m=="index_by") require_module(result,"map",expr.span,m);
-                std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort"||m=="reserve")return {TypeKind::void_type,0,"void"};if(is_private_method(strip_nullable(base.name),m)&&current_struct_owner_!=strip_nullable(base.name))result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+m+"' is not accessible here\nhelp: expose '"+m+"' through a public wrapper method of "+strip_nullable(base.name)});auto mf=function_candidates_.find(m);if(mf!=function_candidates_.end())for(const auto* candidate:mf->second)if(candidate->owner==strip_nullable(base.name)&&candidate->parameters.size()==expr.arguments.size()){if(candidate->return_type)return resolve_type(candidate->is_async?"future<"+candidate->return_type->name+">":candidate->return_type->name);break;}}
+                std::string elem="opaque";if(base.name.size()>2&&base.name.compare(base.name.size()-2,2,"[]")==0)elem=base.name.substr(0,base.name.size()-2);if(m=="lock" && base.name.rfind("weak_ptr<",0)==0)return {TypeKind::named,0,"ptr<"+generic_inner(base.name,"weak_ptr<")+">"};if(m=="expired" && base.name.rfind("weak_ptr<",0)==0)return builtin_type("bool");if(m=="filter")return base;if(m=="map")return {TypeKind::named,0,"opaque[]"};if(m=="reduce")return resolve_type(elem);if(m=="any"||m=="all")return builtin_type("bool");if(m=="find")return {TypeKind::named,0,elem+"?"};if(m=="count")return builtin_type("int");if(m=="sort"||m=="reserve")return {TypeKind::void_type,0,"void"};{std::string receiver_owner=strip_nullable(base.name);const auto rk=type_node(base.id).kind;if(rk==TypeNodeKind::reference||rk==TypeNodeKind::safe_pointer||rk==TypeNodeKind::raw_pointer)receiver_owner=type_spelling(type_element(base.id));if(type_is(intern_type(receiver_owner),TypeNodeKind::const_type))receiver_owner=type_spelling(type_element(intern_type(receiver_owner)));const std::string method_name=m.rfind("->",0)==0?m.substr(2):m;const auto method_owner=method_private_owner(receiver_owner,method_name);if(!method_owner.empty()&&current_struct_owner_!=method_owner)result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+method_name+"' is not accessible here\nhelp: expose '"+method_name+"' through a public wrapper method of "+method_owner});auto mf=function_candidates_.find(m);if(mf!=function_candidates_.end())for(const auto* candidate:mf->second)if(candidate->owner==receiver_owner&&candidate->parameters.size()==expr.arguments.size()){if(candidate->return_type)return resolve_type(candidate->is_async?"future<"+candidate->return_type->name+">":candidate->return_type->name);break;}}}
             if (expr.left && expr.left->kind == Expr::Kind::identifier) {
                 const auto& name = expr.left->text;
                 if(name=="new"){if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"new(...) requires exactly one argument"});return {};}auto t=infer_expression(result,*expr.arguments[0]);return {TypeKind::named,0,"ptr<"+t.name+">"};}
@@ -377,9 +402,14 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (const auto* callable=api_callable(name);callable&&!callable->overloads.empty())return resolve_type(type_spelling(callable->overloads.front().return_type));
                 if(selected&&selected->return_type){auto inferred=type_spelling(substitute_type(selected->return_type->type_id,selected_generics,selected_bindings));auto resolved=resolve_type(selected->is_async?"future<"+inferred+">":inferred);expr.inferred_type=resolved.id;return resolved;}
-                if (auto* fn = lookup(name, SymbolNamespace::function)) return resolve_type(function_return(fn->type_name));
+                if (auto* fn = lookup(name, SymbolNamespace::function)) {
+                    if(!current_struct_owner_.empty()&&!fn->owner.empty()&&is_private_method(fn->owner,name)&&current_struct_owner_!=fn->owner){result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+name+"' is not accessible here\nhelp: expose '"+name+"' through a public wrapper method of "+fn->owner});}
+                    else if(!current_struct_owner_.empty()&&fn->owner.empty()&&private_methods_.find(current_struct_owner_)!=private_methods_.end()&&private_methods_.at(current_struct_owner_).find(name)!=private_methods_.at(current_struct_owner_).end()){result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+name+"' is not accessible here\nhelp: expose '"+name+"' through a public wrapper method of "+current_struct_owner_});}
+                    return resolve_type(function_return(fn->type_name));
+                }
                 if (auto* value = lookup(name, SymbolNamespace::value)) { if(value->type_name.rfind("function<(",0)==0) return resolve_type(function_return(value->type_name)); if(value->type_name=="async_function") return {TypeKind::named,0,"future<opaque>"}; }
             }
+            if(expr.left&&expr.left->kind==Expr::Kind::identifier&&!current_struct_owner_.empty()){const auto& call_name=expr.left->text;auto mo=struct_method_owners_.find(current_struct_owner_);if(mo!=struct_method_owners_.end()){auto m=mo->second.find(call_name);if(m!=mo->second.end()&&is_private_method(m->second,call_name)&&current_struct_owner_!=m->second)result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+call_name+"' is not accessible here\nhelp: expose '"+call_name+"' through a public wrapper method of "+m->second});}}
             return {TypeKind::named, 0, "opaque"};
         }
         case Expr::Kind::lambda: {
@@ -396,13 +426,13 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             const std::string member=arrow?expr.text.substr(2):expr.text;
             const auto base_kind=type_node(base.id).kind;
             if(arrow){const bool raw=base_kind==TypeNodeKind::raw_pointer;const bool safe=base_kind==TypeNodeKind::safe_pointer;if(!raw&&!safe)result.diagnostics.push_back(Diagnostic{expr.span,"-> member access requires T* or unsafe ptr<T>"});if(raw&&unsafe_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"ptr<T> member access requires unsafe block"});}
-            TypeId owner_id=base.id;if(base_kind==TypeNodeKind::reference||base_kind==TypeNodeKind::safe_pointer||base_kind==TypeNodeKind::raw_pointer)owner_id=type_element(owner_id);if(type_is(owner_id,TypeNodeKind::const_type))owner_id=type_element(owner_id);auto owner=type_spelling(owner_id);if(const auto* field=api_field(member,owner)){satisfy_type_modules(type_spelling(field->type));return resolve_type(type_spelling(field->type));}auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end()){if(is_private_field(owner,member)&&current_struct_owner_!=owner)result.diagnostics.push_back(Diagnostic{expr.span,"private field '"+member+"' is not accessible here\nhelp: expose '"+member+"' through a public method of "+owner});return resolve_type(f->second);}}
+            TypeId owner_id=base.id;if(base_kind==TypeNodeKind::reference||base_kind==TypeNodeKind::safe_pointer||base_kind==TypeNodeKind::raw_pointer)owner_id=type_element(owner_id);if(type_is(owner_id,TypeNodeKind::const_type))owner_id=type_element(owner_id);auto owner=type_spelling(owner_id);if(const auto* field=api_field(member,owner)){satisfy_type_modules(type_spelling(field->type));return resolve_type(type_spelling(field->type));}auto sit=struct_fields_.find(owner);if(sit!=struct_fields_.end()){auto f=sit->second.find(member);if(f!=sit->second.end()){const auto private_owner=field_private_owner(owner,member);if(!private_owner.empty()&&current_struct_owner_!=private_owner)result.diagnostics.push_back(Diagnostic{expr.span,"private field '"+member+"' is not accessible here\nhelp: expose '"+member+"' through a public method of "+private_owner});return resolve_type(f->second);}}
             return {TypeKind::named,0,"opaque"};
         }
         case Expr::Kind::safe_member: {
             auto base=infer_expression(result,*expr.left);
             if (!type_is(base.id,TypeNodeKind::nullable)) result.diagnostics.push_back(Diagnostic{expr.span,"?. requires a nullable value"});
-            auto sit=struct_fields_.find(type_spelling(type_element(base.id)));if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end()){const std::string owner=type_spelling(type_element(base.id));if(is_private_field(owner,expr.text)&&current_struct_owner_!=owner)result.diagnostics.push_back(Diagnostic{expr.span,"private field '"+expr.text+"' is not accessible here\nhelp: expose '"+expr.text+"' through a public method of "+owner});auto t=resolve_type(f->second);return type_is(t.id,TypeNodeKind::nullable)?t:resolve_type(type_spelling(t.id)+"?");}}
+            auto sit=struct_fields_.find(type_spelling(type_element(base.id)));if(sit!=struct_fields_.end()){auto f=sit->second.find(expr.text);if(f!=sit->second.end()){const std::string owner=type_spelling(type_element(base.id));const auto private_owner=field_private_owner(owner,expr.text);if(!private_owner.empty()&&current_struct_owner_!=private_owner)result.diagnostics.push_back(Diagnostic{expr.span,"private field '"+expr.text+"' is not accessible here\nhelp: expose '"+expr.text+"' through a public method of "+private_owner});auto t=resolve_type(f->second);return type_is(t.id,TypeNodeKind::nullable)?t:resolve_type(type_spelling(t.id)+"?");}}
             return {TypeKind::named,0,"opaque?"};
         }
         case Expr::Kind::index: {
@@ -513,11 +543,15 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
         case Stmt::Kind::struct_decl: {
             declare(result, Symbol{st.name, SymbolNamespace::type, st.span, true, st.name});
             auto& fields=struct_fields_[st.name];
+            auto& field_owners=struct_field_owners_[st.name];
             int data_bases=0;
-            for(const auto& base:st.bases){auto b=struct_fields_.find(base);if(b==struct_fields_.end()&&abstract_methods_.find(base)==abstract_methods_.end()){result.diagnostics.push_back(Diagnostic{st.span,"unknown base struct '"+base+"'"});continue;}if(b!=struct_fields_.end()&&!b->second.empty()){++data_bases;for(const auto& f:b->second)fields.emplace(f.first,f.second);}}
+            for(const auto& base:st.bases){auto b=struct_fields_.find(base);if(b==struct_fields_.end()&&abstract_methods_.find(base)==abstract_methods_.end()){result.diagnostics.push_back(Diagnostic{st.span,"unknown base struct '"+base+"'"});continue;}if(b!=struct_fields_.end()&&!b->second.empty()){++data_bases;auto bo=struct_field_owners_.find(base);for(const auto& f:b->second){fields.emplace(f.first,f.second);if(bo!=struct_field_owners_.end()&&bo->second.find(f.first)!=bo->second.end())field_owners.emplace(f.first,bo->second[f.first]);else field_owners.emplace(f.first,base);}}}
             if(data_bases>1)result.diagnostics.push_back(Diagnostic{st.span,"multiple data-bearing base structs are not supported; use one concrete base plus contracts"});
-            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else {auto ft=resolved_type_name(field.type.name);if(ft.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{field.span,"T& struct fields require lifetime proof and are not yet allowed"});fields[field.name]=ft;if(field.is_private)private_fields_[st.name].insert(field.name);}}
+            for(const auto& field:st.fields){if(fields.find(field.name)!=fields.end())result.diagnostics.push_back(Diagnostic{field.span,"duplicate field '"+field.name+"'"});else {auto ft=resolved_type_name(field.type.name);if(ft.rfind("ref<",0)==0)result.diagnostics.push_back(Diagnostic{field.span,"T& struct fields require lifetime proof and are not yet allowed"});fields[field.name]=ft;field_owners[field.name]=st.name;if(field.is_private)private_fields_[st.name].insert(field.name);}}
             std::unordered_set<std::string> own_methods; for(const auto& method:st.body)if(!own_methods.insert(method->name).second)result.diagnostics.push_back(Diagnostic{method->span,"duplicate/conflicting method declaration '"+method->name+"' in struct "+st.name});
+            auto& method_owners=struct_method_owners_[st.name];
+            for(const auto& base:st.bases){auto mo=struct_method_owners_.find(base);if(mo!=struct_method_owners_.end())for(const auto& m:mo->second)method_owners.emplace(m.first,m.second);}
+            for(const auto& method:st.body)method_owners[method->name]=st.name;
             const auto previous_owner=current_struct_owner_;current_struct_owner_=st.name;
             for(const auto& method:st.body){if(method->is_private)private_methods_[st.name].insert(method->name);push_scope();declare(result,Symbol{"this",SymbolNamespace::value,method->span,true,st.name});for(const auto& field:fields)declare(result,Symbol{field.first,SymbolNamespace::value,method->span,false,resolved_type_name(field.second)});for(const auto& param:method->parameters)declare(result,Symbol{param.name,SymbolNamespace::value,param.span,param.type.is_const,resolved_type_name(param.type.name)});if(method->has_body)analyze_statements(result,method->body,false);pop_scope();}
             current_struct_owner_=previous_owner;
@@ -531,7 +565,7 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
             break;
         }
         case Stmt::Kind::function_decl: {
-            if(!lookup(st.name,SymbolNamespace::function))declare(result, Symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)});
+            if(!lookup(st.name,SymbolNamespace::function)){Symbol method_symbol{st.name, SymbolNamespace::function, st.span, true, function_signature(st)};method_symbol.owner=st.owner;declare(result, method_symbol);}
             if(st.name=="main"&&st.owner.empty()){
                 const std::string result_type=st.return_type?resolved_type_name(st.return_type->name):"void";
                 const bool params_ok=st.parameters.empty()||(st.parameters.size()==2&&resolved_type_name(st.parameters[0].type.name)=="string"&&resolved_type_name(st.parameters[1].type.name)=="string[]");
