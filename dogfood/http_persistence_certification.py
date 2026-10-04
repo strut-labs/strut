@@ -105,16 +105,18 @@ def source(port, tls=False):
     app.timeouts(1000, 1000, 200, 500);
     app.limits(4096, 8192, 32, 8);
     app.get("/one", (http_request request) => {{ return http_text("one"); }});
-    app.get("/slow", (http_request request) => {{ sleep_ms(100); return http_text("slow"); }});
+    app.get("/slow", (http_request request) => {{ try {{ sleep_ms(100); }} catch (TimeError err) {{ }} return http_text("slow"); }});
     app.post("/echo", (http_request request) => {{ return http_text(request.body); }});
     app.get_stream("/chunk", (http_request request, http_response_writer response) => {{
-        response.write("chunk-"); response.write("body");
+        try {{ response.write("chunk-"); response.write("body"); }} catch (NetworkError err) {{ }}
     }});
     app.post_request_stream("/consume", (http_request request, http_request_body body, http_response_writer response) => {{
-        data := body.read_all_bytes(); response.content_length(data.length()); response.write_bytes(data);
+        try {{
+            data := body.read_all_bytes(); response.content_length(data.length()); response.write_bytes(data);
+        }} catch (NetworkError err) {{ }}
     }});
     app.post_request_stream("/partial", (http_request request, http_request_body body, http_response_writer response) => {{
-        response.write_bytes(body.read_bytes(1));
+        try {{ response.write_bytes(body.read_bytes(1)); }} catch (NetworkError err) {{ }}
     }});
     app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     {listen}

@@ -178,7 +178,7 @@ def main():
     app.get("/health", (http_request request) => { return http_text("ok"); });
     int count := 0;
     while (count < 20) {
-        listener := thread(() => { app.listen("127.0.0.1", %d); });
+        listener := thread(() => { try { app.listen("127.0.0.1", %d); } catch (NetworkError e) { } });
         while (!app.running()) { sleep_ms(1); }
         response := http_get("http://127.0.0.1:%d/health");
         if (response.status != 200 || response.body != "ok") { return 2; }

@@ -117,15 +117,14 @@ function main() -> int : (NetworkError, PolicyError) {{
     app := http_server();
     app.websocket("/ws/:id", (http_request request, websocket socket) => {{
         println(request.params["id"]);
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         return;
     }});
     app.websocket("/visible", (http_request request, websocket socket) => {{
         copy := socket;
         println(request.headers["origin"]);
         println(request.headers["sec-websocket-protocol"]);
-        socket.accept("chat");
-        copy.accept("chat");
+        try {{ socket.accept("chat"); copy.accept("chat"); }} catch (NetworkError e) {{ }}
         return;
     }});
     app.websocket("/reject", (http_request request, websocket socket) => {{
@@ -133,33 +132,40 @@ function main() -> int : (NetworkError, PolicyError) {{
         copy := socket;
         return;
     }});
-    app.websocket("/error", (http_request request, websocket socket) => {{
-        token := request.cancellation;
-        copy := socket;
-        throw PolicyError {{ message: "denied" }};
-    }});
-    app.websocket("/invalid-select", (http_request request, websocket socket) => {{
-        token := request.cancellation;
-        socket.accept("not-offered");
-        return;
-    }});
-    app.websocket("/after-error", (http_request request, websocket socket) => {{
-        token := request.cancellation;
-        socket.accept();
-        throw PolicyError {{ message: "after commit" }};
-        return;
-    }});
-    app.websocket("/reaccept", (http_request request, websocket socket) => {{
-        token := request.cancellation;
-        socket.accept("chat");
-        socket.accept("superchat");
-        println("bad-reaccept");
-        return;
-    }});
+    try {{
+        app.websocket("/error", (http_request request, websocket socket) => {{
+            token := request.cancellation;
+            copy := socket;
+            throw PolicyError {{ message: "denied" }};
+        }});
+    }} catch {{ }}
+    try {{
+        app.websocket("/invalid-select", (http_request request, websocket socket) => {{
+            token := request.cancellation;
+            socket.accept("not-offered");
+            return;
+        }});
+    }} catch {{ }}
+    try {{
+        app.websocket("/after-error", (http_request request, websocket socket) => {{
+            token := request.cancellation;
+            socket.accept();
+            throw PolicyError {{ message: "after commit" }};
+            return;
+        }});
+    }} catch {{ }}
+    try {{
+        app.websocket("/reaccept", (http_request request, websocket socket) => {{
+            token := request.cancellation;
+            socket.accept("chat");
+            socket.accept("superchat");
+            println("bad-reaccept");
+            return;
+        }});
+    }} catch {{ }}
     app.websocket("/escape", (http_request request, websocket socket) => {{
         token := request.cancellation;
-        *escaped = socket;
-        socket.accept();
+        try {{ *escaped = socket; socket.accept(); }} catch (NetworkError e) {{ }}
         return;
     }});
     app.get("/http", (http_request request) => {{ return http_text("http"); }});
@@ -265,7 +271,7 @@ function main() -> int : (NetworkError, PolicyError) {{
     app := http_server();
     app.websocket("/ws", (http_request request, websocket socket) => {{
         token := request.cancellation;
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         return;
     }});
     app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], 1);
@@ -293,13 +299,15 @@ function main() -> int : (NetworkError, PolicyError) {{
         stop_source = f"""function main() -> int : (NetworkError, ThreadError, TimeError, CancellationError) {{
     app := http_server();
     app.timeouts(3000, 3000, 3000, 1000);
-    app.websocket("/wait", (http_request request, websocket socket) => {{
-        socket.accept();
-        request.cancellation.wait();
-        request.cancellation.throw_if_cancelled();
-        return;
-    }});
-    listener := thread(() => {{ app.listen("127.0.0.1", {stop_port}); }});
+    try {{
+        app.websocket("/wait", (http_request request, websocket socket) => {{
+            socket.accept();
+            request.cancellation.wait();
+            request.cancellation.throw_if_cancelled();
+            return;
+        }});
+    }} catch {{ }}
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {stop_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(5); }}
     sleep_ms(1500);
     app.stop();
@@ -324,12 +332,14 @@ function main() -> int : (NetworkError, PolicyError) {{
         race_source = f"""function main() -> int : (NetworkError, ThreadError, TimeError) {{
     app := http_server();
     app.timeouts(3000, 3000, 3000, 1000);
-    app.websocket("/race", (http_request request, websocket socket) => {{
-        request.cancellation.wait();
-        socket.accept();
-        return;
-    }});
-    listener := thread(() => {{ app.listen("127.0.0.1", {race_port}); }});
+    try {{
+        app.websocket("/race", (http_request request, websocket socket) => {{
+            request.cancellation.wait();
+            socket.accept();
+            return;
+        }});
+    }} catch {{ }}
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {race_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(5); }}
     sleep_ms(1500);
     app.stop();
@@ -355,7 +365,7 @@ function main() -> int : (NetworkError, PolicyError) {{
     app := http_server();
     app.websocket("/ws", (http_request request, websocket socket) => {{
         token := request.cancellation;
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         return;
     }});
     app.listen("127.0.0.1", {first}, 1);

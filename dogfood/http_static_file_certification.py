@@ -31,43 +31,54 @@ def source(port, asset, empty, large, unicode_asset, directory, tls=False):
     app_ref := ref(app);
     app.timeouts(1000, 1000, 1000, 500);
     app.get_stream("/file", (http_request request, http_response_writer writer) => {{
-        http_serve_file(request, writer, "{asset}");
+        try {{ http_serve_file(request, writer, "{asset}"); }} catch (FilesystemError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/custom", (http_request request, http_response_writer writer) => {{
-        http_serve_file(request, writer, "{asset}", "application/x-strut-test");
+        try {{ http_serve_file(request, writer, "{asset}", "application/x-strut-test"); }} catch (FilesystemError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/empty", (http_request request, http_response_writer writer) => {{
-        http_serve_file(request, writer, "{empty}");
+        try {{ http_serve_file(request, writer, "{empty}"); }} catch (FilesystemError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/large", (http_request request, http_response_writer writer) => {{
-        http_serve_file(request, writer, "{large}");
+        try {{ http_serve_file(request, writer, "{large}"); }} catch (FilesystemError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/unicode", (http_request request, http_response_writer writer) => {{
-        http_serve_file(request, writer, "{unicode_asset}");
+        try {{ http_serve_file(request, writer, "{unicode_asset}"); }} catch (FilesystemError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/status", (http_request request, http_response_writer writer) => {{
-        writer.status(404); http_serve_file(request, writer, "{asset}");
+        try {{ writer.status(404); http_serve_file(request, writer, "{asset}"); }} catch (FilesystemError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/directory", (http_request request, http_response_writer writer) => {{
-        try {{ http_serve_file(request, writer, "{directory}"); }}
-        catch (FilesystemError err) {{ writer.content_length(11); writer.write("not-regular"); }}
+        try {{
+            try {{ http_serve_file(request, writer, "{directory}"); }}
+            catch (FilesystemError err) {{ writer.content_length(11); writer.write("not-regular"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/nul", (http_request request, http_response_writer writer) => {{
         bytes nul := [0];
-        try {{ http_serve_file(request, writer, nul.to_string()); }}
-        catch (FilesystemError err) {{ writer.content_length(8); writer.write("bad-path"); }}
+        try {{
+            try {{ http_serve_file(request, writer, nul.to_string()); }}
+            catch (FilesystemError err) {{ writer.content_length(8); writer.write("bad-path"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/invalid-utf8", (http_request request, http_response_writer writer) => {{
         bytes invalid := [255];
-        try {{ http_serve_file(request, writer, invalid.to_string()); }}
-        catch (FilesystemError err) {{ writer.content_length(8); writer.write("bad-path"); }}
+        try {{
+            try {{ http_serve_file(request, writer, invalid.to_string()); }}
+            catch (FilesystemError err) {{ writer.content_length(8); writer.write("bad-path"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/missing", (http_request request, http_response_writer writer) => {{
-        try {{ http_serve_file(request, writer, "{asset}.missing"); }}
-        catch (FilesystemError err) {{ writer.content_length(7); writer.write("missing"); }}
+        try {{
+            try {{ http_serve_file(request, writer, "{asset}.missing"); }}
+            catch (FilesystemError err) {{ writer.content_length(7); writer.write("missing"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/cancel", (http_request request, http_response_writer writer) => {{
-        app_ref->stop(); http_serve_file(request, writer, "{large}");
+        app_ref->stop();
+        try {{ http_serve_file(request, writer, "{large}"); }}
+        catch (NetworkError err) {{ try {{ writer.content_length(1); }} catch (NetworkError err2) {{ }} }}
+        catch (FilesystemError err) {{ }}
     }});
     {listen}
     {suffix}

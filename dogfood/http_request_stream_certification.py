@@ -70,44 +70,58 @@ function main() -> void : (NetworkError, TimeError) {{
     app.timeouts(2000, 2000, 2000, 500);
     app.limits(32, 4096, 32, 4);
     app.post_request_stream("/echo", (http_request request, http_request_body body, http_response_writer response) => {{
-        response.write_bytes(body.read_all_bytes());
+        try {{ response.write_bytes(body.read_all_bytes()); }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/consume", (http_request request, http_request_body body, http_response_writer response) => {{
-        data := body.read_all_bytes();
-        response.content_length(data.length());
-        response.write_bytes(data);
+        try {{
+            data := body.read_all_bytes();
+            response.content_length(data.length());
+            response.write_bytes(data);
+        }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/first", (http_request request, http_request_body body, http_response_writer response) => {{
-        first := body.read_bytes(3);
-        response.content_length(first.length());
-        response.write_bytes(first);
+        try {{
+            first := body.read_bytes(3);
+            response.content_length(first.length());
+            response.write_bytes(first);
+        }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/zero", (http_request request, http_request_body body, http_response_writer response) => {{
-        empty := body.read_bytes(0);
-        if (empty.length() != 0 || body.eof()) {{ response.status(500); }}
-        response.write_bytes(body.read_all_bytes());
+        try {{
+            empty := body.read_bytes(0);
+            if (empty.length() != 0 || body.eof()) {{ response.status(500); }}
+            response.write_bytes(body.read_all_bytes());
+        }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/close", (http_request request, http_request_body body, http_response_writer response) => {{
         body.close();
-        try {{ body.read_bytes(1); }} catch (NetworkError caught) {{
-            if (caught.message != "") {{ response.write("closed"); }}
-        }}
+        try {{
+            try {{ body.read_bytes(1); }} catch (NetworkError caught) {{
+                if (caught.message != "") {{ response.write("closed"); }}
+            }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/unread", (http_request request, http_request_body body, http_response_writer response) => {{
-        response.write("unread");
+        try {{ response.write("unread"); }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/escaped", (http_request request, http_request_body body, http_response_writer response) => {{
-        pending := escaped_read(body);
-        sleep_ms(50);
-        if (pending.valid()) {{ response.write("escaped"); }}
+        try {{
+            pending := escaped_read(body);
+            sleep_ms(50);
+            if (pending.valid()) {{ response.write("escaped"); }}
+        }} catch (NetworkError caught) {{ }} catch (TimeError caught) {{ }}
     }});
     app.post_request_stream("/close-active", (http_request request, http_request_body body, http_response_writer response) => {{
-        pending := escaped_read(body);
-        sleep_ms(50);
-        body.close();
+        try {{
+            pending := escaped_read(body);
+            sleep_ms(50);
+            body.close();
+        }} catch (NetworkError caught) {{ }} catch (TimeError caught) {{ }}
     }});
     app.post_request_stream("/catch-malformed", (http_request request, http_request_body body, http_response_writer response) => {{
-        try {{ body.read_all_bytes(); }} catch (NetworkError caught) {{ response.write("wrong"); }}
+        try {{
+            try {{ body.read_all_bytes(); }} catch (NetworkError caught) {{ response.write("wrong"); }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.post("/buffered", (http_request request) => {{ return http_text(request.body); }});
     app.get("/health", (http_request request) => {{ return http_text("healthy"); }});
@@ -326,17 +340,21 @@ function main(string command, string[] args) -> int : (NetworkError, TlsError, T
     app := http_server();
     app.limits(32, 4096, 16, 3);
     app.post_request_stream("/echo", (http_request request, http_request_body body, http_response_writer response) => {{
-        response.write_bytes(body.read_all_bytes());
+        try {{ response.write_bytes(body.read_all_bytes()); }} catch (NetworkError caught) {{ }}
     }});
     app.post_request_stream("/escaped", (http_request request, http_request_body body, http_response_writer response) => {{
-        pending := tls_escaped_read(body);
-        sleep_ms(50);
-        if (pending.valid()) {{ response.write("escaped"); }}
+        try {{
+            pending := tls_escaped_read(body);
+            sleep_ms(50);
+            if (pending.valid()) {{ response.write("escaped"); }}
+        }} catch (NetworkError caught) {{ }} catch (TimeError caught) {{ }}
     }});
     app.post_request_stream("/close-active", (http_request request, http_request_body body, http_response_writer response) => {{
-        pending := tls_escaped_read(body);
-        sleep_ms(50);
-        body.close();
+        try {{
+            pending := tls_escaped_read(body);
+            sleep_ms(50);
+            body.close();
+        }} catch (NetworkError caught) {{ }} catch (TimeError caught) {{ }}
     }});
     app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], 4);
     return 0;
@@ -414,7 +432,7 @@ function main(string command, string[] args) -> int : (NetworkError, TlsError, T
     app.timeouts(5000, 5000, 5000, 300);
     app.limits(32, 4096, 16, 3);
     app.post_request_stream("/blocked", (http_request request, http_request_body body, http_response_writer response) => {{
-        response.write_bytes(body.read_bytes(1));
+        try {{ response.write_bytes(body.read_bytes(1)); }} catch (NetworkError caught) {{ }}
     }});
     app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {shutdown_port});

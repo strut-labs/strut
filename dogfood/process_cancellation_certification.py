@@ -69,7 +69,10 @@ def main():
         try {{ first->out.read_bytes(1); first_result.send(false); }}
         catch (ExecError caught) {{ first_result.send(caught.code == 125); }}
     }});
-    second_worker := thread(() => {{ second_result.send(second->out.read_all() == "independent"); }});
+    second_worker := thread(() => {{
+        try {{ second_result.send(second->out.read_all() == "independent"); }}
+        catch (ExecError caught) {{ second_result.send(false); }}
+    }});
     sleep_ms(50);
     first_source.cancel();
     if (!(first_result.receive() ?? false) || !(second_result.receive() ?? false)) {{ return 3; }}

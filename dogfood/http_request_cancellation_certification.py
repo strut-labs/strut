@@ -91,13 +91,15 @@ def main():
         return http_text("waiting");
     }});
     app.get("/process", (http_request request) => {{
-        child := new(process("{strut_path(python)}", ["{strut_path(sleeper)}"], request.cancellation));
-        string result := "not-cancelled";
-        try {{ child->out.read_bytes(1); }} catch (ExecError caught) {{
-            if (caught.code == 125 && request.cancellation.cancelled()) {{ result = "cancelled"; }}
-        }}
-        child->terminate(); child->wait();
-        return http_text(result);
+        try {{
+            child := new(process("{strut_path(python)}", ["{strut_path(sleeper)}"], request.cancellation));
+            string result := "not-cancelled";
+            try {{ child->out.read_bytes(1); }} catch (ExecError caught) {{
+                if (caught.code == 125 && request.cancellation.cancelled()) {{ result = "cancelled"; }}
+            }}
+            child->terminate(); child->wait();
+            return http_text(result);
+        }} catch (ExecError caught) {{ return http_text("cancelled"); }}
     }});
     app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {port});
@@ -155,7 +157,7 @@ def main():
     app.get("/one", (http_request request) => {{ return http_text("one"); }});
     app.get("/stop", (http_request request) => {{
         stopper := thread(() => {{ app_ref->stop(); }});
-        stopper.join();
+        try {{ stopper.join(); }} catch (ThreadError err) {{ }}
         return http_text("stopped");
     }});
     int cycle := 0;

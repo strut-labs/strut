@@ -349,11 +349,14 @@ function main(string command, string[] args) -> int : (NetworkError, WebSocketEr
     app.limits(1048576, 65536, 100, 32);
     app.websocket_limits(16777216, 16777216);
     app.websocket("/denied/:mode", (http_request request, websocket socket) => {{ token := request.cancellation; copy := socket; return; }});
-    app.websocket("/session/:mode", (http_request request, websocket socket) => {{ session(request, socket); return; }});
-    app.websocket("/shutdown", (http_request request, websocket socket) => {{ socket.accept(); shutdown.send(true); return; }});
+    app.websocket("/session/:mode", (http_request request, websocket socket) => {{
+        try {{ session(request, socket); }} catch (NetworkError caught) {{ }} catch (WebSocketError caught) {{ }} catch (PtyError caught) {{ }} catch (ThreadError caught) {{ }}
+        return;
+    }});
+    app.websocket("/shutdown", (http_request request, websocket socket) => {{ try {{ socket.accept(); shutdown.send(true); }} catch (NetworkError caught) {{ }} return; }});
     listener := thread(() => {{
-        if (args[0] == "tls") {{ app.listen_tls("127.0.0.1", {tls_port}, args[1], args[2]); }}
-        else {{ app.listen("127.0.0.1", {plain_port}); }}
+        if (args[0] == "tls") {{ try {{ app.listen_tls("127.0.0.1", {tls_port}, args[1], args[2]); }} catch (NetworkError caught) {{ }} catch (TlsError caught) {{ }} }}
+        else {{ try {{ app.listen("127.0.0.1", {plain_port}); }} catch (NetworkError caught) {{ }} }}
     }});
     shutdown.receive();
     app.stop();

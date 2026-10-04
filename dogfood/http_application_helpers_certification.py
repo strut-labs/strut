@@ -37,15 +37,17 @@ def source(port, tls=False):
     app.timeouts(1000, 1000, 1000, 500);
     app.limits(4096, 8192, 64, 8);
     app.get_stream("/inspect", (http_request request, http_response_writer writer) => {{
-        tags := request.query_values.values("tag");
-        sessions := request.cookies.values("session");
-        empties := request.cookies.values("empty");
-        first := request.cookies.get("session");
-        if (first == null || !request.cookies.has("empty") || request.cookies.has("missing")) {{ writer.write("lookup-error"); return; }}
-        writer.write(tags[0]); writer.write("|"); writer.write(tags[1]); writer.write("|");
-        writer.write(request.query["tag"]); writer.write("|"); writer.write(request.query["empty"]); writer.write("|");
-        writer.write(request.query["plus"]); writer.write("|"); writer.write(request.query["pct"]); writer.write("|");
-        writer.write(sessions[0]); writer.write("|"); writer.write(sessions[1]); writer.write("|"); writer.write(empties[0]);
+        try {{
+            tags := request.query_values.values("tag");
+            sessions := request.cookies.values("session");
+            empties := request.cookies.values("empty");
+            first := request.cookies.get("session");
+            if (first == null || !request.cookies.has("empty") || request.cookies.has("missing")) {{ writer.write("lookup-error"); return; }}
+            writer.write(tags[0]); writer.write("|"); writer.write(tags[1]); writer.write("|");
+            writer.write(request.query["tag"]); writer.write("|"); writer.write(request.query["empty"]); writer.write("|");
+            writer.write(request.query["plus"]); writer.write("|"); writer.write(request.query["pct"]); writer.write("|");
+            writer.write(sessions[0]); writer.write("|"); writer.write(sessions[1]); writer.write("|"); writer.write(empties[0]);
+        }} catch (NetworkError err) {{ }}
     }});
     app.get("/cookies", (http_request request) => {{
         session := http_cookie("warden_session", "abc123");
@@ -62,24 +64,30 @@ def source(port, tls=False):
         return response;
     }});
     app.get_stream("/stream-cookie", (http_request request, http_response_writer writer) => {{
-        value := http_cookie("stream", "yes");
-        value.http_only = true;
-        writer.cookie(value);
-        writer.content_length(6);
-        writer.write("stream");
+        try {{
+            value := http_cookie("stream", "yes");
+            value.http_only = true;
+            writer.cookie(value);
+            writer.content_length(6);
+            writer.write("stream");
+        }} catch (NetworkError err) {{ }}
     }});
     app.post_stream("/form", (http_request request, http_response_writer writer) => {{
         try {{
-            form := request.form();
-            items := form.values("item");
-            if (!form.has("item") || form.has("missing")) {{ writer.write("lookup-error"); return; }}
-            empty := form.values("empty"); bare := form.values("bare"); plus := form.values("plus"); pct := form.values("pct");
-            writer.write(items[0]); writer.write("|"); writer.write(items[1]); writer.write("|"); writer.write(empty[0]); writer.write("|"); writer.write(bare[0]); writer.write("|"); writer.write(plus[0]); writer.write("|"); writer.write(pct[0]);
-        }} catch (HttpError err) {{ writer.write("form-error"); }}
+            try {{
+                form := request.form();
+                items := form.values("item");
+                if (!form.has("item") || form.has("missing")) {{ writer.write("lookup-error"); return; }}
+                empty := form.values("empty"); bare := form.values("bare"); plus := form.values("plus"); pct := form.values("pct");
+                writer.write(items[0]); writer.write("|"); writer.write(items[1]); writer.write("|"); writer.write(empty[0]); writer.write("|"); writer.write(bare[0]); writer.write("|"); writer.write(plus[0]); writer.write("|"); writer.write(pct[0]);
+            }} catch (HttpError err) {{ writer.write("form-error"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.post_stream("/form-limit", (http_request request, http_response_writer writer) => {{
-        try {{ request.form(3); writer.write("unexpected"); }}
-        catch (HttpError err) {{ writer.write("limited"); }}
+        try {{
+            try {{ request.form(3); writer.write("unexpected"); }}
+            catch (HttpError err) {{ writer.write("limited"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.post("/json", (http_request request) => {{
         try {{ value := request.json(); return http_json_response(value); }}
@@ -89,12 +97,14 @@ def source(port, tls=False):
         try {{ return http_text(request.text()); }} catch (HttpError err) {{ return http_text("text-error"); }}
     }});
     app.post_request_stream("/stream-conflict", (http_request request, http_request_body body, http_response_writer writer) => {{
-        ignored := body.read_bytes(1);
-        result := "unexpected";
-        try {{ request.text(); }} catch (HttpError err) {{ result = "conflict"; }}
-        body.close();
-        writer.content_length(result.length());
-        writer.write(result);
+        try {{
+            ignored := body.read_bytes(1);
+            result := "unexpected";
+            try {{ request.text(); }} catch (HttpError err) {{ result = "conflict"; }}
+            body.close();
+            writer.content_length(result.length());
+            writer.write(result);
+        }} catch (NetworkError err) {{ }}
     }});
     app.get("/redirect", (http_request request) => {{
         try {{ return http_redirect("/target", 303); }}
@@ -140,10 +150,16 @@ def source(port, tls=False):
         cookie := http_cookie("x", "{value_4095}"); response := http_text("unsafe"); response.cookies = [cookie]; return response;
     }});
     app.get_stream("/bad-stream-cookie", (http_request request, http_response_writer writer) => {{
-        cookie := http_cookie("bad name", "value"); writer.cookie(cookie); writer.write("unsafe");
+        try {{
+            cookie := http_cookie("bad name", "value"); writer.cookie(cookie); writer.write("unsafe");
+        }} catch (NetworkError err) {{
+            try {{ writer.header("Bad Name", "value"); }} catch (NetworkError err2) {{ }}
+        }}
     }});
     app.post_stream("/text-negative", (http_request request, http_response_writer writer) => {{
-        try {{ request.text(-1); writer.write("unexpected"); }} catch (HttpError err) {{ writer.write("limited"); }}
+        try {{
+            try {{ request.text(-1); writer.write("unexpected"); }} catch (HttpError err) {{ writer.write("limited"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get("/health", (http_request request) => {{ return http_text("ok"); }});
     app.get("/cookie-count", (http_request request) => {{ return http_text("ok"); }});

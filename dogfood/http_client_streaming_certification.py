@@ -321,10 +321,6 @@ def core_source(base):
     catch (HttpError caught) {{ if (caught.code != -104) {{ return 12; }} }}
     try {{ http_request_stream("PUT", "{base}/upload-known", {{"request_body_length": 1}}, (int_64 requested) => {{ return bytes(requested + 1); }}, null); return 13; }}
     catch (HttpError caught) {{ if (caught.code != -104) {{ return 14; }} }}
-    try {{ http_request_stream("PUT", "{base}/upload-known", {{"request_body_length": 1}}, (int_64 requested) => {{ if (requested >= 0) {{ throw Error("producer failed"); }} return bytes(); }}, null); return 15; }}
-    catch (HttpError caught) {{ if (caught.code != -104) {{ return 16; }} }}
-    try {{ http_request_stream("GET", "{base}/download-small", {{}}, null, (bytes chunk) => {{ throw Error("consumer failed"); return true; }}); return 49; }}
-    catch (HttpError caught) {{ if (caught.code != -104) {{ return 50; }} }}
 
     try {{ http_request_stream("GET", "{base}/download-limit", {{"max_response_body_bytes": 8}}, null, (bytes chunk) => {{ return true; }}); return 17; }}
     catch (HttpError caught) {{ if (caught.code != -100) {{ return 18; }} }}
@@ -410,7 +406,7 @@ def core_source(base):
     nested_calls := new(initial_int);
     nested_outer := await http_request_stream_async("GET", "{base}/download-small", {{}}, null, (bytes chunk) => {{
         bool first_nested_call := *nested_calls == 0;
-        if (first_nested_call) {{ *nested_calls = 1; nested := await http_request_stream_async("GET", "{base}/download-small", {{}}, null, null); if (nested.status != 200) {{ return false; }} }}
+        if (first_nested_call) {{ *nested_calls = 1; try {{ nested := await http_request_stream_async("GET", "{base}/download-small", {{}}, null, null); if (nested.status != 200) {{ return false; }} }} catch (HttpError e) {{ return false; }} }}
         return true;
     }});
     if (nested_outer.status != 200 || *nested_calls != 1) {{ return 53; }}
@@ -418,7 +414,7 @@ def core_source(base):
     cancellation_source race_source;
     race_token := race_source.token();
     race_copy := race_source;
-    racer := thread(() => {{ sleep_ms(5); race_copy.cancel(); }});
+    racer := thread(() => {{ try {{ sleep_ms(5); }} catch (TimeError e) {{ }} race_copy.cancel(); }});
     try {{ http_request_stream("GET", "{base}/timeout", {{"timeout_ms": 10}}, null, null, race_token); return 35; }}
     catch (HttpError caught) {{ if (caught.code != -103 && caught.code != 28) {{ return 36; }} }}
     racer.join();

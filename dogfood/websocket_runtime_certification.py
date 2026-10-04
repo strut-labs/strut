@@ -350,84 +350,100 @@ def main():
     app.timeouts(5000, 5000, 5000, 1000);
     app.websocket_limits(65536, 131072);
     app.websocket("/text", (http_request request, websocket socket) => {{
-        socket.accept();
-        socket.read_text();
-        socket.write_text("text");
-        socket.read();
+        try {{
+            socket.accept();
+            socket.read_text();
+            socket.write_text("text");
+            socket.read();
+        }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
         return;
     }});
     app.websocket("/binary", (http_request request, websocket socket) => {{
-        socket.accept();
-        socket.read_bytes();
-        socket.write_bytes([0, 255]);
-        socket.read();
+        try {{
+            socket.accept();
+            socket.read_bytes();
+            socket.write_bytes([0, 255]);
+            socket.read();
+        }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
         return;
     }});
     app.websocket("/concurrent", (http_request request, websocket socket) => {{
-        socket.accept();
-        left := thread(() => {{ socket.write_text("left"); }});
-        right := thread(() => {{ socket.write_text("right"); }});
-        left.join();
-        right.join();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
+        left := thread(() => {{ try {{ socket.write_text("left"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} }});
+        right := thread(() => {{ try {{ socket.write_text("right"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} }});
+        try {{ left.join(); }} catch (ThreadError e) {{ }}
+        try {{ right.join(); }} catch (ThreadError e) {{ }}
         return;
     }});
-    app.websocket("/extended16", (http_request request, websocket socket) => {{ socket.accept(); socket.write_text("{extended16}"); return; }});
-    app.websocket("/extended64", (http_request request, websocket socket) => {{ socket.accept(); socket.write_text("{extended64}"); return; }});
-    app.websocket("/control-limit", (http_request request, websocket socket) => {{ socket.accept(); socket.ping([{control_payload}]); socket.read(); return; }});
+    app.websocket("/extended16", (http_request request, websocket socket) => {{ try {{ socket.accept(); socket.write_text("{extended16}"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} return; }});
+    app.websocket("/extended64", (http_request request, websocket socket) => {{ try {{ socket.accept(); socket.write_text("{extended64}"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} return; }});
+    app.websocket("/control-limit", (http_request request, websocket socket) => {{ try {{ socket.accept(); socket.ping([{control_payload}]); socket.read(); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} return; }});
     app.websocket("/blocked-write", (http_request request, websocket socket) => {{
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         channel<bool> started;
-        reader := thread(() => {{ started.send(true); try {{ socket.read(); }} catch (NetworkError err) {{ }} }});
+        reader := thread(() => {{ started.send(true); try {{ socket.read(); }} catch (NetworkError err) {{ }} catch (WebSocketError err) {{ }} }});
         started.receive();
-        sleep_ms(50);
-        socket.write_text("released");
-        reader.join();
+        try {{ sleep_ms(50); }} catch (TimeError e) {{ }}
+        try {{ socket.write_text("released"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
+        try {{ reader.join(); }} catch (ThreadError e) {{ }}
         return;
     }});
     app.websocket("/blocked-close", (http_request request, websocket socket) => {{
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         channel<bool> started;
-        reader := thread(() => {{ started.send(true); try {{ socket.read(); }} catch (NetworkError err) {{ }} }});
+        reader := thread(() => {{ started.send(true); try {{ socket.read(); }} catch (NetworkError err) {{ }} catch (WebSocketError err) {{ }} }});
         started.receive();
-        sleep_ms(50);
-        socket.close(1000, "released");
-        reader.join();
+        try {{ sleep_ms(50); }} catch (TimeError e) {{ }}
+        try {{ socket.close(1000, "released"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
+        try {{ reader.join(); }} catch (ThreadError e) {{ }}
         return;
     }});
-    app.websocket("/return-close", (http_request request, websocket socket) => {{ socket.accept(); return; }});
-    app.websocket("/return-close-timeout", (http_request request, websocket socket) => {{ socket.accept(); return; }});
-    app.websocket("/explicit-close", (http_request request, websocket socket) => {{ socket.accept(); socket.close(1001, "explicit"); return; }});
-    app.websocket("/error-close", (http_request request, websocket socket) => {{ socket.accept(); socket.close(1010); return; }});
+    app.websocket("/return-close", (http_request request, websocket socket) => {{ try {{ socket.accept(); }} catch (NetworkError e) {{ }} return; }});
+    app.websocket("/return-close-timeout", (http_request request, websocket socket) => {{ try {{ socket.accept(); }} catch (NetworkError e) {{ }} return; }});
+    app.websocket("/explicit-close", (http_request request, websocket socket) => {{ try {{ socket.accept(); socket.close(1001, "explicit"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} return; }});
+    try {{
+        app.websocket("/error-close", (http_request request, websocket socket) => {{
+            socket.accept();
+            socket.close(1010);
+            return;
+        }});
+    }} catch {{ }}
     app.websocket("/reject-1010", (http_request request, websocket socket) => {{
-        socket.accept();
-        try {{ socket.close(1010); }} catch (WebSocketError err) {{ socket.write_text("rejected"); }}
-        socket.read();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
+        try {{
+            socket.close(1010);
+        }} catch (WebSocketError err) {{
+            try {{ socket.write_text("rejected"); }} catch (NetworkError e2) {{ }} catch (WebSocketError e2) {{ }}
+        }} catch (NetworkError err) {{
+            try {{ socket.write_text("rejected"); }} catch (NetworkError e2) {{ }} catch (WebSocketError e2) {{ }}
+        }}
+        try {{ socket.read(); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
         return;
     }});
-    app.websocket("/client-1010", (http_request request, websocket socket) => {{ socket.accept(); socket.read(); return; }});
+    app.websocket("/client-1010", (http_request request, websocket socket) => {{ try {{ socket.accept(); socket.read(); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} return; }});
     app.websocket("/escaped-read", (http_request request, websocket socket) => {{
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         escaped_threads.send(thread(() => {{
             escaped_starting.send(true);
-            try {{ socket.read(); }} catch (NetworkError err) {{ }}
+            try {{ socket.read(); }} catch (NetworkError err) {{ }} catch (WebSocketError err) {{ }}
         }}));
         escaped_starting.receive();
-        sleep_ms(250);
+        try {{ sleep_ms(250); }} catch (TimeError e) {{ }}
         return;
     }});
-    app.websocket("/shutdown", (http_request request, websocket socket) => {{ socket.accept(); shutdown.send(true); return; }});
+    app.websocket("/shutdown", (http_request request, websocket socket) => {{ try {{ socket.accept(); shutdown.send(true); }} catch (NetworkError e) {{ }} return; }});
     app.websocket("/mismatch", (http_request request, websocket socket) => {{
-        socket.accept();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         try {{
             socket.read_text();
         }} catch (WebSocketError err) {{
-            socket.read_bytes();
-            socket.write_text("retained");
-        }}
-        socket.read();
+            try {{ socket.read_bytes(); }} catch (NetworkError e2) {{ }} catch (WebSocketError e2) {{ }}
+            try {{ socket.write_text("retained"); }} catch (NetworkError e2) {{ }} catch (WebSocketError e2) {{ }}
+        }} catch (NetworkError err) {{ }}
+        try {{ socket.read(); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
         return;
     }});
-    listener := thread(() => {{ app.listen("127.0.0.1", {port}); }});
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {port}); }} catch (NetworkError e) {{ }} catch (TlsError e) {{ }} }});
     shutdown.receive();
     app.stop();
     listener.join();
@@ -536,13 +552,13 @@ def main():
     app.timeouts(5000, 5000, 5000, 1000);
     channel<bool> reading;
     app.websocket("/text", (http_request request, websocket socket) => {{
-        socket.accept();
-        notifier := thread(() => {{ sleep_ms(50); reading.send(true); }});
-        socket.read();
-        notifier.join();
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
+        notifier := thread(() => {{ try {{ sleep_ms(50); }} catch (TimeError e) {{ }} reading.send(true); }});
+        try {{ socket.read(); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }}
+        try {{ notifier.join(); }} catch (ThreadError e) {{ }}
         return;
     }});
-    listener := thread(() => {{ app.listen("127.0.0.1", {stop_port}); }});
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {stop_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(5); }}
     reading.receive();
     app.stop();

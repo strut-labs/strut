@@ -40,34 +40,45 @@ def source(port, tls=False):
     app_ref := ref(app);
     app.timeouts(1000, 1000, 1000, 500);
     app.get_stream("/records", (http_request request, http_response_writer writer) => {{
-        http_write_ndjson(request, writer, {{"index": 1, "text": "line\\none"}});
-        http_write_ndjson(request, writer, {{"index": 2, "ok": true}});
-        http_write_ndjson(request, writer, {{"index": 3, "value": null}});
+        try {{
+            http_write_ndjson(request, writer, {{"index": 1, "text": "line\\none"}});
+            http_write_ndjson(request, writer, {{"index": 2, "ok": true}});
+            http_write_ndjson(request, writer, {{"index": 3, "value": null}});
+        }} catch (HttpError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/prompt", (http_request request, http_response_writer writer) => {{
-        http_write_ndjson(request, writer, {{"phase": "first"}});
-        sleep_ms(1500);
-        http_write_ndjson(request, writer, {{"phase": "second"}});
+        try {{
+            http_write_ndjson(request, writer, {{"phase": "first"}});
+            sleep_ms(1500);
+            http_write_ndjson(request, writer, {{"phase": "second"}});
+        }} catch (HttpError err) {{ }} catch (NetworkError err) {{ }} catch (TimeError err) {{ }}
     }});
     app.get_stream("/many", (http_request request, http_response_writer writer) => {{
-        for (round : [{rounds}]) {{
-            http_write_ndjson(request, writer, {{"round": round, "payload": "{payload}"}});
-        }}
+        try {{
+            for (round : [{rounds}]) {{
+                http_write_ndjson(request, writer, {{"round": round, "payload": "{payload}"}});
+            }}
+        }} catch (HttpError err) {{ }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/invalid-utf8", (http_request request, http_response_writer writer) => {{
         bytes invalid := [255];
-        try {{ http_write_ndjson(request, writer, {{"value": invalid.to_string()}}); }}
-        catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
+        try {{
+            try {{ http_write_ndjson(request, writer, {{"value": invalid.to_string()}}); }}
+            catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/invalid-number", (http_request request, http_response_writer writer) => {{
         zero := 0.0;
-        try {{ http_write_ndjson(request, writer, {{"value": 0.0 / zero}}); }}
-        catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
+        try {{
+            try {{ http_write_ndjson(request, writer, {{"value": 0.0 / zero}}); }}
+            catch (HttpError err) {{ writer.content_length(7); writer.write("invalid"); }}
+        }} catch (NetworkError err) {{ }}
     }});
     app.get_stream("/cancel", (http_request request, http_response_writer writer) => {{
         app_ref->stop();
         try {{ http_write_ndjson(request, writer, {{"unexpected": true}}); }}
         catch (NetworkError err) {{ return; }}
+        catch (HttpError err) {{ return; }}
     }});
     app.get("/health", (http_request request) => {{ return http_text("ok"); }});
     app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});

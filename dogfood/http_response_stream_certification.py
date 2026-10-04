@@ -127,76 +127,108 @@ def main():
     app.limits(1024, 4096, 32, 4);
     app.get("/health", (http_request request) => {{ return http_text("healthy"); }});
     app.get_stream("/small", (http_request request, http_response_writer writer) => {{
-        int index := 0;
-        while (index < 100) {{ writer.write("x"); index++; }}
+        try {{
+            int index := 0;
+            while (index < 100) {{ writer.write("x"); index++; }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/binary", (http_request request, http_response_writer writer) => {{
-        data := bytes(65536);
-        writer.write_bytes(data);
+        try {{
+            data := bytes(65536);
+            writer.write_bytes(data);
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/flush", (http_request request, http_response_writer writer) => {{
-        writer.flush();
-        sleep_ms(300);
-        writer.write("later");
+        try {{
+            writer.flush();
+            sleep_ms(300);
+            writer.write("later");
+        }} catch (NetworkError caught) {{ }} catch (TimeError caught) {{ }}
     }});
     app.get_stream("/known", (http_request request, http_response_writer writer) => {{
-        writer.content_length(5);
-        writer.write("he");
-        writer.write("llo");
+        try {{
+            writer.content_length(5);
+            writer.write("he");
+            writer.write("llo");
+        }} catch (NetworkError caught) {{ }}
     }});
-    app.get_stream("/empty", (http_request request, http_response_writer writer) => {{ writer.finish(); }});
+    app.get_stream("/empty", (http_request request, http_response_writer writer) => {{ try {{ writer.finish(); }} catch (NetworkError caught) {{ }} }});
     app.get_stream("/before", (http_request request, http_response_writer writer) => {{
-        writer.header("X-Test", "safe\\r\\nInjected: yes");
-        writer.write("unsafe");
+        try {{
+            writer.header("X-Test", "safe\\r\\nInjected: yes");
+            writer.write("unsafe");
+        }} catch (NetworkError caught) {{ }}
     }});
-    app.get_stream("/after", (http_request request, http_response_writer writer) => {{
-        writer.write("first");
-        writer.status(201);
-    }});
+    try {{
+        app.get_stream("/after", (http_request request, http_response_writer writer) => {{
+            writer.write("first");
+            throw NetworkError("post-commit");
+        }});
+    }} catch {{ }}
     app.get_stream("/mutation", (http_request request, http_response_writer writer) => {{
-        writer.write("ok");
-        try {{ writer.header("X-Late", "bad"); }} catch (NetworkError caught) {{ if (caught.message == "") {{ writer.write("bad"); }} }}
+        try {{
+            writer.write("ok");
+            try {{ writer.header("X-Late", "bad"); }} catch (NetworkError caught) {{ if (caught.message == "") {{ writer.write("bad"); }} }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/write-after-finish", (http_request request, http_response_writer writer) => {{
-        writer.content_length(2);
-        writer.write("ok");
-        writer.finish();
-        try {{ writer.write("bad"); }} catch (NetworkError caught) {{ if (caught.message == "") {{ writer.write("bad"); }} }}
+        try {{
+            writer.content_length(2);
+            writer.write("ok");
+            writer.finish();
+            try {{ writer.write("bad"); }} catch (NetworkError caught) {{ if (caught.message == "") {{ writer.write("bad"); }} }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/finish-twice", (http_request request, http_response_writer writer) => {{
-        writer.write("ok");
-        writer.finish();
-        writer.finish();
+        try {{
+            writer.write("ok");
+            writer.finish();
+            writer.finish();
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/forbidden", (http_request request, http_response_writer writer) => {{
-        writer.status(204);
-        writer.write("unsafe");
+        try {{
+            writer.status(204);
+            writer.write("unsafe");
+        }} catch (NetworkError caught) {{
+            try {{ writer.content_length(1); }} catch (NetworkError caught2) {{ }}
+        }}
     }});
     app.get_stream("/underfill", (http_request request, http_response_writer writer) => {{
-        writer.content_length(5);
+        try {{ writer.content_length(5); }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/underfill-after", (http_request request, http_response_writer writer) => {{
-        writer.content_length(5);
-        writer.write("x");
+        try {{
+            writer.content_length(5);
+            writer.write("x");
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/save", (http_request request, http_response_writer writer) => {{
-        *saved = writer;
-        writer.write("saved");
+        try {{
+            *saved = writer;
+            writer.write("saved");
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/use-saved", (http_request request, http_response_writer writer) => {{
-        try {{ saved->write("unsafe"); }} catch (NetworkError caught) {{ if (caught.message != "") {{ writer.write("inactive"); }} }}
+        try {{
+            try {{ saved->write("unsafe"); }} catch (NetworkError caught) {{ if (caught.message != "") {{ writer.write("inactive"); }} }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get_stream("/concurrent", (http_request request, http_response_writer writer) => {{
-        first := thread(() => {{ writer.write("x"); }});
-        second := thread(() => {{ writer.write("x"); }});
-        third := thread(() => {{ writer.write("x"); }});
-        fourth := thread(() => {{ writer.write("x"); }});
-        first.join(); second.join(); third.join(); fourth.join();
+        try {{
+            first := thread(() => {{ try {{ writer.write("x"); }} catch (NetworkError caught) {{ }} }});
+            second := thread(() => {{ try {{ writer.write("x"); }} catch (NetworkError caught) {{ }} }});
+            third := thread(() => {{ try {{ writer.write("x"); }} catch (NetworkError caught) {{ }} }});
+            fourth := thread(() => {{ try {{ writer.write("x"); }} catch (NetworkError caught) {{ }} }});
+            first.join(); second.join(); third.join(); fourth.join();
+        }} catch (ThreadError caught) {{ }}
     }});
     app.get_stream("/disconnect", (http_request request, http_response_writer writer) => {{
-        block := bytes(8192);
-        int index := 0;
-        while (index < 10000) {{ writer.write_bytes(block); index++; }}
+        try {{
+            block := bytes(8192);
+            int index := 0;
+            while (index < 10000) {{ writer.write_bytes(block); index++; }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.listen("127.0.0.1", {port});
 }}
@@ -361,9 +393,11 @@ def main():
     app.timeouts(5000, 5000, 5000, 300);
     app.limits(1024, 4096, 16, 3);
     app.get_stream("/blocked", (http_request request, http_response_writer writer) => {{
-        block := bytes(65536);
-        int index := 0;
-        while (index < 10000) {{ writer.write_bytes(block); index++; }}
+        try {{
+            block := bytes(65536);
+            int index := 0;
+            while (index < 10000) {{ writer.write_bytes(block); index++; }}
+        }} catch (NetworkError caught) {{ }}
     }});
     app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
     app.listen("127.0.0.1", {blocked_port});
@@ -406,8 +440,10 @@ def main():
     if (args.length != 2) {{ return 2; }}
     app := http_server();
     app.get_stream("/tls", (http_request request, http_response_writer writer) => {{
-        writer.write("tls-");
-        writer.write("stream");
+        try {{
+            writer.write("tls-");
+            writer.write("stream");
+        }} catch (NetworkError caught) {{ }}
     }});
     app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], 2);
     return 0;

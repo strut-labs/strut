@@ -72,7 +72,7 @@ def main():
     app.timeouts(3000, 3000, 3000, 2000);
     app.limits(32, 4096, 16, 8);
     app.get("/slow", (http_request request) => {
-        sleep_ms(100);
+        try { sleep_ms(100); } catch (TimeError e) { }
         return http_text("done");
     });
     app.get("/stop", (http_request request) => {
@@ -127,7 +127,7 @@ def main():
         stop_executable = root / ("explicit-stop.exe" if sys.platform == "win32" else "explicit-stop")
         stop_program.write_text(f"""function main() -> int : (NetworkError, ThreadError, TimeError) {{
     app := http_server();
-    listener := thread(() => {{ app.listen("127.0.0.1", {stop_port}); }});
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {stop_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{
         sleep_ms(5);
     }}
@@ -154,8 +154,8 @@ def main():
     database.exec("INSERT INTO status(message) VALUES ('secure')");
     app := http_server();
     app.limits(32, 4096, 16, 8);
-    app.get("/secure", (http_request request) => {{ return http_json_response(database.query("SELECT message FROM status")); }});
-    listener := thread(() => {{ app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1]); }});
+    app.get("/secure", (http_request request) => {{ try {{ return http_json_response(database.query("SELECT message FROM status")); }} catch (SqliteError e) {{ return http_text("error"); }} }});
+    listener := thread(() => {{ try {{ app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1]); }} catch (NetworkError e) {{ }} catch (TlsError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(5); }}
     sleep_ms(15000);
     app.stop();

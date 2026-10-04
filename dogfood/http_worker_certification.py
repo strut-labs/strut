@@ -225,7 +225,7 @@ def main():
     app.timeouts(5000, 5000, 5000, 500);
     app.limits(1024, 4096, 16, 1);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
-    listener := thread(() => {{ app.listen("127.0.0.1", {shutdown_port}); }});
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {shutdown_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(1); }}
     sleep_ms(750);
     int_64 started := now_ms();
@@ -263,10 +263,10 @@ def main():
     app := http_server();
     app.timeouts(5000, 5000, 5000, 200);
     app.get("/slow", (http_request request) => {{
-        sleep_ms(1500);
+        try {{ sleep_ms(1500); }} catch (TimeError e) {{ }}
         return http_text("late");
     }});
-    listener := thread(() => {{ app.listen("127.0.0.1", {retired_port}); }});
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {retired_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(1); }}
     sleep_ms(750);
     app.stop();
@@ -308,20 +308,20 @@ def main():
     app := http_server();
     app.timeouts(1000, 1000, 1000, 200);
     app.stop();
-    initial := thread(() => {{ app.listen("127.0.0.1", {race_port}); }});
+    initial := thread(() => {{ try {{ app.listen("127.0.0.1", {race_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(1); }}
     app.stop();
     initial.join();
     int cycle := 0;
     while (cycle < 20) {{
-        listener := thread(() => {{ app.listen("127.0.0.1", {race_port}); }});
+        listener := thread(() => {{ try {{ app.listen("127.0.0.1", {race_port}); }} catch (NetworkError e) {{ }} }});
         first := thread(() => {{
             int attempt := 0;
-            while (attempt < 50) {{ app.stop(); sleep_ms(1); attempt++; }}
+            while (attempt < 50) {{ try {{ app.stop(); }} catch (NetworkError e) {{ }} try {{ sleep_ms(1); }} catch (TimeError e) {{ }} attempt++; }}
         }});
         second := thread(() => {{
             int attempt := 0;
-            while (attempt < 50) {{ app.stop(); sleep_ms(1); attempt++; }}
+            while (attempt < 50) {{ try {{ app.stop(); }} catch (NetworkError e) {{ }} try {{ sleep_ms(1); }} catch (TimeError e) {{ }} attempt++; }}
         }});
         sleep_ms(10);
         app.stop();
@@ -356,7 +356,7 @@ def main():
     app.timeouts(5000, 5000, 5000, 2000);
     app.limits(1024, 4096, 16, 8);
     app.get("/", (http_request request) => {{ return http_text("ok"); }});
-    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
+    app.get("/stop", (http_request request) => {{ try {{ app_ref->stop(); }} catch (NetworkError e) {{ }} return http_text("stopped"); }});
     app.listen("127.0.0.1", {sustained_port});
 }}
 ''',
@@ -387,8 +387,8 @@ def main():
     app_ref := ref(app);
     app.timeouts(5000, 5000, 5000, 2000);
     app.limits(1024, 4096, 16, 4);
-    app.get("/batch", (http_request request) => {{ sleep_ms(20); return http_text("batch"); }});
-    app.get("/stop", (http_request request) => {{ app_ref->stop(); return http_text("stopped"); }});
+    app.get("/batch", (http_request request) => {{ try {{ sleep_ms(20); }} catch (TimeError e) {{ }} return http_text("batch"); }});
+    app.get("/stop", (http_request request) => {{ try {{ app_ref->stop(); }} catch (NetworkError e) {{ }} return http_text("stopped"); }});
     app.listen("127.0.0.1", {concurrent_port});
 }}
 ''',
@@ -506,7 +506,7 @@ function main(string command, string[] args) -> int : (FilesystemError, NetworkE
     app.timeouts(5000, 5000, 5000, 500);
     app.limits(1024, 4096, 16, 1);
     app.get("/", (http_request request) => {{ return http_text("secure"); }});
-    listener := thread(() => {{ app.listen_tls("127.0.0.1", {tls_shutdown_port}, args[0], args[1]); }});
+    listener := thread(() => {{ try {{ app.listen_tls("127.0.0.1", {tls_shutdown_port}, args[0], args[1]); }} catch (NetworkError e) {{ }} catch (TlsError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(1); }}
     while (!exists(args[2])) {{ sleep_ms(1); }}
     int_64 started := now_ms();
