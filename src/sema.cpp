@@ -36,14 +36,17 @@ bool unify_type(TypeId pattern,TypeId actual,const std::unordered_set<std::strin
     if(!pattern||!actual)return false;
     if(generic_name(pattern,parameters)){const auto name=type_node(pattern).name;auto [it,inserted]=bindings.emplace(name,actual);return inserted||it->second==actual;}
     const auto& p=type_node(pattern);const auto& a=type_node(actual);
-    if(p.kind!=a.kind||p.name!=a.name||p.extent!=a.extent||p.children.size()!=a.children.size())return false;
+    if(p.kind!=a.kind||p.name!=a.name||p.extent!=a.extent||p.children.size()!=a.children.size()||p.error_types.size()!=a.error_types.size())return false;
     for(std::size_t i=0;i<p.children.size();++i)if(!unify_type(p.children[i],a.children[i],parameters,bindings))return false;
+    for(std::size_t i=0;i<p.error_types.size();++i)if(!unify_type(p.error_types[i],a.error_types[i],parameters,bindings))return false;
     return true;
 }
 TypeId substitute_type(TypeId pattern,const std::unordered_set<std::string>& parameters,const TypeBindings& bindings){
     if(generic_name(pattern,parameters)){auto it=bindings.find(type_node(pattern).name);return it==bindings.end()?pattern:it->second;}
-    const auto& n=type_node(pattern);if(n.children.empty())return pattern;
-    std::vector<TypeId> children;children.reserve(n.children.size());bool changed=false;for(auto child:n.children){auto replacement=substitute_type(child,parameters,bindings);children.push_back(replacement);changed|=replacement!=child;}if(!changed)return pattern;
+    const auto& n=type_node(pattern);
+    std::vector<TypeId> children;children.reserve(n.children.size());bool changed=false;for(auto child:n.children){auto replacement=substitute_type(child,parameters,bindings);children.push_back(replacement);changed|=replacement!=child;}
+    std::vector<TypeId> errors;errors.reserve(n.error_types.size());for(auto err:n.error_types){auto replacement=substitute_type(err,parameters,bindings);errors.push_back(replacement);changed|=replacement!=err;}
+    if(!changed)return pattern;
     std::string spelling;
     if(n.kind==TypeNodeKind::const_type)spelling="const "+type_spelling(children[0]);
     else if(n.kind==TypeNodeKind::reference)spelling="ref<"+type_spelling(children[0])+">";
@@ -53,8 +56,8 @@ TypeId substitute_type(TypeId pattern,const std::unordered_set<std::string>& par
     else if(n.kind==TypeNodeKind::nullable)spelling=type_spelling(children[0])+"?";
     else if(n.kind==TypeNodeKind::vector)spelling=type_spelling(children[0])+"[]";
     else if(n.kind==TypeNodeKind::fixed_array)spelling=type_spelling(children[0])+"["+std::to_string(n.extent)+"]";
-    else if(n.kind==TypeNodeKind::function){spelling=n.name+"<(";for(std::size_t i=0;i+1<children.size();++i){if(i)spelling+=",";spelling+=type_spelling(children[i]);}spelling+=")->"+type_spelling(children.back())+">";}
-    else {spelling=n.kind==TypeNodeKind::tuple?"tuple<":n.name+"<";for(std::size_t i=0;i<children.size();++i){if(i)spelling+=",";spelling+=type_spelling(children[i]);}spelling+=">";}
+    else if(n.kind==TypeNodeKind::function){spelling=n.name+"<(";for(std::size_t i=0;i+1<children.size();++i){if(i)spelling+=",";spelling+=type_spelling(children[i]);}spelling+=")->"+type_spelling(children.back());if(!errors.empty()){spelling+=errors.size()==1?" : "+type_spelling(errors[0]):" : (";if(errors.size()>1){for(std::size_t i=0;i<errors.size();++i){if(i)spelling+=", ";spelling+=type_spelling(errors[i]);}spelling+=")";}}spelling+=">";}
+    else {spelling=n.kind==TypeNodeKind::tuple?"tuple<":n.name+"<";for(std::size_t i=0;i<children.size();++i){if(i)spelling+=",";spelling+=type_spelling(children[i]);}spelling+=">";if(!errors.empty()){spelling+=errors.size()==1?" : "+type_spelling(errors[0]):" : (";if(errors.size()>1){for(std::size_t i=0;i<errors.size();++i){if(i)spelling+=", ";spelling+=type_spelling(errors[i]);}spelling+=")";}}}
     return intern_type(spelling);
 }
 }
