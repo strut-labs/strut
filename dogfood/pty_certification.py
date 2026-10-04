@@ -170,8 +170,8 @@ function main() -> int : (PtyError, ThreadError, TimeError) {{
 
     wait_close := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "sleep"]);
     channel<int> wait_results;
-    first_waiter := thread(() => {{ wait_results.send(wait_close.wait()); }});
-    second_waiter := thread(() => {{ wait_results.send(wait_close.wait()); }});
+    first_waiter := thread(() => {{ try {{ wait_results.send(wait_close.wait()); }} catch (PtyError caught) {{ wait_results.send(-1); }} }});
+    second_waiter := thread(() => {{ try {{ wait_results.send(wait_close.wait()); }} catch (PtyError caught) {{ wait_results.send(-1); }} }});
     sleep_ms(50); wait_close.close();
     int first_status := wait_results.receive() ?? -1;
     int second_status := wait_results.receive() ?? -2;
