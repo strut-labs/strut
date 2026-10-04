@@ -88,6 +88,7 @@ struct LambdaData {
     bool is_async = false;
     std::vector<Parameter> parameters;
     std::vector<Parameter> fields;
+    std::vector<TypeSyntax> error_types;
     std::vector<std::string> generic_parameters;
     std::vector<std::string> bases;
     ExprPtr expression_body;

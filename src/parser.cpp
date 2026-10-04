@@ -54,6 +54,10 @@ ExprPtr Parser::parse_lambda(ParseResult& result, bool is_async) {
         } while (match(","));
     }
     if (!match(")")) { error(result, peek(), "expected ')' after lambda parameters"); return nullptr; }
+    if(match(":")){
+        if(match("(")){if(!check(")")){do{auto e=parse_type(result);if(e.name.empty())return nullptr;data->error_types.push_back(std::move(e));}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after lambda error type list");return nullptr;}}
+        else {auto e=parse_type(result);if(e.name.empty())return nullptr;data->error_types.push_back(std::move(e));}
+    }
     if (!match("=>")) { error(result, peek(), "expected '=>' after lambda parameters"); return nullptr; }
     auto expr = std::make_unique<Expr>(); expr->kind = Expr::Kind::lambda; expr->lambda = data;
     if (match("{")) { auto block = parse_block(result); if (!block) return nullptr; data->body = std::move(block->body); expr->span = SourceSpan{begin.span.begin, block->span.end}; }
@@ -134,7 +138,25 @@ ExprPtr Parser::parse_postfix(ParseResult& result){
 }
 ExprPtr Parser::parse_unary(ParseResult& result){
     if (match("async")) return parse_lambda(result, true);
-    if (check("(")) { std::size_t i=current_, depth=0; bool lambda=false; for(;i<tokens_.size();++i){if(tokens_[i].lexeme=="(")++depth;else if(tokens_[i].lexeme==")"){if(--depth==0){lambda=(i+1<tokens_.size()&&tokens_[i+1].lexeme=="=>");break;}}} if(lambda) return parse_lambda(result,false); }
+    if (check("(")) {
+        std::size_t i=current_; int depth=0; bool lambda=false;
+        for(;i<tokens_.size();++i){
+            if(tokens_[i].lexeme=="(")++depth;
+            else if(tokens_[i].lexeme==")"){
+                if(--depth==0){
+                    std::size_t j=i+1;
+                    if(j<tokens_.size()&&tokens_[j].lexeme==":"){
+                        ++j;
+                        if(j<tokens_.size()&&tokens_[j].lexeme=="("){int p=1;++j;while(j<tokens_.size()&&p){if(tokens_[j].lexeme=="(")++p;else if(tokens_[j].lexeme==")")--p;++j;}}
+                        else {++j;while(j<tokens_.size()&&tokens_[j].kind==TokenKind::identifier){++j;}}
+                    }
+                    lambda=(j<tokens_.size()&&tokens_[j].lexeme=="=>");
+                    break;
+                }
+            }
+        }
+        if(lambda) return parse_lambda(result,false);
+    }
     if(match("await")){const Token op=previous();auto rhs=parse_unary(result);if(!rhs)return nullptr;auto e=std::make_unique<Expr>();e->kind=Expr::Kind::unary;e->text="await";e->span=join(op.span,rhs->span);e->right=std::move(rhs);return e;}
     if(check("!")||check("~")||check("-")||check("+")||check("*")||check("++")||check("--")){const Token op=advance();auto rhs=parse_unary(result);if(!rhs)return nullptr;auto e=std::make_unique<Expr>();e->kind=Expr::Kind::unary;e->text=op.lexeme;e->span=join(op.span,rhs->span);e->right=std::move(rhs);return e;}return parse_postfix(result);
 }
@@ -188,6 +210,10 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         if(!match(")")){error(result,peek(),"expected ')' in function type");return TypeSyntax{"",begin.span,false};}
         if(!match("->")){error(result,peek(),"expected '->' in function type");return TypeSyntax{"",begin.span,false};}
         auto result_type=parse_type(result);if(result_type.name.empty())return TypeSyntax{"",begin.span,false};text+=")->"+result_type.name;
+        if(match(":")){
+            if(match("(")){text+=" : (";bool first_error=true;if(!check(")")){do{if(!first_error){text+=", ";}auto e=parse_type(result);if(e.name.empty())return TypeSyntax{"",begin.span,false};text+=e.name;first_error=false;}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after error type list");return TypeSyntax{"",begin.span,false};}text+=")";}
+            else {auto e=parse_type(result);if(e.name.empty())return TypeSyntax{"",begin.span,false};text+=" : "+e.name;}
+        }
         if(!match_type_close()){error(result,peek(),"unterminated function type");return TypeSyntax{"",begin.span,false};}text+=">";
         return TypeSyntax{text, SourceSpan{begin.span.begin, previous().span.end}, binding_const};
     }
@@ -206,7 +232,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
     } else if (match("<")) {
         text += "<";
         bool first = true;
-        while (!at_end() && !check(">") && !check(">>") && pending_type_closers_ == 0) {
+        while (!at_end() && !check(">") && !check(">>") && !check(":") && pending_type_closers_ == 0) {
             if (!first) {
                 if (!match(",")) { error(result, peek(), "expected ',' between generic type arguments"); return TypeSyntax{"", begin.span, false}; }
                 text += ",";
@@ -217,6 +243,10 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
             first = false;
         }
         if (first) { error(result, peek(), "generic type requires at least one argument"); return TypeSyntax{"", begin.span, false}; }
+        if(match(":")){
+            if(match("(")){text+=" : (";bool first_error=true;if(!check(")")){do{if(!first_error){text+=", ";}auto e=parse_type(result);if(e.name.empty())return TypeSyntax{"",begin.span,false};text+=e.name;first_error=false;}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after error type list");return TypeSyntax{"",begin.span,false};}text+=")";}
+            else {auto e=parse_type(result);if(e.name.empty())return TypeSyntax{"",begin.span,false};text+=" : "+e.name;}
+        }
         if (!match_type_close()) { error(result, peek(), "expected '>' after generic type arguments"); return TypeSyntax{"", begin.span, false}; }
         text += ">";
         span.end = previous().span.end;
