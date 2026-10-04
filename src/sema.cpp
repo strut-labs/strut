@@ -18,6 +18,17 @@ std::string missing_errors(const TypeInfo& value, const TypeInfo& slot){
     if(vk==TypeNodeKind::generic&&sk==TypeNodeKind::generic&&type_node(vid).name==type_node(sid).name){const auto& v=type_node(vid);const auto& s=type_node(sid);std::string missing;for(const auto& a:v.error_types){bool ok=false;for(const auto& b:s.error_types){if(a==b){ok=true;break;}}if(!ok){if(!missing.empty())missing+=", ";missing+=type_spelling(a);}}return missing;}
     return {};
 }
+std::string builtin_resolved_return_spelling(std::string return_type,const std::vector<std::string>& errors){
+    const auto node=type_node(intern_type(return_type));
+    if(node.kind==TypeNodeKind::generic&&node.name=="future"&&!errors.empty()){
+        std::string future_type="future<"+return_type.substr(7,return_type.size()-8);
+        future_type+=errors.size()==1?" : "+errors[0]:" : (";
+        if(errors.size()>1){for(std::size_t i=0;i<errors.size();++i){if(i)future_type+=", ";future_type+=errors[i];}future_type+=")";}
+        future_type+=">";
+        return future_type;
+    }
+    return return_type;
+}
 std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}if(st.is_async){sig+=")->future<"+(st.return_type?st.return_type->name:std::string("void"));if(!st.error_types.empty()){sig+=st.error_types.size()==1?" : "+st.error_types[0].name:" : (";if(st.error_types.size()>1){for(std::size_t i=0;i<st.error_types.size();++i){if(i)sig+=", ";sig+=st.error_types[i].name;}sig+=")";}}sig+=">>";return sig;}sig+=")->"+(st.return_type?st.return_type->name:std::string("void"));if(!st.error_types.empty()){sig+=st.error_types.size()==1?" : "+st.error_types[0].name:" : (";if(st.error_types.size()>1){for(std::size_t i=0;i<st.error_types.size();++i){if(i)sig+=", ";sig+=st.error_types[i].name;}sig+=")";}}sig+=">";return sig;}
 std::string function_return(std::string_view sig){const auto& args=type_arguments(intern_type(sig));return type_is(intern_type(sig),TypeNodeKind::function)&&!args.empty()?type_spelling(args.back()):"opaque";}
 std::string generic_inner(std::string_view type,std::string_view head){const auto& node=type_node(intern_type(type));const auto expected=head.empty()?std::string_view{}:head.substr(0,head.size()-1);const bool match=(node.kind==TypeNodeKind::generic&&node.name==expected)||(expected=="ref"&&node.kind==TypeNodeKind::reference)||(expected=="ptr"&&node.kind==TypeNodeKind::safe_pointer)||(expected=="raw_ptr"&&node.kind==TypeNodeKind::raw_pointer)||(expected=="weak_ptr"&&node.kind==TypeNodeKind::weak_pointer);return match&&!node.children.empty()?type_spelling(node.children.front()):std::string{};}
@@ -362,7 +373,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 if(!signature){std::size_t least=builtin->overloads.front().parameters.size(),most=0;for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;least=std::min(least,required);most=std::max(most,candidate.parameters.size());}result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+leaf+"' expects "+(least==most?std::to_string(least):std::to_string(least)+" to "+std::to_string(most))+" argument(s), found "+std::to_string(expr.arguments.size())});}
                 else for(std::size_t i=0;i<argument_types.size();++i){auto expected_type=substitute_type(signature->parameters[i].type,{"T"},builtin_bindings);const auto expected_name=type_spelling(expected_type);if(expected_name=="bytes"&&expr.arguments[i]->kind==Expr::Kind::array_literal)argument_types[i]=infer_expression(result,*expr.arguments[i],expected_type);if(type_is(expected_type,TypeNodeKind::function)&&(argument_types[i].name=="function"||argument_types[i].name=="async_function"))continue;auto destination=resolve_type(expected_name);if(argument_types[i].valid()&&destination.valid()&&!compatible(argument_types[i],destination))result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,"argument "+std::to_string(i+1)+" to '"+leaf+"' expects "+expected_name+", found "+argument_types[i].name});}
                 if(!builtin->owner.empty()){bool future_ret=false;for(const auto& o:builtin->overloads)if(type_is(o.return_type,TypeNodeKind::generic)&&type_node(o.return_type).name=="future"){future_ret=true;break;}if(!future_ret)for(const auto& error:builtin->checked_errors)if(current_function_errors_.find(error)==current_function_errors_.end()&&catch_all_depth_==0)result.diagnostics.push_back(Diagnostic{expr.span,"call to '"+leaf+"' may throw checked error "+error+" not declared by current function\nhelp: handle "+error+" with `try`/`catch`, or add it after `:` in the enclosing function signature"});}
-                if(signature){satisfy_callable_modules(*builtin);return resolve_type(type_spelling(substitute_type(signature->return_type,{"T"},builtin_bindings)));}
+                if(signature){satisfy_callable_modules(*builtin);auto sig_ret=type_spelling(substitute_type(signature->return_type,{"T"},builtin_bindings));return resolve_type(builtin_resolved_return_spelling(sig_ret,builtin->checked_errors));}
             }
             if(expr.left && expr.left->kind==Expr::Kind::member && expr.left->left){auto base=infer_expression(result,*expr.left->left);const auto& m=expr.left->text;
                 if((base.name=="cancellation_source"||base.name=="cancellation_token")&&!builtin)result.diagnostics.push_back(Diagnostic{expr.span,"unknown "+base.name+" method '"+m+"'"});
@@ -427,7 +438,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                     return {TypeKind::void_type,0,"void"};
                 }
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
-                if (const auto* callable=api_callable(name);callable&&!callable->overloads.empty())return resolve_type(type_spelling(callable->overloads.front().return_type));
+                if (const auto* callable=api_callable(name);callable&&!callable->overloads.empty()){const ApiOverload* chosen=&callable->overloads.front();for(const auto& candidate:callable->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()){chosen=&candidate;break;}}return resolve_type(builtin_resolved_return_spelling(type_spelling(substitute_type(chosen->return_type,{"T"},builtin_bindings)),callable->checked_errors));}
                 }
                 if (auto* fn = lookup(name, SymbolNamespace::function)) {
                     if(!current_struct_owner_.empty()&&!fn->owner.empty()&&is_private_method(fn->owner,name)&&current_struct_owner_!=fn->owner){result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+name+"' is not accessible here\nhelp: expose '"+name+"' through a public wrapper method of "+fn->owner});}
