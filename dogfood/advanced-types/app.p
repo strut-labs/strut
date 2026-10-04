@@ -36,6 +36,8 @@ function main() -> int : (NetworkError, SqliteError) {
             return http_json_response({"error": err.message, "code": err.code});
         } catch (NotFoundError err) {
             return http_json_response({"error": err.message, "code": err.code});
+        } catch (SqliteError err) {
+            return http_json_response({"error": err.message, "code": err.code});
         }
     });
     app.listen("127.0.0.1", 18089);

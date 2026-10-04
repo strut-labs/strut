@@ -6,7 +6,11 @@ function main() -> void : (SqliteError, NetworkError, EmbedError) {
     assets := embed_dir("dogfood/web/public");
     http_server app := http_server();
     app.get_async("/api/events", async (http_request req) => {
-        return http_json_response(db.query("SELECT id,name FROM events ORDER BY id"));
+        try {
+            return http_json_response(db.query("SELECT id,name FROM events ORDER BY id"));
+        } catch (SqliteError e) {
+            return http_text("[]");
+        }
     });
     app.static("/", assets, "index.html");
     app.listen("127.0.0.1", 18086, 1);

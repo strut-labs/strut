@@ -5,7 +5,10 @@ function main() -> int : (NetworkError, ThreadError) {
     });
 
     listener := thread(() => {
-        app.listen("127.0.0.1", 8080);
+        try {
+            app.listen("127.0.0.1", 8080);
+        } catch (NetworkError e) {
+        }
     });
     wait_for_shutdown_signal();
     app.stop();
