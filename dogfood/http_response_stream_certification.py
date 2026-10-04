@@ -24,6 +24,16 @@ def compile_program(compiler, root, name, source):
     return executable
 
 
+def require_rejected(compiler, root, name, source):
+    program = root / f"{name}.p"
+    program.write_text(source, encoding="utf-8")
+    result = subprocess.run(
+        [compiler, program, "--check"], cwd=root, capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        raise RuntimeError(f"throwing stream handler compiled when it must be rejected:\n{source}")
+
+
 def wait_until_listening(port, process):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -159,12 +169,6 @@ def main():
             writer.write("unsafe");
         }} catch (NetworkError caught) {{ }}
     }});
-    try {{
-        app.get_stream("/after", (http_request request, http_response_writer writer) => {{
-            writer.write("first");
-            throw NetworkError("post-commit");
-        }});
-    }} catch {{ }}
     app.get_stream("/mutation", (http_request request, http_response_writer writer) => {{
         try {{
             writer.write("ok");
@@ -233,6 +237,20 @@ def main():
     app.listen("127.0.0.1", {port});
 }}
 ''',
+        )
+        require_rejected(
+            compiler,
+            root,
+            "reject-after",
+            "function main() -> int : NetworkError {\n"
+            "    app := http_server();\n"
+            '    app.get_stream("/after", (http_request request, http_response_writer writer) => {\n'
+            '        writer.write("first");\n'
+            '        throw NetworkError("post-commit");\n'
+            "    });\n"
+            "    app.listen(\"127.0.0.1\", 0);\n"
+            "    return 0;\n"
+            "}\n",
         )
         server = subprocess.Popen(
             [server_path], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -303,13 +321,6 @@ def main():
             _, _, body = split_response(concurrent)
             if decode_chunked(body) != (b"xxxx", 1):
                 raise RuntimeError("concurrent response writes corrupted framing")
-
-            partial = request_bytes(port, "/after")
-            line, fields, body = split_response(partial)
-            require_status(line, 200)
-            decoded, terminals = decode_chunked(body, require_terminal=False)
-            if decoded != b"first" or terminals != 0 or b"HTTP/1.1 500" in body:
-                raise RuntimeError(f"post-commit failure emitted invalid recovery: {partial!r}")
 
             for path in ("/mutation", "/finish-twice"):
                 response = request_bytes(port, path)

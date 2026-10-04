@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 
-from http_websocket_certification import KEY, ACCEPT, available_port, compile_program, opening
+from http_websocket_certification import KEY, ACCEPT, available_port, compile_program, opening, require_rejected
 
 
 def receive_exact(connection, size):
@@ -242,7 +242,7 @@ def exercise_convenience_mismatch(port):
 
 
 def exercise_server_closing(port, context=None):
-    cases = [("/return-close", 1000), ("/explicit-close", 1001), ("/error-close", 1011)]
+    cases = [("/return-close", 1000), ("/explicit-close", 1001)]
     for path, expected in cases:
         with connect(port, context, path=path) as connection:
             if close_code(connection) != expected:
@@ -401,13 +401,6 @@ def main():
     app.websocket("/return-close", (http_request request, websocket socket) => {{ try {{ socket.accept(); }} catch (NetworkError e) {{ }} return; }});
     app.websocket("/return-close-timeout", (http_request request, websocket socket) => {{ try {{ socket.accept(); }} catch (NetworkError e) {{ }} return; }});
     app.websocket("/explicit-close", (http_request request, websocket socket) => {{ try {{ socket.accept(); socket.close(1001, "explicit"); }} catch (NetworkError e) {{ }} catch (WebSocketError e) {{ }} return; }});
-    try {{
-        app.websocket("/error-close", (http_request request, websocket socket) => {{
-            socket.accept();
-            socket.close(1010);
-            return;
-        }});
-    }} catch {{ }}
     app.websocket("/reject-1010", (http_request request, websocket socket) => {{
         try {{ socket.accept(); }} catch (NetworkError e) {{ }}
         try {{
@@ -451,6 +444,20 @@ def main():
 }}
 """
         executable = compile_program(compiler, root, "runtime-server", source)
+        require_rejected(
+            compiler,
+            root,
+            "reject-error-close",
+            "function main() -> int : NetworkError {\n"
+            "    app := http_server();\n"
+            '    app.websocket("/error-close", (http_request request, websocket socket) => {\n'
+            "        socket.accept();\n"
+            "        socket.close(1010);\n"
+            "        return;\n"
+            "    });\n"
+            "    return 0;\n"
+            "}\n",
+        )
         server = subprocess.Popen([executable], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.monotonic() + 8

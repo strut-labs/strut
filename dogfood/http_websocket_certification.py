@@ -28,6 +28,16 @@ def compile_program(compiler, root, name, source):
     return executable
 
 
+def require_rejected(compiler, root, name, source):
+    program = root / f"{name}.p"
+    program.write_text(source, encoding="utf-8")
+    result = subprocess.run(
+        [compiler, program, "--check"], cwd=root, capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        raise RuntimeError(f"throwing websocket handler compiled when it must be rejected:\n{source}")
+
+
 def opening(path="/ws/one", key=KEY, extra=b"", method="GET", version="HTTP/1.1",
             connection="Upgrade", upgrade="websocket", ws_version="13"):
     fields = [
@@ -111,9 +121,10 @@ def main():
         root = Path(temporary)
         port = available_port()
         server_source = f"""error PolicyError {{ string message; }}
-function main() -> int : (NetworkError, PolicyError) {{
+function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
     websocket initial;
     escaped := new(initial);
+    channel<bool> shutdown;
     app := http_server();
     app.websocket("/ws/:id", (http_request request, websocket socket) => {{
         println(request.params["id"]);
@@ -132,44 +143,21 @@ function main() -> int : (NetworkError, PolicyError) {{
         copy := socket;
         return;
     }});
-    try {{
-        app.websocket("/error", (http_request request, websocket socket) => {{
-            token := request.cancellation;
-            copy := socket;
-            throw PolicyError {{ message: "denied" }};
-        }});
-    }} catch {{ }}
-    try {{
-        app.websocket("/invalid-select", (http_request request, websocket socket) => {{
-            token := request.cancellation;
-            socket.accept("not-offered");
-            return;
-        }});
-    }} catch {{ }}
-    try {{
-        app.websocket("/after-error", (http_request request, websocket socket) => {{
-            token := request.cancellation;
-            socket.accept();
-            throw PolicyError {{ message: "after commit" }};
-            return;
-        }});
-    }} catch {{ }}
-    try {{
-        app.websocket("/reaccept", (http_request request, websocket socket) => {{
-            token := request.cancellation;
-            socket.accept("chat");
-            socket.accept("superchat");
-            println("bad-reaccept");
-            return;
-        }});
-    }} catch {{ }}
     app.websocket("/escape", (http_request request, websocket socket) => {{
         token := request.cancellation;
         try {{ *escaped = socket; socket.accept(); }} catch (NetworkError e) {{ }}
         return;
     }});
+    app.websocket("/shutdown", (http_request request, websocket socket) => {{
+        try {{ socket.accept(); }} catch (NetworkError e) {{ }}
+        shutdown.send(true);
+        return;
+    }});
     app.get("/http", (http_request request) => {{ return http_text("http"); }});
-    app.listen("127.0.0.1", {port}, 32);
+    listener := thread(() => {{ try {{ app.listen("127.0.0.1", {port}, 32); }} catch (NetworkError e) {{ }} }});
+    shutdown.receive();
+    app.stop();
+    listener.join();
     try {{
         (*escaped).accept();
         return 2;
@@ -235,36 +223,78 @@ function main() -> int : (NetworkError, PolicyError) {{
 
             if status(exchange(port, opening(path="/reject"))) != 403:
                 raise RuntimeError("handler return without acceptance did not produce 403")
-            if status(exchange(port, opening(path="/error"))) != 500:
-                raise RuntimeError("precommit handler error did not produce 500")
-            invalid_selection = opening(
-                path="/invalid-select",
-                extra=b"Sec-WebSocket-Protocol: chat\r\n",
-            )
-            if status(exchange(port, invalid_selection)) != 500:
-                raise RuntimeError("unoffered subprotocol selection was not rejected before commitment")
-            require_switch(exchange(port, opening(path="/after-error")))
-            reaccept = opening(
-                path="/reaccept",
-                extra=b"Sec-WebSocket-Protocol: chat, superchat\r\n",
-            )
-            require_switch(exchange(port, reaccept), "chat")
 
             require_switch(exchange(port, opening(path="/escape")))
             disconnected = socket.create_connection(("127.0.0.1", port), timeout=2)
             disconnected.sendall(opening())
             disconnected.close()
+            require_switch(exchange(port, opening(path="/shutdown")))
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or "WebSocket handle is no longer active" not in stdout:
                 raise RuntimeError(f"escaped WebSocket remained usable ({server.returncode})\n{stdout}\n{stderr}")
-            if "bad-reaccept" in stdout:
-                raise RuntimeError("different-protocol reacceptance did not throw")
             if "one" not in stdout or "https://example.test" not in stdout or "chat, superchat" not in stdout:
                 raise RuntimeError(f"route params or offered headers were not visible to handlers: {stdout!r}")
         finally:
             if server.poll() is None:
                 server.kill()
                 server.wait()
+
+        require_rejected(
+            compiler,
+            root,
+            "reject-throwing-handler",
+            "error PolicyError { string message; }\n"
+            "function main() -> int : (NetworkError, PolicyError) {\n"
+            "    app := http_server();\n"
+            '    app.websocket("/error", (http_request request, websocket socket) => {\n'
+            '        throw PolicyError { message: "denied" };\n'
+            "    });\n"
+            "    return 0;\n"
+            "}\n",
+        )
+        require_rejected(
+            compiler,
+            root,
+            "reject-invalid-select",
+            "function main() -> int : NetworkError {\n"
+            "    app := http_server();\n"
+            '    app.websocket("/invalid-select", (http_request request, websocket socket) => {\n'
+            '        socket.accept("not-offered");\n'
+            "        return;\n"
+            "    });\n"
+            "    return 0;\n"
+            "}\n",
+        )
+        require_rejected(
+            compiler,
+            root,
+            "reject-after-error",
+            "error PolicyError { string message; }\n"
+            "function main() -> int : (NetworkError, PolicyError) {\n"
+            "    app := http_server();\n"
+            '    app.websocket("/after-error", (http_request request, websocket socket) => {\n'
+            "        socket.accept();\n"
+            '        throw PolicyError { message: "after commit" };\n'
+            "        return;\n"
+            "    });\n"
+            "    return 0;\n"
+            "}\n",
+        )
+        require_rejected(
+            compiler,
+            root,
+            "reject-reaccept",
+            "function main() -> int : NetworkError {\n"
+            "    app := http_server();\n"
+            '    app.websocket("/reaccept", (http_request request, websocket socket) => {\n'
+            '        socket.accept("chat");\n'
+            '        socket.accept("superchat");\n'
+            "        println(\"bad-reaccept\");\n"
+            "        return;\n"
+            "    });\n"
+            "    return 0;\n"
+            "}\n",
+        )
 
         tls_port = available_port()
         tls_source = f"""function main(string command, string[] args) -> int : (NetworkError, TlsError) {{
@@ -299,14 +329,14 @@ function main() -> int : (NetworkError, PolicyError) {{
         stop_source = f"""function main() -> int : (NetworkError, ThreadError, TimeError, CancellationError) {{
     app := http_server();
     app.timeouts(3000, 3000, 3000, 1000);
-    try {{
-        app.websocket("/wait", (http_request request, websocket socket) => {{
-            socket.accept();
-            request.cancellation.wait();
-            request.cancellation.throw_if_cancelled();
+    app.websocket("/wait", (http_request request, websocket socket) => {{
+            try {{
+                socket.accept();
+                request.cancellation.wait();
+                request.cancellation.throw_if_cancelled();
+            }} catch (NetworkError e) {{ }} catch (CancellationError e) {{ }}
             return;
         }});
-    }} catch {{ }}
     listener := thread(() => {{ try {{ app.listen("127.0.0.1", {stop_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(5); }}
     sleep_ms(1500);
@@ -332,13 +362,13 @@ function main() -> int : (NetworkError, PolicyError) {{
         race_source = f"""function main() -> int : (NetworkError, ThreadError, TimeError) {{
     app := http_server();
     app.timeouts(3000, 3000, 3000, 1000);
-    try {{
-        app.websocket("/race", (http_request request, websocket socket) => {{
-            request.cancellation.wait();
-            socket.accept();
+    app.websocket("/race", (http_request request, websocket socket) => {{
+            try {{
+                request.cancellation.wait();
+                socket.accept();
+            }} catch (NetworkError e) {{ }} catch (CancellationError e) {{ }}
             return;
         }});
-    }} catch {{ }}
     listener := thread(() => {{ try {{ app.listen("127.0.0.1", {race_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(5); }}
     sleep_ms(1500);
