@@ -26,6 +26,7 @@ struct TypeNode {
     TypeNodeKind kind = TypeNodeKind::invalid;
     std::string name;
     std::vector<TypeId> children;
+    std::vector<TypeId> error_types;
     std::size_t extent = 0;
 };
 
