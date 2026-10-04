@@ -7,7 +7,18 @@
 
 namespace strut {
 namespace {
-std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}sig+=")->"+(st.is_async?("future<"+(st.return_type?st.return_type->name:std::string("void"))+">"):(st.return_type?st.return_type->name:std::string("void")))+">";return sig;}
+bool error_subset(const std::vector<TypeId>& actual, const std::vector<TypeId>& allowed){
+    for(const auto& a:actual){bool found=false;for(const auto& b:allowed){if(a==b){found=true;break;}}if(!found)return false;}
+    return true;
+}
+std::string missing_errors(const TypeInfo& value, const TypeInfo& slot){
+    const auto vid=value.id?value.id:intern_type(value.name),sid=slot.id?slot.id:intern_type(slot.name);
+    const auto vk=type_node(vid).kind,sk=type_node(sid).kind;
+    if(vk==TypeNodeKind::function&&sk==TypeNodeKind::function){const auto& v=type_node(vid);const auto& s=type_node(sid);std::string missing;for(const auto& a:v.error_types){bool ok=false;for(const auto& b:s.error_types){if(a==b){ok=true;break;}}if(!ok){if(!missing.empty())missing+=", ";missing+=type_spelling(a);}}return missing;}
+    if(vk==TypeNodeKind::generic&&sk==TypeNodeKind::generic&&type_node(vid).name==type_node(sid).name){const auto& v=type_node(vid);const auto& s=type_node(sid);std::string missing;for(const auto& a:v.error_types){bool ok=false;for(const auto& b:s.error_types){if(a==b){ok=true;break;}}if(!ok){if(!missing.empty())missing+=", ";missing+=type_spelling(a);}}return missing;}
+    return {};
+}
+std::string function_signature(const Stmt& st){std::string sig="function<(";for(std::size_t i=0;i<st.parameters.size();++i){if(i)sig+=",";sig+=st.parameters[i].type.name;}if(st.is_async){sig+=")->future<"+(st.return_type?st.return_type->name:std::string("void"));if(!st.error_types.empty()){sig+=st.error_types.size()==1?" : "+st.error_types[0].name:" : (";if(st.error_types.size()>1){for(std::size_t i=0;i<st.error_types.size();++i){if(i)sig+=", ";sig+=st.error_types[i].name;}sig+=")";}}sig+=">>";return sig;}sig+=")->"+(st.return_type?st.return_type->name:std::string("void"));if(!st.error_types.empty()){sig+=st.error_types.size()==1?" : "+st.error_types[0].name:" : (";if(st.error_types.size()>1){for(std::size_t i=0;i<st.error_types.size();++i){if(i)sig+=", ";sig+=st.error_types[i].name;}sig+=")";}}sig+=">";return sig;}
 std::string function_return(std::string_view sig){const auto& args=type_arguments(intern_type(sig));return type_is(intern_type(sig),TypeNodeKind::function)&&!args.empty()?type_spelling(args.back()):"opaque";}
 std::string generic_inner(std::string_view type,std::string_view head){const auto& node=type_node(intern_type(type));const auto expected=head.empty()?std::string_view{}:head.substr(0,head.size()-1);const bool match=(node.kind==TypeNodeKind::generic&&node.name==expected)||(expected=="ref"&&node.kind==TypeNodeKind::reference)||(expected=="ptr"&&node.kind==TypeNodeKind::safe_pointer)||(expected=="raw_ptr"&&node.kind==TypeNodeKind::raw_pointer)||(expected=="weak_ptr"&&node.kind==TypeNodeKind::weak_pointer);return match&&!node.children.empty()?type_spelling(node.children.front()):std::string{};}
 TypeId child_of(const TypeInfo& type,TypeNodeKind kind){const auto id=type.id?type.id:intern_type(type.name);return type_is(id,kind)?type_element(id):TypeId{};}
@@ -154,6 +165,17 @@ bool SemanticAnalyzer::compatible(const TypeInfo& from, const TypeInfo& to) cons
     if(to_kind==TypeNodeKind::nullable&&from_kind!=TypeNodeKind::nullable){auto inner=type_element(to_id);return from_id==inner||compatible(from,resolve_type(type_spelling(inner)));}
     if(from_kind==TypeNodeKind::nullable&&to_kind==TypeNodeKind::nullable)return type_element(from_id)==type_element(to_id);
     if(from_id&&to_id&&from_id==to_id)return true;
+    if (from_kind==TypeNodeKind::function && to_kind==TypeNodeKind::function) {
+        const auto& f=type_node(from_id);const auto& t=type_node(to_id);
+        if (f.name != t.name || f.children.size() != t.children.size()) return false;
+        for(std::size_t i=0;i<f.children.size();++i)if(!compatible(resolve_type(type_spelling(f.children[i])),resolve_type(type_spelling(t.children[i]))))return false;
+        return error_subset(f.error_types,t.error_types);
+    }
+    if (from_kind==TypeNodeKind::generic && to_kind==TypeNodeKind::generic && from_id && to_id && type_node(from_id).name==type_node(to_id).name && type_node(from_id).children.size()==type_node(to_id).children.size()) {
+        const auto& f=type_node(from_id);const auto& t=type_node(to_id);
+        for(std::size_t i=0;i<f.children.size();++i)if(!compatible(resolve_type(type_spelling(f.children[i])),resolve_type(type_spelling(t.children[i]))))return false;
+        return error_subset(f.error_types,t.error_types);
+    }
     if (from.kind == to.kind && from.bits == to.bits) return true;
     if (from.kind == TypeKind::string_type && to.kind == TypeKind::string_type) return true;
     if (from.kind == TypeKind::bool_type && to.kind == TypeKind::bool_type) return true;
@@ -310,7 +332,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 std::vector<std::tuple<const Stmt*,TypeBindings,std::unordered_set<std::string>,int>> viable;
                 for(const auto* candidate:found->second){if(candidate->parameters.size()!=expr.arguments.size())continue;std::unordered_set<std::string> generics(candidate->generic_parameters.begin(),candidate->generic_parameters.end());TypeBindings bindings;int rank=generics.empty()?0:1;bool ok=true;
                     if(expected&&candidate->return_type&&type_node(expected).kind!=TypeNodeKind::nullable&&!unify_type(candidate->return_type->type_id,expected,generics,bindings))ok=false;
-                    for(std::size_t i=0;ok&&i<expr.arguments.size();++i){auto parameter=substitute_type(candidate->parameters[i].type.type_id,generics,bindings);auto argument=infer_expression(result,*expr.arguments[i],parameter);if(argument.name=="opaque[]")continue;if(!unify_type(candidate->parameters[i].type.type_id,argument.id,generics,bindings)){auto resolved=resolve_type(type_spelling(parameter));if(!compatible(argument,resolved))ok=false;else ++rank;}}
+                    for(std::size_t i=0;ok&&i<expr.arguments.size();++i){auto parameter=substitute_type(candidate->parameters[i].type.type_id,generics,bindings);auto argument=infer_expression(result,*expr.arguments[i],parameter);if(argument.name=="opaque[]")continue;if(!unify_type(candidate->parameters[i].type.type_id,argument.id,generics,bindings)){auto resolved=resolve_type(type_spelling(parameter));if(!compatible(argument,resolved)){auto missing=missing_errors(argument,resolved);if(!missing.empty()){const auto& an=type_node(argument.id?argument.id:intern_type(argument.name));const std::string value_kind=(an.kind==TypeNodeKind::generic&&an.name=="future")?"future":"function";result.diagnostics.push_back(Diagnostic{expr.arguments[i]->span,value_kind+" value may throw checked error "+missing+" but destination "+value_kind+" type does not allow it\nhelp: add "+missing+" to the destination "+value_kind+" type's checked-error set or handle it before passing the callable"});}ok=false;}else ++rank;}}
                     for(const auto& generic:generics)if(bindings.find(generic)==bindings.end())ok=false;
                     if(ok)viable.emplace_back(candidate,std::move(bindings),std::move(generics),rank);
                 }
@@ -324,7 +346,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             if(expr.left&&expr.left->kind==Expr::Kind::identifier)builtin=api_callable(expr.left->text);
             if(expr.left&&expr.left->kind==Expr::Kind::member&&expr.left->left){TypeInfo base;if(expr.left->left->kind==Expr::Kind::identifier&&expr.left->left->text=="bytes")base={TypeKind::named,0,"bytes",intern_type("bytes")};else base=infer_expression(result,*expr.left->left);builtin_owner=base.name;builtin=api_callable(expr.left->text,builtin_owner);if(builtin){const auto& schema=type_node(intern_type(builtin->owner));const auto& actual=type_node(base.id);if(schema.kind==TypeNodeKind::generic&&actual.kind==TypeNodeKind::generic&&!schema.children.empty()&&!actual.children.empty())builtin_bindings[type_node(schema.children.front()).name]=actual.children.front();}}
             std::vector<TypeInfo> argument_types;argument_types.reserve(expr.arguments.size());
-            for (std::size_t i=0;i<expr.arguments.size();++i){TypeId argument_expected;if(selected)argument_expected=substitute_type(selected->parameters[i].type.type_id,selected_generics,selected_bindings);argument_types.push_back(infer_expression(result,*expr.arguments[i],argument_expected));}
+            for (std::size_t i=0;i<expr.arguments.size();++i){TypeId argument_expected;if(selected)argument_expected=substitute_type(selected->parameters[i].type.type_id,selected_generics,selected_bindings);else if(builtin&&!builtin->overloads.empty()){for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& p:candidate.parameters)if(!p.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()&&i<candidate.parameters.size()){argument_expected=substitute_type(candidate.parameters[i].type,{"T"},builtin_bindings);break;}}}argument_types.push_back(infer_expression(result,*expr.arguments[i],argument_expected));}
             for(std::size_t i=0;i<argument_types.size();++i)if(argument_types[i].name=="opaque[]"){
                 bool bytes_context=false;if(builtin)for(const auto& candidate:builtin->overloads){std::size_t required=0;for(const auto& parameter:candidate.parameters)if(!parameter.optional)++required;if(expr.arguments.size()>=required&&expr.arguments.size()<=candidate.parameters.size()&&i<candidate.parameters.size()&&type_spelling(substitute_type(candidate.parameters[i].type,{"T"},builtin_bindings))=="bytes"){bytes_context=true;break;}}
                 if(bytes_context)argument_types[i]=infer_expression(result,*expr.arguments[i],intern_type("bytes"));
@@ -404,7 +426,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 }
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if (const auto* callable=api_callable(name);callable&&!callable->overloads.empty())return resolve_type(type_spelling(callable->overloads.front().return_type));
-                if(selected&&selected->return_type){auto inferred=type_spelling(substitute_type(selected->return_type->type_id,selected_generics,selected_bindings));auto resolved=resolve_type(selected->is_async?"future<"+inferred+">":inferred);expr.inferred_type=resolved.id;return resolved;}
+                if(selected&&selected->return_type){auto inferred=type_spelling(substitute_type(selected->return_type->type_id,selected_generics,selected_bindings));std::string future_type="future<"+inferred;if(selected->is_async&&!selected->error_types.empty()){future_type+=selected->error_types.size()==1?" : "+selected->error_types[0].name:" : (";if(selected->error_types.size()>1){for(std::size_t i=0;i<selected->error_types.size();++i){if(i)future_type+=", ";future_type+=selected->error_types[i].name;}future_type+=")";}}future_type+=">";auto resolved=resolve_type(selected->is_async?future_type:inferred);expr.inferred_type=resolved.id;return resolved;}
                 if (auto* fn = lookup(name, SymbolNamespace::function)) {
                     if(!current_struct_owner_.empty()&&!fn->owner.empty()&&is_private_method(fn->owner,name)&&current_struct_owner_!=fn->owner){result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+name+"' is not accessible here\nhelp: expose '"+name+"' through a public wrapper method of "+fn->owner});}
                     else if(!current_struct_owner_.empty()&&fn->owner.empty()&&private_methods_.find(current_struct_owner_)!=private_methods_.end()&&private_methods_.at(current_struct_owner_).find(name)!=private_methods_.at(current_struct_owner_).end()){result.diagnostics.push_back(Diagnostic{expr.span,"private method '"+name+"' is not accessible here\nhelp: expose '"+name+"' through a public wrapper method of "+current_struct_owner_});}
@@ -416,9 +438,10 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
             return {TypeKind::named, 0, "opaque"};
         }
         case Expr::Kind::lambda: {
-            const auto enclosing_return=current_function_return_type_;current_function_return_type_.clear();push_scope();
+            const auto enclosing_return=current_function_return_type_;const auto enclosing_errors=current_function_errors_;current_function_return_type_.clear();current_function_errors_.clear();if(expr.lambda)for(const auto& e:expr.lambda->error_types)current_function_errors_.insert(resolved_type_name(e.name));if(expr.lambda&&expr.lambda->error_types.empty()&&expected&&type_node(expected).kind==TypeNodeKind::function)for(const auto& e:type_node(expected).error_types)current_function_errors_.insert(type_spelling(e));push_scope();
             if(expr.lambda){for(const auto& p:expr.lambda->parameters)declare(result,Symbol{p.name,SymbolNamespace::value,p.span,true,p.type.name.empty()?"opaque":resolved_type_name(p.type.name)});if(expr.lambda->expression_body)infer_expression(result,*expr.lambda->expression_body);analyze_statements(result,expr.lambda->body,false);}
-            pop_scope();current_function_return_type_=enclosing_return;
+            pop_scope();current_function_return_type_=enclosing_return;current_function_errors_=enclosing_errors;
+            if(expr.lambda){std::string ltype=(expected&&type_node(expected).kind==TypeNodeKind::function)?type_node(expected).name:"function";ltype+="<(";const std::vector<TypeId> exp_child=expected&&type_node(expected).kind==TypeNodeKind::function?type_node(expected).children:std::vector<TypeId>{};for(std::size_t i=0;i<expr.lambda->parameters.size();++i){if(i)ltype+=",";ltype+=expr.lambda->parameters[i].type.name.empty()&&i<exp_child.size()?type_spelling(exp_child[i]):resolved_type_name(expr.lambda->parameters[i].type.name);}std::string ret="opaque";if(expected&&type_node(expected).kind==TypeNodeKind::function&&!type_node(expected).children.empty())ret=type_spelling(type_node(expected).children.back());if(expr.lambda->is_async){std::string inner="opaque";if(expected&&type_node(expected).kind==TypeNodeKind::function&&!type_node(expected).children.empty()){const auto& eret=type_node(type_node(expected).children.back());if(eret.kind==TypeNodeKind::generic&&eret.name=="future"&&!eret.children.empty())inner=type_spelling(eret.children.front());}ltype+=")->future<"+inner;if(!expr.lambda->error_types.empty()){ltype+=expr.lambda->error_types.size()==1?" : "+resolved_type_name(expr.lambda->error_types[0].name):" : (";if(expr.lambda->error_types.size()>1){for(std::size_t i=0;i<expr.lambda->error_types.size();++i){if(i)ltype+=", ";ltype+=resolved_type_name(expr.lambda->error_types[i].name);}ltype+=")";}}ltype+=">>";return {TypeKind::named,0,ltype,intern_type(ltype)};}ltype+=")->"+ret;if(!expr.lambda->error_types.empty()){ltype+=expr.lambda->error_types.size()==1?" : "+resolved_type_name(expr.lambda->error_types[0].name):" : (";if(expr.lambda->error_types.size()>1){for(std::size_t i=0;i<expr.lambda->error_types.size();++i){if(i)ltype+=", ";ltype+=resolved_type_name(expr.lambda->error_types[i].name);}ltype+=")";}}ltype+=">";return {TypeKind::named,0,ltype,intern_type(ltype)};}
             return {TypeKind::named, 0, expr.lambda && expr.lambda->is_async ? "async_function" : "function"};
         }
         case Expr::Kind::member: {
@@ -472,10 +495,11 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
     switch (st.kind) {
         case Stmt::Kind::declaration: {
             const TypeId destination_context=st.declared_type?st.declared_type->type_id:TypeId{};
-            TypeInfo value_type = st.value ? infer_expression(result, *st.value,destination_context) : TypeInfo{};
+            TypeInfo value_type = st.value ? infer_expression(result, *st.value,destination_context) : TypeInfo{}; 
             std::string type_name;
             if (st.declared_type) {
                 auto destination = resolve_type(st.declared_type->name);
+                if(st.declared_type->name.rfind("function[T]",0)==0||st.declared_type->name.rfind("function<",0)==0)
                 if (!destination.valid()) {
                     result.diagnostics.push_back(Diagnostic{st.declared_type->span, "unknown type '" + st.declared_type->name + "'"});
                 }

@@ -479,6 +479,7 @@ void collect_minimal_stmt_features(const IRStmt* s,MinimalRuntimeFeatures& f){
     collect_minimal_type_features(s->type_name,f);
     collect_minimal_type_features(s->return_type,f);
     for(const auto& p:s->parameters)collect_minimal_type_features(p.type.name,f);
+    for(const auto& field:s->fields)collect_minimal_type_features(field.type.name,f);
     collect_minimal_expr_features(s->value.get(),f);collect_minimal_expr_features(s->target.get(),f);collect_minimal_expr_features(s->condition.get(),f);collect_minimal_expr_features(s->increment.get(),f);
     if(s->initializer) collect_minimal_stmt_features(s->initializer.get(),f);
     for(const auto& c:s->body) collect_minimal_stmt_features(c.get(),f);
