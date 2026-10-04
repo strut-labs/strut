@@ -244,6 +244,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
         }
         if (first) { error(result, peek(), "generic type requires at least one argument"); return TypeSyntax{"", begin.span, false}; }
         if(match(":")){
+            if(type_begin.lexeme!="future"){error(result,previous(),"checked-error clause is only valid on function and future types");return TypeSyntax{"",begin.span,false};}
             if(match("(")){text+=" : (";bool first_error=true;if(!check(")")){do{if(!first_error){text+=", ";}auto e=parse_type(result);if(e.name.empty())return TypeSyntax{"",begin.span,false};text+=e.name;first_error=false;}while(match(","));}if(!match(")")){error(result,peek(),"expected ')' after error type list");return TypeSyntax{"",begin.span,false};}text+=")";}
             else {auto e=parse_type(result);if(e.name.empty())return TypeSyntax{"",begin.span,false};text+=" : "+e.name;}
         }
