@@ -84,7 +84,6 @@ private:
     std::vector<Scope> scopes_;
     std::string current_function_return_type_;
     std::unordered_set<std::string> current_function_errors_;
-    std::unordered_map<std::string, std::unordered_set<std::string>> function_errors_;
     std::unordered_map<std::string, std::vector<const Stmt*>> function_candidates_;
     std::unordered_map<std::string, std::unordered_set<std::string>> operator_signatures_;
     std::unordered_map<std::string, std::string> operator_returns_;
