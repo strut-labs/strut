@@ -146,7 +146,7 @@ void print_api_index(std::string_view query,std::ostream& out){
         for(const auto& overload:callable.overloads)out<<api_signature(callable,overload)<<'\n';
         out<<"  "<<callable.summary;
         if(!callable.module.empty())out<<" ["<<callable.module<<']';
-        if(!callable.checked_errors.empty()){out<<" throws ";for(std::size_t i=0;i<callable.checked_errors.size();++i){if(i)out<<", ";out<<callable.checked_errors[i];}}
+        if(!callable.checked_errors.empty()){const bool awaits=!callable.overloads.empty()&&type_node(callable.overloads.front().return_type).kind==TypeNodeKind::generic&&type_node(callable.overloads.front().return_type).name=="future";out<<(awaits?" awaits with ":" throws ");for(std::size_t i=0;i<callable.checked_errors.size();++i){if(i)out<<", ";out<<callable.checked_errors[i];}}
         auto required=api_required_modules(callable);if(!required.empty()){out<<" requires include <";for(std::size_t i=0;i<required.size();++i){if(i)out<<">, <";out<<required[i];}out<<">";}
         auto signature=api_signature_modules(callable);if(!signature.empty()){out<<" supplies signature module <";for(std::size_t i=0;i<signature.size();++i){if(i)out<<">, <";out<<signature[i];}out<<"> automatically";}
         out<<"\n\n";

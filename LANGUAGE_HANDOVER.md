@@ -516,7 +516,7 @@ future-returning builtin  checked_errors -> await-time, inside future<T : E>
 otherwise                 checked_errors -> invocation-time
 ```
 
-`strut api` / `strut api --json` render a future-returning builtin's signature with the await-time set inside the future (for example `http_get_async(string url) -> future<http_response : HttpError>`), while a synchronous builtin keeps a plain return with its errors listed separately (`http_get(string url) -> http_response`, throws `HttpError`).
+`strut api` / `strut api --json` render a future-returning builtin's signature with the await-time set inside the future (for example `http_get_async(string url) -> future<http_response : HttpError>`), while a synchronous builtin keeps a plain return with its errors listed separately (`http_get(string url) -> http_response`). The human-readable `strut api` summary is phase-aware: a synchronous builtin prints `throws HttpError`, while a future-returning builtin prints `awaits with HttpError` so the effect is not mistaken for a synchronous throw. The phase is chosen from the resolved contract (future return type), not from the `_async` name.
 
 ### 12.6 Unsupported / deferred surfaces
 

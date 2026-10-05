@@ -114,6 +114,16 @@ int main() {
         require(out.str().find("throws HttpError")!=std::string::npos,"human API exposes checked errors");
     }
     {
+        char arg0[]="strut";char arg1[]="api";char arg2[]="http_get";char* argv[]={arg0,arg1,arg2};
+        std::ostringstream out;std::ostringstream err;require(strut::run_cli(3,argv,out,err)==0,"human sync API status");
+        require(out.str().find("throws HttpError")!=std::string::npos,"sync builtin human output says throws");
+        char arg0b[]="strut";char arg1b[]="api";char arg2b[]="http_get_async";char* argv2[]={arg0b,arg1b,arg2b};
+        std::ostringstream out2;std::ostringstream err2;require(strut::run_cli(3,argv2,out2,err2)==0,"human async API status");
+        require(out2.str().find("future<http_response : HttpError>")!=std::string::npos,"async builtin signature shows await-time effect");
+        require(out2.str().find("awaits with HttpError")!=std::string::npos,"async builtin human output says awaits with");
+        require(out2.str().find("throws HttpError")==std::string::npos,"async builtin human output does not say throws");
+    }
+    {
         const auto old=std::filesystem::current_path();TestTempDirectory temp("strut-cli-init-project");std::filesystem::current_path(temp.path());
         std::ofstream(temp.path()/"main.p")<<"function main() -> int { return 0; }\n";
         char arg0[]="strut";char arg1[]="init";char* init_argv[]={arg0,arg1};std::ostringstream init_out,init_err;
