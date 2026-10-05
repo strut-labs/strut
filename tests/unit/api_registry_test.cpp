@@ -66,6 +66,8 @@ int main(){
     require(api_callable("static","http_server")!=nullptr,"source-level HTTP static method is registered");
     require(api_callable("receive","channel<int>")!=nullptr&&type_spelling(api_callable("receive","channel<int>")->overloads[0].return_type)=="T?","generic method lookup");
     require(api_callable("accept_async","tcp_listener")!=nullptr&&api_callable("transaction","sqlite_db")!=nullptr,"backend methods are registered");
+    require(api_signature(*api_callable("http_get_async"),api_callable("http_get_async")->overloads[0])=="http_get_async(string url) -> future<http_response : HttpError>","async builtin signature shows await-time effect in future");
+    require(api_signature(*api_callable("http_get"),api_callable("http_get")->overloads[0])=="http_get(string url) -> http_response","sync builtin signature keeps plain return with errors listed separately");
     require(!api_callable("read","process_out")->overloads[0].parameters[0].optional&&type_spelling(api_callable("read","process_out")->overloads[0].parameters[0].type)=="int_32","process read matches the generated runtime");
     require(api_callable("listen","http_server")->overloads[0].parameters.back().optional,"HTTP max_requests is optional");
     require(api_callable("listen_tls","http_server")->overloads[0].parameters.back().optional,"HTTPS max_requests is optional");

@@ -454,6 +454,91 @@ catch {
 
 The compiler tracks checked error types from the function signature. Calls that may propagate an undeclared checked error are rejected; `try`/typed `catch`/catch-all handling is the canonical local handling model.
 
+### 12.1 Checked-error effects are part of callable and future types
+
+Checked-error effect sets are canonicalized into the type identity (duplicate-free, order-independent, sorted by canonical spelling). A checked-error set is therefore part of a callable's and a future's static type, not a side table keyed by name.
+
+```text
+function f(...) -> T : E        callable type  -> function<(...) -> T : E>
+async function f(...) -> T : E  callable type  -> function<(...) -> future<T : E>>
+future<T : E>                   future type
+await future<T : E>             -> T, with immediate effect E
+```
+
+Phase model (accepted campaign contract):
+
+```text
+sync  function f() -> T : E   invocation effect = E
+async function f() -> T : E   invocation effect = {}
+                              returned type     = future<T : E>
+await future<T : E>           result type       = T
+                              immediate effect  = E
+```
+
+For a synchronous function that returns a future, the outer call-time error and the returned future's await-time error are distinct:
+
+```text
+function f() -> future<T : IoError> : ExecError
+  call  -> ExecError
+  await -> IoError
+```
+
+### 12.2 Callable-value compatibility
+
+A callable or future value is assignable/passable only when its actual escaping checked errors are a subset of the destination's allowed errors:
+
+```text
+actual errors ⊆ allowed errors
+```
+
+```strut
+function risky() -> int : AppError
+function<() -> int : AppError> ok := risky;   // accept
+function<() -> int>            bad := risky;  // reject
+```
+
+Checked-error sets are contract, not overload identity; return type and parameter shape participate in overload identity as before.
+
+### 12.3 Resolved-callable contract
+
+One selected callable yields one contract: return type, invocation checked-error set, and (for async) the returned future's await-time set. This holds for top-level direct calls, top-level overloads (including same-parameter/different-return overloads resolved by expected return), user/builtin precedence (a legal user callable owns the whole contract), methods (by declaring owner; `obj.method`, `this.method`, `ptr->method`, `ref.method`, bare owner calls), inheritance (declaring-owner contract), private methods, and out-of-line declaration/definition pairs (one logical callable; return/error/parameter/generic mismatches and visibility conflicts diagnose).
+
+### 12.4 Lambda boundary
+
+A lambda is a separate callable checked-error boundary. It gets its own checked-error context (its explicit `: E` clause, else the expected slot's permitted set, else empty). Outer declarations and outer `try`/`catch` do not absorb a deferred lambda's effects, including an effect introduced by `await` inside the lambda. Caught errors do not escape.
+
+### 12.5 Builtin phase model
+
+A builtin's checked errors are classified by its resolved contract, not by an `_async` name suffix:
+
+```text
+future-returning builtin  checked_errors -> await-time, inside future<T : E>
+otherwise                 checked_errors -> invocation-time
+```
+
+`strut api` / `strut api --json` render a future-returning builtin's signature with the await-time set inside the future (for example `http_get_async(string url) -> future<http_response : HttpError>`), while a synchronous builtin keeps a plain return with its errors listed separately (`http_get(string url) -> http_response`, throws `HttpError`).
+
+### 12.6 Unsupported / deferred surfaces
+
+These are deliberately not part of the accepted checked-error model and must not be documented as supported:
+
+```text
+async struct methods        (not parsed)
+builtin callable values     (builtins are not scope-bound values)
+bound-method values         (obj.method as a value is opaque)
+callback effect polymorphism (standard callbacks remain nonthrowing, Choice A)
+```
+
+### 12.7 Deferred future cleanup (non-blocking)
+
+```text
+generic-candidate viability normalization
+    generic candidates can fail ordinary viability and fall back to a
+    return-only `lookup(function)` path; the checked-error contract is
+    preserved by the subsequent concrete inference pass. Effect-safe.
+optional compact resolver/await helper extraction
+```
+
 ## 13. Enums
 
 Allow implicit and explicit integer values:
