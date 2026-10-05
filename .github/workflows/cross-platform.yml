@@ -70,7 +70,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: strut-labs/strut-labs.github.io
-          ref: 3d6182dc27d7d205b6fce68e97152b88a1b1840a
+          ref: 78b963da1ad03bafdf8f492593f59222b1df4b52
           path: website-source
       - name: Check release metadata
         run: python3 tools/check_release.py
@@ -237,7 +237,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: strut-labs/strut-labs.github.io
-          ref: 3d6182dc27d7d205b6fce68e97152b88a1b1840a
+          ref: 78b963da1ad03bafdf8f492593f59222b1df4b52
           path: website-source
       - name: Check release metadata
         run: python3 tools/check_release.py
