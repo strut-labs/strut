@@ -569,6 +569,7 @@ inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runti
 #else
 #include <fcntl.h>
 #include <poll.h>
+#include <netinet/tcp.h>
 using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socket=-1;
 inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){::shutdown(h,SHUT_RDWR);::close(h);}}
 inline bool strut_socket_set_blocking(strut_socket_handle h,bool blocking){const int flags=fcntl(h,F_GETFL,0);return flags>=0&&fcntl(h,F_SETFL,blocking?(flags&~O_NONBLOCK):(flags|O_NONBLOCK))==0;}
@@ -578,10 +579,9 @@ inline int strut_socket_poll_read(strut_socket_handle h,int timeout_ms){return s
 inline void strut_socket_init(){}
 #endif
 inline void strut_socket_prepare(strut_socket_handle h){
+    const int nodelay=1;setsockopt(h,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&nodelay),sizeof(nodelay));
 #ifdef SO_NOSIGPIPE
-    int enabled=1;setsockopt(h,SOL_SOCKET,SO_NOSIGPIPE,reinterpret_cast<const char*>(&enabled),sizeof(enabled));
-#else
-    (void)h;
+    const int enabled=1;setsockopt(h,SOL_SOCKET,SO_NOSIGPIPE,reinterpret_cast<const char*>(&enabled),sizeof(enabled));
 #endif
 }
 struct strut_socket_state;
