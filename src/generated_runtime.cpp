@@ -978,8 +978,173 @@ inline bool strut_route_match(const std::string& pattern,const std::string& path
 )STRUT_HTTP_TYPES";
 }
 
+// R1: internal readiness reactor. Narrow platform-abstracted surface:
+// add/modify/remove registrations, wait for readiness, cross-thread wakeup.
+// Linux uses epoll + eventfd. Other POSIX uses poll + a self-pipe. Windows uses
+// WSAPoll + a loopback UDP wake socket. kqueue (R9) and a completion-based
+// Windows engine (R10+) may replace the non-Linux backends later; the surface
+// stays the same. The reactor is not yet wired into the server (R2+).
+void emit_reactor(std::ostream& out) {
+    out << R"STRUT_REACTOR(
+#include <algorithm>
+#include <vector>
+#if defined(__linux__)
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+#elif !defined(_WIN32)
+#include <fcntl.h>
+#include <poll.h>
+#endif
+#ifndef STRUT_REACTOR_DEFINED
+#define STRUT_REACTOR_DEFINED
+struct strut_reactor_event{strut_socket_handle handle=strut_invalid_socket;bool readable=false,writable=false,error=false,closed=false,wakeup=false;};
+class strut_reactor{
+public:
+    strut_reactor(){
+#if defined(__linux__)
+        epfd_=::epoll_create1(EPOLL_CLOEXEC);
+        if(epfd_<0)throw strut_checked_error("NetworkError","unable to create reactor");
+        wakefd_=::eventfd(0,EFD_NONBLOCK|EFD_CLOEXEC);
+        if(wakefd_<0){::close(epfd_);epfd_=-1;throw strut_checked_error("NetworkError","unable to create reactor wakeup");}
+        if(!ctl(wakefd_,EPOLL_CTL_ADD,EPOLLIN)){::close(wakefd_);::close(epfd_);epfd_=wakefd_=-1;throw strut_checked_error("NetworkError","unable to register reactor wakeup");}
+#else
+        if(!create_wake())throw strut_checked_error("NetworkError","unable to create reactor wakeup");
+#endif
+    }
+    ~strut_reactor(){
+#if defined(__linux__)
+        if(wakefd_>=0)::close(wakefd_);
+        if(epfd_>=0)::close(epfd_);
+#else
+        destroy_wake();
+#endif
+    }
+    strut_reactor(const strut_reactor&)=delete;strut_reactor& operator=(const strut_reactor&)=delete;
+    bool ok() const{
+#if defined(__linux__)
+        return epfd_>=0&&wakefd_>=0;
+#else
+        return wake_valid();
+#endif
+    }
+    void add(strut_socket_handle handle,bool readable,bool writable){
+#if defined(__linux__)
+        if(!ctl(handle,EPOLL_CTL_ADD,interest(readable,writable)))throw strut_checked_error("NetworkError","unable to register reactor socket");
+#else
+        for(auto& entry:registrations_)if(entry.handle==handle){entry.readable=readable;entry.writable=writable;return;}
+        registrations_.push_back(registration{handle,readable,writable});
+#endif
+    }
+    void modify(strut_socket_handle handle,bool readable,bool writable){
+#if defined(__linux__)
+        if(!ctl(handle,EPOLL_CTL_MOD,interest(readable,writable)))throw strut_checked_error("NetworkError","unable to modify reactor socket");
+#else
+        for(auto& entry:registrations_)if(entry.handle==handle){entry.readable=readable;entry.writable=writable;return;}
+        registrations_.push_back(registration{handle,readable,writable});
+#endif
+    }
+    void remove(strut_socket_handle handle){
+#if defined(__linux__)
+        (void)::epoll_ctl(epfd_,EPOLL_CTL_DEL,handle,nullptr);
+#else
+        registrations_.erase(std::remove_if(registrations_.begin(),registrations_.end(),[&](const registration& entry){return entry.handle==handle;}),registrations_.end());
+#endif
+    }
+    std::size_t wait(std::vector<strut_reactor_event>& events,int timeout_ms){
+        events.clear();
+#if defined(__linux__)
+        constexpr int max_events=256;epoll_event ready[max_events];const int count=::epoll_wait(epfd_,ready,max_events,timeout_ms);
+        if(count<0){if(errno==EINTR)return 0;throw strut_checked_error("NetworkError","reactor wait failed");}
+        for(int i=0;i<count;++i){const int fd=ready[i].data.fd;const std::uint32_t mask=ready[i].events;if(fd==wakefd_){drain_wake();events.push_back(strut_reactor_event{});events.back().wakeup=true;continue;}strut_reactor_event event;event.handle=fd;event.readable=(mask&(EPOLLIN|EPOLLPRI))!=0;event.writable=(mask&EPOLLOUT)!=0;event.error=(mask&EPOLLERR)!=0;
+#ifdef EPOLLRDHUP
+            event.closed=(mask&(EPOLLHUP|EPOLLRDHUP))!=0;
+#else
+            event.closed=(mask&EPOLLHUP)!=0;
+#endif
+            events.push_back(event);}
+        return events.size();
+#else
+        std::vector<native_descriptor> descriptors;descriptors.reserve(registrations_.size()+1);descriptors.push_back(wake_descriptor());
+        for(const auto& entry:registrations_)descriptors.push_back(interest_descriptor(entry));
+        const int count=poll_descriptors(descriptors,timeout_ms);
+        if(count<0)return 0;
+        if(count==0)return 0;
+        if(descriptor_ready(descriptors[0])){drain_wake();events.push_back(strut_reactor_event{});events.back().wakeup=true;}
+        for(std::size_t i=1;i<descriptors.size();++i){if(!descriptor_ready(descriptors[i]))continue;strut_reactor_event event;event.handle=descriptor_handle(descriptors[i]);event.readable=descriptor_readable(descriptors[i]);event.writable=descriptor_writable(descriptors[i]);event.error=descriptor_error(descriptors[i]);event.closed=descriptor_closed(descriptors[i]);events.push_back(event);}
+        return events.size();
+#endif
+    }
+    void wake(){
+#if defined(__linux__)
+        if(wakefd_<0)return;const std::uint64_t one=1;const ssize_t ignored=::write(wakefd_,&one,sizeof(one));(void)ignored;
+#else
+        wake_write();
+#endif
+    }
+private:
+#if defined(__linux__)
+    static std::uint32_t interest(bool readable,bool writable){return static_cast<std::uint32_t>((readable?EPOLLIN:0)|(writable?EPOLLOUT:0));}
+    bool ctl(strut_socket_handle handle,int operation,std::uint32_t mask){epoll_event event{};event.events=mask;event.data.fd=handle;return ::epoll_ctl(epfd_,operation,handle,&event)==0;}
+    void drain_wake(){std::uint64_t value=0;const ssize_t ignored=::read(wakefd_,&value,sizeof(value));(void)ignored;}
+    int epfd_=-1,wakefd_=-1;
+#else
+    struct registration{strut_socket_handle handle;bool readable;bool writable;};
+    std::vector<registration> registrations_;
+    static void set_nonblocking(strut_socket_handle handle){strut_socket_set_blocking(handle,false);}
+#if defined(_WIN32)
+    static constexpr short poll_readable=POLLRDNORM;static constexpr short poll_writable=POLLWRNORM;
+    struct native_descriptor{strut_socket_handle handle;short events;short revents;};
+    bool create_wake(){struct sockaddr_in address{};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);wake_send_=::socket(AF_INET,SOCK_DGRAM,0);wake_recv_=::socket(AF_INET,SOCK_DGRAM,0);if(wake_send_==INVALID_SOCKET||wake_recv_==INVALID_SOCKET){destroy_wake();return false;}if(::bind(wake_recv_,reinterpret_cast<sockaddr*>(&address),sizeof(address))!=0){destroy_wake();return false;}int length=sizeof(address);if(::getsockname(wake_recv_,reinterpret_cast<sockaddr*>(&address),&length)!=0){destroy_wake();return false;}if(::connect(wake_send_,reinterpret_cast<sockaddr*>(&address),sizeof(address))!=0){destroy_wake();return false;}set_nonblocking(wake_recv_);set_nonblocking(wake_send_);return true;}
+    void destroy_wake(){if(wake_send_!=INVALID_SOCKET){::closesocket(wake_send_);wake_send_=INVALID_SOCKET;}if(wake_recv_!=INVALID_SOCKET){::closesocket(wake_recv_);wake_recv_=INVALID_SOCKET;}}
+    bool wake_valid() const{return wake_send_!=INVALID_SOCKET&&wake_recv_!=INVALID_SOCKET;}
+    void wake_write(){if(wake_send_==INVALID_SOCKET)return;char byte='x';const int ignored=::send(wake_send_,&byte,1,0);(void)ignored;}
+    void drain_wake(){if(wake_recv_==INVALID_SOCKET)return;char buffer[64];while(::recv(wake_recv_,buffer,sizeof(buffer),0)>0){}}
+    native_descriptor wake_descriptor(){return {wake_recv_,poll_readable,0};}
+    native_descriptor interest_descriptor(const registration& entry){short events=0;if(entry.readable)events|=poll_readable;if(entry.writable)events|=poll_writable;return {entry.handle,events,0};}
+    int poll_descriptors(std::vector<native_descriptor>& descriptors,int timeout_ms){std::vector<WSAPOLLFD> polled;polled.reserve(descriptors.size());for(const auto& descriptor:descriptors){WSAPOLLFD entry{};entry.fd=descriptor.handle;entry.events=descriptor.events;polled.push_back(entry);}const int count=::WSAPoll(polled.data(),static_cast<ULONG>(polled.size()),timeout_ms);for(std::size_t i=0;i<descriptors.size();++i)descriptors[i].revents=polled[i].revents;if(count==SOCKET_ERROR)return 0;return count;}
+    static bool descriptor_ready(const native_descriptor& descriptor){return descriptor.revents!=0;}
+    static strut_socket_handle descriptor_handle(const native_descriptor& descriptor){return descriptor.handle;}
+    static bool descriptor_readable(const native_descriptor& descriptor){return (descriptor.revents&(poll_readable|POLLIN))!=0;}
+    static bool descriptor_writable(const native_descriptor& descriptor){return (descriptor.revents&(poll_writable|POLLOUT))!=0;}
+    static bool descriptor_error(const native_descriptor& descriptor){return (descriptor.revents&POLLERR)!=0;}
+    static bool descriptor_closed(const native_descriptor& descriptor){return (descriptor.revents&POLLHUP)!=0;}
+    strut_socket_handle wake_send_=INVALID_SOCKET,wake_recv_=INVALID_SOCKET;
+#else
+    static constexpr short poll_readable=POLLIN;static constexpr short poll_writable=POLLOUT;
+    struct native_descriptor{strut_socket_handle handle;short events;short revents;};
+    bool create_wake(){if(::pipe(wake_pipe_)!=0){wake_pipe_[0]=wake_pipe_[1]=-1;return false;}set_nonblocking(wake_pipe_[0]);set_nonblocking(wake_pipe_[1]);return true;}
+    void destroy_wake(){if(wake_pipe_[0]>=0)::close(wake_pipe_[0]);if(wake_pipe_[1]>=0)::close(wake_pipe_[1]);wake_pipe_[0]=wake_pipe_[1]=-1;}
+    bool wake_valid() const{return wake_pipe_[0]>=0&&wake_pipe_[1]>=0;}
+    void wake_write(){if(wake_pipe_[1]<0)return;char byte='x';const ssize_t ignored=::write(wake_pipe_[1],&byte,1);(void)ignored;}
+    void drain_wake(){if(wake_pipe_[0]<0)return;char buffer[64];while(::read(wake_pipe_[0],buffer,sizeof(buffer))>0){}}
+    native_descriptor wake_descriptor(){return {wake_pipe_[0],poll_readable,0};}
+    native_descriptor interest_descriptor(const registration& entry){short events=0;if(entry.readable)events|=poll_readable;if(entry.writable)events|=poll_writable;return {entry.handle,events,0};}
+    int poll_descriptors(std::vector<native_descriptor>& descriptors,int timeout_ms){std::vector<pollfd> polled;polled.reserve(descriptors.size());for(const auto& descriptor:descriptors){pollfd entry{};entry.fd=descriptor.handle;entry.events=descriptor.events;polled.push_back(entry);}const int count=::poll(polled.data(),polled.size(),timeout_ms);if(count<0){if(errno==EINTR)return 0;throw strut_checked_error("NetworkError","reactor wait failed");}for(std::size_t i=0;i<descriptors.size();++i)descriptors[i].revents=polled[i].revents;return count;}
+    static bool descriptor_ready(const native_descriptor& descriptor){return descriptor.revents!=0;}
+    static strut_socket_handle descriptor_handle(const native_descriptor& descriptor){return descriptor.handle;}
+    static bool descriptor_readable(const native_descriptor& descriptor){return (descriptor.revents&(poll_readable
+#ifdef POLLRDHUP
+        |POLLRDHUP
+#endif
+        ))!=0;}
+    static bool descriptor_writable(const native_descriptor& descriptor){return (descriptor.revents&poll_writable)!=0;}
+    static bool descriptor_error(const native_descriptor& descriptor){return (descriptor.revents&POLLERR)!=0;}
+    static bool descriptor_closed(const native_descriptor& descriptor){return (descriptor.revents&(POLLHUP
+#ifdef POLLRDHUP
+        |POLLRDHUP
+#endif
+        ))!=0;}
+    int wake_pipe_[2]={-1,-1};
+#endif
+#endif
+};
+#endif
+)STRUT_REACTOR";
+}
+
 void emit_http_server(std::ostream& out, bool async_handlers, bool tls, bool websocket) {
     if (tls) out << "#define STRUT_USE_SERVER_TLS 1\n#include <openssl/ssl.h>\n#include <openssl/err.h>\n#include <cerrno>\n#ifndef _WIN32\n#include <fcntl.h>\n#include <poll.h>\n#endif\n";
+    emit_reactor(out);
     out << R"STRUT_SERVER(
 #include <atomic>
 #include <csignal>
