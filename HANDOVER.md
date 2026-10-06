@@ -36,7 +36,7 @@ Treat the three repositories as one coordinated project. A language feature is n
 Before implementing or changing language behaviour, read:
 
 1. `LANGUAGE_HANDOVER.md` — current language design contract;
-2. `IMPLEMENTATION_HANDOVER.md` — ordered checkpoint roadmap;
+2. `IMPLEMENTATION_HANDOVER.md` — ordered checkpoint roadmap; its "Extended roadmap" section records the authoritative long-term sequencing (HTTP/runtime performance => FFI/Nift => language maturity => releases => low-level systems readiness) and why that ordering was chosen;
 3. `REGRESSION_HANDOVER.md` — regression-suite contract;
 4. `WEBSITE_HANDOVER.md` — website/docs requirements and maintenance contract.
 

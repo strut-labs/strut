@@ -987,3 +987,169 @@ For any checkpoint that changes user-visible behaviour, ask all four questions b
 2. Is `strut-regression-suite` updated and green?
 3. Is `strut-labs.github.io` updated where users need documentation/examples, rebuilt with `nift build`, and committed?
 4. Are the Strut handover/design/checkpoint docs still truthful?
+
+# Extended roadmap — after the HTTP/reactor runtime campaign (R0-R7)
+
+This section is the authoritative current long-term sequencing. The detailed
+checkpoint phases above (CP1-CP116) remain relevant as the *existing language /
+product maturity work*; this section places them in order, adds the active
+runtime/performance campaign and the deferred FFI and low-level systems phases,
+and records why the ordering matters. Keep this section and its rationale when
+planning future work. Preserve the completed-checkpoint history above; do not
+rewrite it.
+
+## Sequencing rationale
+
+- **Performance / request runtime first.** The HTTP reactor campaign
+  (replacing thread-per-connection with a reactor + CPU-sized app workers +
+  bounded stream pool) is already in flight and is the highest-leverage open
+  work: it changes the server runtime from a "collapse under 50 connections"
+  profile to a bounded-thread, backpressured, Go-competitive one.
+- **Two-way FFI / embedding second.** It is the blocker for the actual Nift
+  package / native-extension use case; nothing generic should be built for its
+  own sake, it must be dogfooded against Nift.
+- **Existing language maturity third.** Phases 2-19 (CP items) above are the
+  older planned work; preserve and finish the still-relevant items rather than
+  losing them.
+- **Release milestone(s).** Do not accumulate unreleased work forever; a
+  release may be warranted right after the HTTP/runtime campaign.
+- **Low-level systems readiness as a dedicated cross-domain audit** later, so
+  kernels/embedded/hypervisors/bootloaders/drivers/HP-userspace share one
+  coherent low-level core instead of six overlapping feature sets.
+
+## NOW — finish the HTTP/runtime performance campaign (active)
+
+Current status (R0-R7 complete): thread-per-connection replaced by a
+production-oriented reactor; buffered HTTP, response streaming, true
+incremental request streaming, and WebSockets are reactor-native with bounded
+adapters. Historical single-vCPU plaintext progression to keep on record:
+
+- original ~1.2k req/s
+- TCP_NODELAY legacy ~9k
+- first reactor ~11-12k
+- reactor + vectored write (writev) ~16.8-16.9k
+- R5-R7 maintained ~16k (session variance)
+
+Current frozen controls: Go ~24k, Rust >=35k (generator-limited floor — the
+real Rust ceiling is higher). First performance checkpoint: match/beat Go, then
+keep pushing toward Rust while gains are general, semantics stay correct, and
+ownership/safety stays strong.
+
+Remaining campaign checkpoints:
+
+- R8 — reactor-native TLS (`SSL_accept`/`SSL_read`/`SSL_write` translated
+  through `WANT_READ`/`WANT_WRITE` into reactor interests; incremental
+  handshake off the sole app worker; slow/pathological peers consume connection
+  state, not the app worker).
+- R8.5 / early-R13 — aggressive, measured Linux request hot-path work: parser,
+  header representation, copies/allocations, serialization, route/connection
+  lookups, wakeup batching, recv-drain strategy, generated C++ abstractions.
+  Keep the performance ledger (SHA, hypothesis, evidence, c1/c10/c50,
+  latency/CPU/RSS, ratios vs Go and vs the Rust floor) and A/B every retained
+  change.
+- R9 — real kqueue/macOS backend and certification (the current POSIX
+  poll+self-pipe is a portability scaffold, not completion).
+- R10 — Windows readiness backend and certification (WSAPoll; WSASend path
+  already hosted-compiled; IOCP remains a later scalability investigation).
+- R11 — race/resource/platform hardening; TSan where practical.
+- final Linux rebenchmark; stronger-generator authoritative Strut/Go/Rust
+  comparison; 1/2/4-vCPU scaling; ship/keep-or-shard decision for one-reactor +
+  N workers.
+- reactor-default promotion decision once request streaming, response
+  streaming, WebSocket, TLS, kqueue, Windows, and hardening are all green; do
+  not leave the good runtime behind an undocumented env var forever.
+
+Generator trigger: when Strut reaches roughly 28-30k+ req/s, or the generator
+exceeds ~80-85% CPU while driving Strut, upgrade/resize the generator and use it
+equally for Strut, Go, and Rust before claiming final percentages.
+
+## Potential release after Phase 1
+
+A new Strut version MAY be warranted immediately after the HTTP/reactor/
+performance campaign if the result is production-ready, cross-platform
+certified, materially faster, and ready for reactor promotion. Do not delay a
+strong runtime release until every later roadmap item is complete. The HTTP
+runtime work alone may justify a release.
+
+## NEXT — two-way FFI / embedding (needed for Nift packages)
+
+Return to the previously deferred export/embedding direction. The goal is not
+generic FFI; dogfood it against the Nift package / native extension use case.
+Likely areas: stable exported C ABI / shared-library usage, host->Strut calls,
+Strut->host callbacks (retained where required), ownership/lifetime rules across
+the ABI, checked-error propagation, cancellation, owner-thread/affinity
+dispatch, externally completed futures, native resource ownership, safe
+teardown, callback-after-destruction prevention, and exception/error
+containment. Design the exact API from the Nift integration evidence; do not
+build a large abstract embedding framework without dogfooding it.
+
+## LATER — remaining current language/product roadmap (preserved)
+
+Finish the still-relevant items from Phases 2-19 above (package/export/private
+boundary work, resolver/SemVer maturity, transitive dependencies, checked-error
+remaining edges, generics/constraints/hashability, SQLite hardening, terminal
+detection, Unicode iteration, package ecosystem, diagnostics, formatter/LSP/docs,
+testing/fuzzing/security, concurrency/runtime hardening, compiler/generated-code
+quality, production dogfood, self-hosting review). These are the authoritative
+detailed checkpoints already documented above; link them here rather than
+duplicating them. Do not accidentally lose older roadmap items while adding the
+new phases.
+
+## Release milestones
+
+There may be two release points:
+
+- release A — after the HTTP/runtime campaign (production-ready reactor runtime);
+- release B — after FFI + broader maturity work.
+
+Do not force everything into one enormous release.
+
+## EXPLORATORY — low-level / freestanding systems readiness
+
+A dedicated cross-domain audit (kernels, embedded/bare metal, hypervisors,
+bootloaders, drivers, high-performance userspace) to identify shared foundations
+first, then domain-specific requirements. Do not implement six overlapping
+feature sets.
+
+- Phase 5A: capability matrix across the domains (freestanding compilation,
+  hosted-runtime/libc assumptions, runtime slicing, custom allocators,
+  allocator-free/fixed-capacity containers, raw pointers/volatile/MMIO,
+  exact ABI/layout, packed/alignment/unions, symbol/linker-section control,
+  static-library emission, intrinsics, inline assembly, naked/special entry,
+  atomics/precise ordering, no-hidden-alloc/blocking guarantees, predictable
+  destruction, panic semantics, checked-error lowering in freestanding mode,
+  no-unwind, integer modes, endian/bit ops, SIMD, zero-copy, comptime
+  introspection, cross-compilation, emulator harnesses, debug friendliness).
+  Classify each as common / kernel / embedded / hypervisor / bootloader /
+  driver / HP-userspace, and prioritize common foundations.
+- Phase 5B: a coherent Strut low-level core (freestanding target, minimal core
+  library independent of host APIs, controllable component emission, exact
+  layout/ABI, raw+volatile memory primitives, custom allocator model,
+  fixed-capacity collections, intrinsics/inline asm, linker/section controls,
+  explicit panic/runtime hooks, precise atomics/memory model, explicit
+  no-hidden-work properties, strong bit/integer primitives, compile-time
+  scripting/reflection). Prefer general facilities (e.g. a general
+  calling-convention + symbol-name + section + naked-entry facility rather than
+  a `@boot_entry` special case).
+- Phase 5C: small focused dogfood projects (QEMU kernel boot, bare-metal
+  GPIO/UART, minimal hypervisor bring-up, bootloader ELF load, simple virtio/PCI
+  driver, HP userspace allocator/SIMD/zero-copy), feeding missing general
+  capabilities back into Strut; only then add narrowly domain-specific features.
+
+Cross-cutting goal: "what guarantees make Strut trustworthy when allocation,
+blocking, layout, calling convention, and hidden runtime behaviour must be
+explicit?" — stronger for all six domains, not just "can Strut compile a
+kernel?".
+
+### Compile-time metaprogramming direction (design, not current work)
+
+Do not assume C++ template metaprogramming. Preferred direction to investigate
+later: ordinary generics for parametric polymorphism, and compile-time Strut
+scripting (`comptime { ... }`, exact syntax TBD) for metaprogramming /
+reflection / declaration and code generation — read-only compiler reflection +
+typed compile-time values + controlled emission, with generated declarations
+re-entering normal semantic/type checking. Useful for interrupt/vector tables,
+register maps, syscall tables, page-table constants, device descriptors, ABI
+bindings, layout tables, SIMD dispatch tables. Avoid arbitrary mutable compiler
+AST access as the default model. Do not implement during the current HTTP
+campaign; persist the direction so it is not lost.
