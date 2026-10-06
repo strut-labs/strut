@@ -1327,11 +1327,17 @@ public:
 #ifndef _WIN32
         {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
-        SSL_CTX* raw=SSL_CTX_new(TLS_server_method());if(!raw)throw strut_checked_error("TlsError","unable to initialize the TLS server context");std::shared_ptr<SSL_CTX> context(raw,SSL_CTX_free);SSL_CTX_set_min_proto_version(raw,TLS1_2_VERSION);
+        SSL_CTX* raw=SSL_CTX_new(TLS_server_method());if(!raw)throw strut_checked_error("TlsError","unable to initialize the TLS server context");std::shared_ptr<SSL_CTX> context(raw,SSL_CTX_free);SSL_CTX_set_min_proto_version(raw,TLS1_2_VERSION);SSL_CTX_set_mode(raw,SSL_MODE_AUTO_RETRY);
         if(SSL_CTX_use_certificate_chain_file(raw,certificate.v.c_str())!=1)throw strut_checked_error("TlsError","unable to load TLS certificate chain from '"+certificate.v+"'");
         if(SSL_CTX_use_PrivateKey_file(raw,private_key.v.c_str(),SSL_FILETYPE_PEM)!=1)throw strut_checked_error("TlsError","unable to load TLS private key from '"+private_key.v+"'");
         if(SSL_CTX_check_private_key(raw)!=1)throw strut_checked_error("TlsError","TLS certificate and private key do not match");
-        auto s=s_;run_server(host,port,max_requests,[s,context](strut_tcp_socket& socket){openssl_thread_cleanup cleanup;std::unique_ptr<SSL,decltype(&SSL_free)> ssl(SSL_new(context.get()),SSL_free);if(!ssl)return;if(SSL_set_fd(ssl.get(),static_cast<int>(socket.native_handle()))!=1||!tls_accept_until(socket,ssl.get(),std::min({s->read_timeout_ms,s->write_timeout_ms,s->idle_timeout_ms})))return;tls_socket secure(socket,ssl.release());serve_connection(s,worker_run_,worker_connection_,secure);},[](strut_tcp_socket& socket){socket.close();});
+        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn&&!route.stream&&!route.request_stream
+#ifdef STRUT_USE_WEBSOCKET
+                &&!route.websocket
+#endif
+                ){reactor=false;break;}}
+        if(reactor){run_reactor_server(s,host,port,max_requests,reinterpret_cast<void*>(context.get()));return;}
+        run_server(host,port,max_requests,[s,context](strut_tcp_socket& socket){openssl_thread_cleanup cleanup;std::unique_ptr<SSL,decltype(&SSL_free)> ssl(SSL_new(context.get()),SSL_free);if(!ssl)return;if(SSL_set_fd(ssl.get(),static_cast<int>(socket.native_handle()))!=1||!tls_accept_until(socket,ssl.get(),std::min({s->read_timeout_ms,s->write_timeout_ms,s->idle_timeout_ms})))return;tls_socket secure(socket,ssl.release());serve_connection(s,worker_run_,worker_connection_,secure);},[](strut_tcp_socket& socket){socket.close();});
     }
 )STRUT_SERVER";
     }
@@ -1351,11 +1357,14 @@ private:
         std::string out_head,out_body;std::size_t head_offset=0,body_offset=0;bool close_after_write=false;bool keep_alive=false;
         std::mutex out_mutex;std::condition_variable out_cv;std::string out_stream;std::size_t out_limit=1024*1024;bool out_closed=false,out_error=false,stream_finished=false;
         std::mutex body_mutex;std::condition_variable body_cv;std::string body_buf,next;std::size_t body_limit=128*1024;bool body_closed=false;bool early_routed=false,dispatched=false;std::function<void()> websocket_job;bool websocket_mode=false;
+#ifdef STRUT_USE_SERVER_TLS
+        SSL* tls=nullptr;bool tls_handshake=false,tls_want_write=false;
+#endif
         std::chrono::steady_clock::time_point deadline;bool deadline_set=false;reactor_phase phase=reactor_phase::reading;
         std::shared_ptr<strut_cancellation_source> cancellation;bool is_stream=false,stream_counted=false;
     };
     struct reactor_state{std::mutex mutex;std::condition_variable stream_cv;std::unordered_map<strut_socket_handle,std::shared_ptr<reactor_connection>> connections;std::deque<std::shared_ptr<reactor_connection>> ready,stream_ready,completed;std::size_t in_flight=0,streaming=0;std::uint64_t next_id=1;};
-    struct run_state{std::mutex mutex;std::condition_variable work_cv,drain_cv;std::deque<std::shared_ptr<connection>> queue,connections;std::shared_ptr<connection> rejecting;strut_tcp_listener listener;std::size_t in_flight=0;bool accepting=true,startup_complete=false,was_running=false,workers_stopping=false,forced=false,deadline_set=false;std::chrono::steady_clock::time_point deadline;std::int32_t shutdown_timeout_ms=0;std::shared_ptr<strut_reactor> reactor;std::shared_ptr<reactor_state> reactor_data;bool reactor_mode=false;};
+    struct run_state{std::mutex mutex;std::condition_variable work_cv,drain_cv;std::deque<std::shared_ptr<connection>> queue,connections;std::shared_ptr<connection> rejecting;strut_tcp_listener listener;std::size_t in_flight=0;bool accepting=true,startup_complete=false,was_running=false,workers_stopping=false,forced=false,deadline_set=false;std::chrono::steady_clock::time_point deadline;std::int32_t shutdown_timeout_ms=0;std::shared_ptr<strut_reactor> reactor;std::shared_ptr<reactor_state> reactor_data;bool reactor_mode=false;void* tls_ctx=nullptr;};
     struct state{std::vector<route> routes;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false};std::mutex lifecycle_mutex;std::shared_ptr<run_state> current;lifecycle_phase phase=lifecycle_phase::stopped;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;
 )STRUT_SERVER";
     if (websocket) out << "std::size_t max_websocket_frame=1024*1024,max_websocket_message=4*1024*1024;";
@@ -1481,10 +1490,15 @@ private:
                 const std::size_t head_remaining=conn->out_head.size()-conn->head_offset;
                 const bool body_pending=conn->body_offset<conn->out_body.size();
                 const std::size_t body_remaining=body_pending?conn->out_body.size()-conn->body_offset:0;
-                std::size_t n=0;if(body_pending)n=conn->socket.writev_some(conn->out_head.data()+conn->head_offset,head_remaining,conn->out_body.data()+conn->body_offset,body_remaining);else n=conn->socket.write_some(conn->out_head.data()+conn->head_offset,head_remaining);
+                std::size_t n=0;
+#ifdef STRUT_USE_SERVER_TLS
+                if(conn->tls){n=reactor_write_some(conn,conn->out_head.data()+conn->head_offset,head_remaining);}
+                else
+#endif
+                if(body_pending)n=conn->socket.writev_some(conn->out_head.data()+conn->head_offset,head_remaining,conn->out_body.data()+conn->body_offset,body_remaining);else n=conn->socket.write_some(conn->out_head.data()+conn->head_offset,head_remaining);
                 if(n==0)return;std::size_t head_used=std::min(n,head_remaining);conn->head_offset+=head_used;n-=head_used;if(body_pending)conn->body_offset+=n;
             }
-            while(conn->body_offset<conn->out_body.size()){const std::size_t n=conn->socket.write_some(conn->out_body.data()+conn->body_offset,conn->out_body.size()-conn->body_offset);if(n==0)return;conn->body_offset+=n;}
+            while(conn->body_offset<conn->out_body.size()){const std::size_t n=reactor_write_some(conn,conn->out_body.data()+conn->body_offset,conn->out_body.size()-conn->body_offset);if(n==0)return;conn->body_offset+=n;}
         }catch(...){reactor_close(run,reactor,conn);return;}reactor_finish_write(s,run,reactor,conn);}
     static void reactor_pump(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){
         if(conn->phase!=reactor_phase::reading&&conn->phase!=reactor_phase::waiting_body)return;
@@ -1556,6 +1570,28 @@ private:
             }
         }
     }
+    static std::ptrdiff_t reactor_read_some(const std::shared_ptr<reactor_connection>& conn,char* buffer,std::size_t size){
+#ifdef STRUT_USE_SERVER_TLS
+        if(conn->tls){ERR_clear_error();const int n=SSL_read(conn->tls,buffer,static_cast<int>(std::min<std::size_t>(size,static_cast<std::size_t>(std::numeric_limits<int>::max()))));if(n>0){conn->tls_want_write=false;return n;}const int e=SSL_get_error(conn->tls,n);if(e==SSL_ERROR_WANT_READ){conn->tls_want_write=false;return -1;}if(e==SSL_ERROR_WANT_WRITE){conn->tls_want_write=true;return -1;}if(e==SSL_ERROR_ZERO_RETURN)return 0;return -3;}
+#endif
+        return conn->socket.read_some(buffer,size);
+    }
+    static std::size_t reactor_write_some(const std::shared_ptr<reactor_connection>& conn,const char* data,std::size_t size){
+#ifdef STRUT_USE_SERVER_TLS
+        if(conn->tls){ERR_clear_error();const int n=SSL_write(conn->tls,data,static_cast<int>(std::min<std::size_t>(size,static_cast<std::size_t>(std::numeric_limits<int>::max()))));if(n>0){conn->tls_want_write=false;return static_cast<std::size_t>(n);}const int e=SSL_get_error(conn->tls,n);if(e==SSL_ERROR_WANT_READ){conn->tls_want_write=false;return 0;}if(e==SSL_ERROR_WANT_WRITE){conn->tls_want_write=true;return 0;}if(e==SSL_ERROR_ZERO_RETURN)throw strut_checked_error("TlsError","TLS response write closed");throw strut_checked_error("TlsError","TLS response write failed");}
+#endif
+        return conn->socket.write_some(data,size);
+    }
+#ifdef STRUT_USE_SERVER_TLS
+    static int reactor_tls_step(const std::shared_ptr<reactor_connection>& conn){
+        ERR_clear_error();const int r=SSL_accept(conn->tls);
+        if(r==1){conn->tls_want_write=false;return 0;}
+        const int e=SSL_get_error(conn->tls,r);
+        if(e==SSL_ERROR_WANT_READ){conn->tls_want_write=false;return 1;}
+        if(e==SSL_ERROR_WANT_WRITE){conn->tls_want_write=true;return 2;}
+        return -1;
+    }
+#endif
     static std::string reactor_request_read(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<strut_reactor>& reactor,std::size_t size){
         std::unique_lock<std::mutex> lock(conn->body_mutex);while(conn->body_buf.empty()&&!conn->body_closed)conn->body_cv.wait(lock);
         if(conn->body_buf.empty())return{};
@@ -1571,7 +1607,7 @@ private:
         char buffer[8192];
         {std::lock_guard<std::mutex> lock(conn->body_mutex);
             for(;;){if(conn->body_closed)break;if(conn->body_buf.size()>=conn->body_limit)break;
-                std::ptrdiff_t n=0;try{n=conn->socket.read_some(buffer,sizeof(buffer));}catch(...){conn->body_closed=true;break;}
+                std::ptrdiff_t n=0;try{n=reactor_read_some(conn,buffer,sizeof(buffer));}catch(...){conn->body_closed=true;break;}
                 if(n<0)break;if(n==0){conn->body_closed=true;break;}conn->body_buf.append(buffer,static_cast<std::size_t>(n));
             }
         }
@@ -1653,7 +1689,7 @@ private:
         bool drained=false,error=false,finished=false;
         {std::lock_guard<std::mutex> lock(conn->out_mutex);
             while(!conn->out_stream.empty()){
-                std::size_t n=0;try{n=conn->socket.write_some(conn->out_stream.data(),conn->out_stream.size());}catch(...){conn->out_error=true;error=true;break;}
+                std::size_t n=0;try{n=reactor_write_some(conn,conn->out_stream.data(),conn->out_stream.size());}catch(...){conn->out_error=true;error=true;break;}
                 if(n==0)break;conn->out_stream.erase(0,n);
             }
             drained=conn->out_stream.empty();error=error||conn->out_error||conn->out_closed;
@@ -1668,7 +1704,11 @@ private:
         {std::lock_guard<std::mutex> lock(run->mutex);if(!run->reactor_data||run->reactor_data->streaming==0)return;}
         std::vector<std::shared_ptr<reactor_connection>> connections;
         {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data)for(auto& kv:run->reactor_data->connections)connections.push_back(kv.second);}
-        for(auto& conn:connections){bool write=false;bool read=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);write=!conn->out_stream.empty();}if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::mutex> lock(conn->body_mutex);read=conn->body_buf.size()<conn->body_limit;}if(read||write){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,read,write);}}
+        for(auto& conn:connections){bool write=false;bool read=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);write=!conn->out_stream.empty();}
+#ifdef STRUT_USE_SERVER_TLS
+            if(conn->tls_want_write)write=true;
+#endif
+if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::mutex> lock(conn->body_mutex);read=conn->body_buf.size()<conn->body_limit;}if(read||write){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,read,write);}}
     }    static void reactor_worker_loop(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run){
         (void)s;
         for(;;){
@@ -1699,10 +1739,10 @@ private:
     }
 )STRUT_SERVER";
     out << R"STRUT_SERVER(
-    static void run_reactor_server(const std::shared_ptr<state>& s,const strut_string& host,std::int32_t port,std::int32_t max_requests){
+    static void run_reactor_server(const std::shared_ptr<state>& s,const strut_string& host,std::int32_t port,std::int32_t max_requests,void* tls_ctx=nullptr){
         using std::chrono::steady_clock;
         auto run=std::make_shared<run_state>();
-        {std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->phase!=lifecycle_phase::stopped)throw strut_checked_error("NetworkError","cannot start HTTP server while HTTP server is running");run->shutdown_timeout_ms=s->shutdown_timeout_ms;run->reactor_mode=true;run->reactor_data=std::make_shared<reactor_state>();s->current=run;s->phase=lifecycle_phase::starting;}
+        {std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->phase!=lifecycle_phase::stopped)throw strut_checked_error("NetworkError","cannot start HTTP server while HTTP server is running");run->shutdown_timeout_ms=s->shutdown_timeout_ms;run->reactor_mode=true;run->reactor_data=std::make_shared<reactor_state>();run->tls_ctx=tls_ctx;s->current=run;s->phase=lifecycle_phase::starting;}
         strut_tcp_listener listener;try{listener=tcp_listen(host,port);}catch(...){{std::lock_guard<std::mutex> lock(run->mutex);run->startup_complete=true;run->drain_cv.notify_all();}std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->current==run){s->current.reset();s->phase=lifecycle_phase::stopped;s->running.store(false);}throw;}
         std::shared_ptr<strut_reactor> reactor;try{reactor=std::make_shared<strut_reactor>();}catch(...){listener.close();{std::lock_guard<std::mutex> lock(run->mutex);run->startup_complete=true;run->drain_cv.notify_all();}std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->current==run){s->current.reset();s->phase=lifecycle_phase::stopped;s->running.store(false);}throw;}
         run->reactor=reactor;bool accepting=false;{std::lock_guard<std::mutex> lock(run->mutex);accepting=run->accepting;if(accepting)run->listener=std::move(listener);else listener.close();run->startup_complete=true;run->drain_cv.notify_all();}{std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->current==run&&s->phase==lifecycle_phase::starting&&accepting){std::lock_guard<std::mutex> run_lock(run->mutex);run->was_running=true;s->phase=lifecycle_phase::running;s->running.store(true);}else accepting=false;}
@@ -1718,13 +1758,26 @@ private:
             try{reactor->wait(events,stopping?25:50);}catch(...){break;}
             for(const auto& event:events){
                 if(event.wakeup)continue;
-                if(event.handle==listener_handle){if(event.readable||event.closed){for(;;){strut_tcp_socket socket;try{socket=run->listener.try_accept();}catch(...){break;}if(!socket.is_open())break;socket.set_nonblocking(true);if(max_requests>0&&admitted>=static_cast<std::uint64_t>(max_requests)){socket.close();break;}bool saturated=false;{std::lock_guard<std::mutex> lock(run->mutex);saturated=run->in_flight>=static_cast<std::size_t>(s->max_connections);}if(saturated){socket.close();continue;}auto conn=std::make_shared<reactor_connection>(std::move(socket));{std::lock_guard<std::mutex> lock(run->mutex);conn->id=run->reactor_data->next_id++;run->reactor_data->connections.emplace(conn->socket.native_handle(),conn);++run->in_flight;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(s->idle_timeout_ms);conn->deadline_set=true;reactor->add(conn->socket.native_handle(),true,false);++admitted;}}continue;}
+                if(event.handle==listener_handle){if(event.readable||event.closed){for(;;){strut_tcp_socket socket;try{socket=run->listener.try_accept();}catch(...){break;}if(!socket.is_open())break;socket.set_nonblocking(true);if(max_requests>0&&admitted>=static_cast<std::uint64_t>(max_requests)){socket.close();break;}bool saturated=false;{std::lock_guard<std::mutex> lock(run->mutex);saturated=run->in_flight>=static_cast<std::size_t>(s->max_connections);}if(saturated){socket.close();continue;}auto conn=std::make_shared<reactor_connection>(std::move(socket));
+#ifdef STRUT_USE_SERVER_TLS
+                if(run->tls_ctx){SSL* ssl=SSL_new(static_cast<SSL_CTX*>(run->tls_ctx));if(!ssl){conn->socket.close();continue;}if(SSL_set_fd(ssl,conn->socket.native_handle())!=1){SSL_free(ssl);conn->socket.close();continue;}conn->tls=ssl;conn->tls_handshake=true;}
+#endif
+                {std::lock_guard<std::mutex> lock(run->mutex);conn->id=run->reactor_data->next_id++;run->reactor_data->connections.emplace(conn->socket.native_handle(),conn);++run->in_flight;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(s->idle_timeout_ms);conn->deadline_set=true;reactor->add(conn->socket.native_handle(),true,false);++admitted;}}continue;}
                 std::shared_ptr<reactor_connection> conn;reactor_phase conn_phase=reactor_phase::closing;{std::lock_guard<std::mutex> lock(run->mutex);auto& map=run->reactor_data->connections;auto f=map.find(event.handle);if(f!=map.end()){conn=f->second;conn_phase=conn->phase;}}
                 if(!conn)continue;
                 if(event.closed||event.error){if(conn_phase==reactor_phase::dispatched&&conn->cancellation){std::shared_ptr<strut_cancellation_source> source=conn->cancellation;source->cancel();}reactor_close(run,reactor,conn);continue;}
+                if(event.readable){
+#ifdef STRUT_USE_SERVER_TLS
+                if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;}else if(hs==2){reactor_arm_streams(run,reactor);}if(conn->tls_handshake)continue;}
+#endif
+                }
                 if(event.readable&&(conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket)){reactor_request_feed(s,run,conn);continue;}
-                if(event.readable&&(conn_phase==reactor_phase::reading||conn_phase==reactor_phase::waiting_body)){bool closed=false;try{for(;;){char buffer[8192];const std::ptrdiff_t n=conn->socket.read_some(buffer,sizeof(buffer));if(n<0)break;if(n==0){closed=true;break;}conn->input.append(buffer,static_cast<std::size_t>(n));}}catch(...){closed=true;}if(closed){reactor_close(run,reactor,conn);continue;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(conn->head_ready?s->read_timeout_ms:s->idle_timeout_ms);conn->deadline_set=true;reactor_pump(s,run,reactor,conn);}
-                if(event.writable){if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
+                if(event.readable&&(conn_phase==reactor_phase::reading||conn_phase==reactor_phase::waiting_body)){bool closed=false;try{for(;;){char buffer[8192];const std::ptrdiff_t n=reactor_read_some(conn,buffer,sizeof(buffer));if(n<0)break;if(n==0){closed=true;break;}conn->input.append(buffer,static_cast<std::size_t>(n));}}catch(...){closed=true;}if(closed){reactor_close(run,reactor,conn);continue;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(conn->head_ready?s->read_timeout_ms:s->idle_timeout_ms);conn->deadline_set=true;reactor_pump(s,run,reactor,conn);}
+                if(event.writable){
+#ifdef STRUT_USE_SERVER_TLS
+                if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;reactor_arm_streams(run,reactor);}else if(hs==2){conn->tls_want_write=true;}continue;}
+#endif
+                if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
             }
             const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&!c->websocket_mode&&c->phase!=reactor_phase::dispatched&&c->phase!=reactor_phase::writing&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
             if(stopping){std::vector<std::shared_ptr<reactor_connection>> idle;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->phase==reactor_phase::reading||c->phase==reactor_phase::waiting_body||c->phase==reactor_phase::closing)idle.push_back(c);}}for(auto& c:idle)reactor_close(run,reactor,c);}
