@@ -1654,7 +1654,7 @@ private:
         for(;;){
             std::deque<std::shared_ptr<reactor_connection>> completions;bool streams_active=false;{std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){completions.swap(run->reactor_data->completed);streams_active=run->reactor_data->streaming>0;}}
             for(auto& conn:completions){const auto handle=conn->socket.native_handle();if(handle==strut_invalid_socket)continue;bool live=false;{std::lock_guard<std::mutex> lock(run->mutex);auto& map=run->reactor_data->connections;auto f=map.find(handle);live=(f!=map.end()&&f->second==conn);}if(!live)continue;conn->phase=reactor_phase::writing;reactor->modify(handle,false,true);}
-            if(streams_active){std::vector<std::shared_ptr<reactor_connection>> candidates;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections)candidates.push_back(kv.second);}for(auto& conn:candidates){bool has=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);has=!conn->out_stream.empty();}if(has){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);}}}
+            if(streams_active)reactor_arm_streams(run,reactor);
             bool stopping=false;{std::lock_guard<std::mutex> lock(run->mutex);stopping=!run->accepting;}
             try{reactor->wait(events,stopping?25:50);}catch(...){break;}
             for(const auto& event:events){
