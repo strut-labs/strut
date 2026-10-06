@@ -570,6 +570,9 @@ inline void strut_socket_init(){static strut_winsock_runtime runtime;(void)runti
 #include <fcntl.h>
 #include <poll.h>
 #include <netinet/tcp.h>
+#ifndef _WIN32
+#include <sys/uio.h>
+#endif
 using strut_socket_handle=int; constexpr strut_socket_handle strut_invalid_socket=-1;
 inline void strut_socket_close(strut_socket_handle h){if(h!=strut_invalid_socket){::shutdown(h,SHUT_RDWR);::close(h);}}
 inline bool strut_socket_set_blocking(strut_socket_handle h,bool blocking){const int flags=fcntl(h,F_GETFL,0);return flags>=0&&fcntl(h,F_SETFL,blocking?(flags&~O_NONBLOCK):(flags|O_NONBLOCK))==0;}
@@ -655,6 +658,13 @@ public:
             0
 #endif
         );if(n<0){if(strut_socket_would_block())return 0;throw strut_checked_error("NetworkError","socket write failed");}return static_cast<std::size_t>(n);
+#endif
+    }
+    std::size_t writev_some(const char* a,std::size_t alen,const char* b,std::size_t blen){if(!s_)throw strut_checked_error("NetworkError","write on closed socket");if(alen==0&&blen==0)return 0;auto operation=s_->acquire();const auto h=operation.handle;
+#ifdef _WIN32
+        const int a1=static_cast<int>(std::min<std::size_t>(alen,static_cast<std::size_t>(std::numeric_limits<int>::max())));WSABUF buffers[2]{{static_cast<ULONG>(a1),const_cast<char*>(a)},{static_cast<ULONG>(std::min<std::size_t>(blen,static_cast<std::size_t>(std::numeric_limits<ULONG>::max()))),const_cast<char*>(b)}};DWORD sent=0;const int r=::WSASend(h,buffers,2,&sent,0,nullptr,nullptr);if(r!=0){if(strut_socket_would_block())return 0;throw strut_checked_error("NetworkError","socket write failed");}return static_cast<std::size_t>(sent);
+#else
+        iovec buffers[2]{{const_cast<char*>(a),alen},{const_cast<char*>(b),blen}};const ssize_t n=::writev(h,buffers,2);if(n<0){if(strut_socket_would_block())return 0;throw strut_checked_error("NetworkError","socket write failed");}return static_cast<std::size_t>(n);
 #endif
     }
     std::ptrdiff_t read_some(char* data,std::size_t size){if(!s_)throw strut_checked_error("NetworkError","read on closed socket");if(size==0)return 0;auto operation=s_->acquire();const auto h=operation.handle;
@@ -1016,9 +1026,13 @@ void emit_reactor(std::ostream& out) {
 #include <sched.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/uio.h>
 #elif !defined(_WIN32)
 #include <fcntl.h>
 #include <poll.h>
+#endif
+#if !defined(__linux__) && !defined(_WIN32)
+#include <sys/uio.h>
 #endif
 #ifndef STRUT_REACTOR_DEFINED
 #define STRUT_REACTOR_DEFINED
@@ -1455,7 +1469,16 @@ private:
     static void reactor_close(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->remove(handle);{std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){auto& set=run->reactor_data->connections;auto found=set.find(handle);if(found!=set.end()&&found->second==conn)set.erase(found);}if(run->in_flight>0)--run->in_flight;run->drain_cv.notify_all();}conn->socket.close();}
     static void reactor_finish_write(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){bool stopping=false;{std::lock_guard<std::mutex> lock(run->mutex);stopping=!run->accepting;}if(conn->close_after_write||stopping){reactor_close(run,reactor,conn);return;}conn->input.erase(0,conn->request_consumed);conn->header_end=std::string::npos;conn->head_ready=false;conn->body_ready=false;conn->phase=reactor_phase::reading;const auto handle=conn->socket.native_handle();reactor->modify(handle,true,false);if(!conn->input.empty())reactor_pump(s,run,reactor,conn);}
     static void reactor_flush(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){
-        if(conn->phase!=reactor_phase::writing)return;try{while(conn->head_offset<conn->out_head.size()){const std::size_t n=conn->socket.write_some(conn->out_head.data()+conn->head_offset,conn->out_head.size()-conn->head_offset);if(n==0)return;conn->head_offset+=n;}while(conn->body_offset<conn->out_body.size()){const std::size_t n=conn->socket.write_some(conn->out_body.data()+conn->body_offset,conn->out_body.size()-conn->body_offset);if(n==0)return;conn->body_offset+=n;}}catch(...){reactor_close(run,reactor,conn);return;}reactor_finish_write(s,run,reactor,conn);}
+        if(conn->phase!=reactor_phase::writing)return;try{
+            while(conn->head_offset<conn->out_head.size()){
+                const std::size_t head_remaining=conn->out_head.size()-conn->head_offset;
+                const bool body_pending=conn->body_offset<conn->out_body.size();
+                const std::size_t body_remaining=body_pending?conn->out_body.size()-conn->body_offset:0;
+                std::size_t n=0;if(body_pending)n=conn->socket.writev_some(conn->out_head.data()+conn->head_offset,head_remaining,conn->out_body.data()+conn->body_offset,body_remaining);else n=conn->socket.write_some(conn->out_head.data()+conn->head_offset,head_remaining);
+                if(n==0)return;std::size_t head_used=std::min(n,head_remaining);conn->head_offset+=head_used;n-=head_used;if(body_pending)conn->body_offset+=n;
+            }
+            while(conn->body_offset<conn->out_body.size()){const std::size_t n=conn->socket.write_some(conn->out_body.data()+conn->body_offset,conn->out_body.size()-conn->body_offset);if(n==0)return;conn->body_offset+=n;}
+        }catch(...){reactor_close(run,reactor,conn);return;}reactor_finish_write(s,run,reactor,conn);}
     static void reactor_pump(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){
         if(conn->phase!=reactor_phase::reading&&conn->phase!=reactor_phase::waiting_body)return;
         for(;;){
