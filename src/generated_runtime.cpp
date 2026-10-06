@@ -1248,7 +1248,7 @@ public:
 #ifndef _WIN32
         {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
-        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn&&!route.stream){reactor=false;break;}}
+        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn&&!route.stream&&!route.request_stream){reactor=false;break;}}
         if(reactor){run_reactor_server(s,host,port,max_requests);return;}
         run_server(host,port,max_requests,[s](strut_tcp_socket& socket){serve_connection(s,worker_run_,worker_connection_,socket);},[s](strut_tcp_socket& socket){set_socket_timeouts(socket,s->write_timeout_ms,s->write_timeout_ms);send_error(socket,503,"Service Unavailable");});
     }
@@ -1342,7 +1342,7 @@ private:
     struct reactor_connection{
         explicit reactor_connection(strut_tcp_socket value):socket(std::move(value)){}
         strut_tcp_socket socket;std::uint64_t id=0;std::string input;std::size_t header_end=std::string::npos;bool head_ready=false;bool body_ready=false;
-        strut_http_request_head head;handler fn;stream_handler stream_fn;bool head_request=false;std::size_t request_consumed=0;
+        strut_http_request_head head;handler fn;stream_handler stream_fn;request_stream_handler request_stream_fn;bool head_request=false;std::size_t request_consumed=0;std::size_t max_body=0,max_framing=0;
         std::string out_head,out_body;std::size_t head_offset=0,body_offset=0;bool close_after_write=false;bool keep_alive=false;
         std::mutex out_mutex;std::condition_variable out_cv;std::string out_stream;std::size_t out_limit=1024*1024;bool out_closed=false,out_error=false,stream_finished=false;
         std::chrono::steady_clock::time_point deadline;bool deadline_set=false;reactor_phase phase=reactor_phase::reading;
@@ -1498,12 +1498,12 @@ private:
             }
             if(conn->head.upgrade_requested){reactor_send_status(run,reactor,conn,501,"Not Implemented");return;}
             strut_server_request req=conn->head.request;req.buffered_body_available=true;
-            bool found=false,method_mismatch=false;handler cursor;stream_handler stream_cursor;
+            bool found=false,method_mismatch=false;handler cursor;stream_handler stream_cursor;request_stream_handler request_cursor;
             const std::string route_method=conn->head_request?"GET":req.method.v;
-            for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}if(route.fn){cursor=route.fn;stream_cursor=nullptr;found=true;break;}if(route.stream){stream_cursor=route.stream;cursor=nullptr;found=true;break;}}
+            for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;break;}}
             if(!found){reactor_send_status(run,reactor,conn,method_mismatch?405:404,method_mismatch?"Method Not Allowed":"Not Found");return;}
-            conn->head.request=req;conn->head.request.buffered_body_available=true;conn->fn=cursor;conn->stream_fn=stream_cursor;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::dispatched;
-            {std::lock_guard<std::mutex> lock(run->mutex);if(stream_cursor&&run->reactor_data){conn->is_stream=true;conn->stream_counted=true;++run->reactor_data->streaming;run->reactor_data->stream_ready.push_back(conn);run->reactor_data->stream_cv.notify_one();}else if(run->reactor_data)run->reactor_data->ready.push_back(conn);else{conn->phase=reactor_phase::closing;}}
+            conn->head.request=req;conn->head.request.buffered_body_available=true;conn->fn=cursor;conn->stream_fn=stream_cursor;conn->request_stream_fn=request_cursor;conn->max_body=s->max_body_bytes;conn->max_framing=s->max_header_bytes;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::dispatched;
+            {std::lock_guard<std::mutex> lock(run->mutex);if((stream_cursor||request_cursor)&&run->reactor_data){conn->is_stream=true;conn->stream_counted=true;++run->reactor_data->streaming;run->reactor_data->stream_ready.push_back(conn);run->reactor_data->stream_cv.notify_one();}else if(run->reactor_data)run->reactor_data->ready.push_back(conn);else{conn->phase=reactor_phase::closing;}}
             reactor->modify(conn->socket.native_handle(),false,false);
             if(conn->phase==reactor_phase::closing){reactor_close(run,reactor,conn);return;}run->work_cv.notify_one();return;
         }
@@ -1525,7 +1525,16 @@ private:
             const std::shared_ptr<strut_reactor> reactor=run->reactor;
             writer_state->send=[conn,reactor](const char* data,std::size_t size){reactor_push_output(conn,reactor,data,size);};
             strut_http_response_writer writer(std::move(writer_state));
-            conn->stream_fn(req,writer);
+            if(conn->request_stream_fn){
+                auto source=conn->cancellation;
+                auto cancel=[source]{if(source)source->cancel();};
+                std::string raw_body;if(conn->request_consumed>conn->header_end+4)raw_body=conn->input.substr(conn->header_end+4,conn->request_consumed-(conn->header_end+4));
+                auto body_obj=request_body(conn->socket,conn->head,std::move(raw_body),conn->max_body,conn->max_framing,cancel);
+                conn->request_stream_fn(req,body_obj,writer);
+                std::string leftover;body_obj.release(leftover);
+            }else{
+                conn->stream_fn(req,writer);
+            }
             writer.finish();
             conn->keep_alive=writer.reusable();conn->close_after_write=!writer.reusable();
             writer.invalidate();
