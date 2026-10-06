@@ -1576,14 +1576,17 @@ private:
                 if(bs->framing==strut_http_request_framing::content_length&&bs->remaining==0)bs->phase=strut_http_request_body_phase::eof;
                 strut_http_request_body body_obj(bs);
                 conn->request_stream_fn(req,body_obj,writer);
-                std::string leftover;body_obj.release(leftover);
+                std::string leftover;const bool body_reusable=body_obj.release(leftover);
                 {std::lock_guard<std::mutex> lock(conn->body_mutex);leftover+=conn->body_buf;conn->body_buf.clear();conn->body_closed=false;}
+                if(!body_reusable)conn->close_after_write=true;
                 conn->next=std::move(leftover);
             }else{
                 conn->stream_fn(req,writer);
             }
                         writer.finish();
-            conn->keep_alive=writer.reusable();conn->close_after_write=!writer.reusable();
+            const bool writer_reusable=writer.reusable();
+            if(!writer_reusable)conn->close_after_write=true;
+            conn->keep_alive=!conn->close_after_write;
             writer.invalidate();
         }catch(...){{std::lock_guard<std::mutex> lock(conn->out_mutex);conn->out_error=true;}conn->out_cv.notify_all();}
         {std::lock_guard<std::mutex> lock(run->mutex);conn->stream_finished=true;conn->phase=reactor_phase::streaming;}
