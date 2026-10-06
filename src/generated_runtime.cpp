@@ -1499,7 +1499,8 @@ private:
                 if(n==0)return;std::size_t head_used=std::min(n,head_remaining);conn->head_offset+=head_used;n-=head_used;if(body_pending)conn->body_offset+=n;
             }
             while(conn->body_offset<conn->out_body.size()){const std::size_t n=reactor_write_some(conn,conn->out_body.data()+conn->body_offset,conn->out_body.size()-conn->body_offset);if(n==0)return;conn->body_offset+=n;}
-        }catch(...){reactor_close(run,reactor,conn);return;}reactor_finish_write(s,run,reactor,conn);}
+        }catch(...){reactor_close(run,reactor,conn);return;}reactor_finish_write(s,run,reactor,conn);})STRUT_SERVER";
+    out << R"STRUT_SERVER(
     static void reactor_pump(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){
         if(conn->phase!=reactor_phase::reading&&conn->phase!=reactor_phase::waiting_body)return;
         for(;;){
@@ -1602,8 +1603,10 @@ private:
         lock.unlock();
         if(low&&reactor)reactor->wake();
         return out;
-    }
+    })STRUT_SERVER";
+    out << R"STRUT_SERVER(
     static void reactor_request_feed(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<reactor_connection>& conn){
+        (void)run;
         char buffer[8192];
         {std::lock_guard<std::mutex> lock(conn->body_mutex);
             for(;;){if(conn->body_closed)break;if(conn->body_buf.size()>=conn->body_limit)break;
