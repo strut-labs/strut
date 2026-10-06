@@ -1193,6 +1193,7 @@ private:
 
 void emit_http_server(std::ostream& out, bool async_handlers, bool tls, bool websocket) {
     if (tls) out << "#define STRUT_USE_SERVER_TLS 1\n#include <openssl/ssl.h>\n#include <openssl/err.h>\n#include <cerrno>\n#ifndef _WIN32\n#include <fcntl.h>\n#include <poll.h>\n#endif\n";
+    if (websocket) out << "#define STRUT_USE_WEBSOCKET 1\n";
     emit_reactor(out);
     out << R"STRUT_SERVER(
 #include <atomic>
@@ -1248,7 +1249,11 @@ public:
 #ifndef _WIN32
         {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
-        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn&&!route.stream&&!route.request_stream){reactor=false;break;}}
+        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn&&!route.stream&&!route.request_stream
+#ifdef STRUT_USE_WEBSOCKET
+                &&!route.websocket
+#endif
+                ){reactor=false;break;}}
         if(reactor){run_reactor_server(s,host,port,max_requests);return;}
         run_server(host,port,max_requests,[s](strut_tcp_socket& socket){serve_connection(s,worker_run_,worker_connection_,socket);},[s](strut_tcp_socket& socket){set_socket_timeouts(socket,s->write_timeout_ms,s->write_timeout_ms);send_error(socket,503,"Service Unavailable");});
     }
@@ -1338,14 +1343,14 @@ private:
     out << R"STRUT_SERVER(};
     enum class lifecycle_phase{stopped,starting,running,stopping};
     struct connection{explicit connection(strut_tcp_socket value):socket(std::move(value)){}strut_tcp_socket socket;std::shared_ptr<strut_cancellation_source> request_cancellation;bool running=false,idle=false,served_request=false,websocket=false;};
-    enum class reactor_phase{reading,waiting_body,dispatched,writing,streaming,request_stream,closing};
+    enum class reactor_phase{reading,waiting_body,dispatched,writing,streaming,request_stream,websocket,closing};
     struct reactor_connection{
         explicit reactor_connection(strut_tcp_socket value):socket(std::move(value)){}
         strut_tcp_socket socket;std::uint64_t id=0;std::string input;std::size_t header_end=std::string::npos;bool head_ready=false;bool body_ready=false;
         strut_http_request_head head;handler fn;stream_handler stream_fn;request_stream_handler request_stream_fn;bool head_request=false;std::size_t request_consumed=0;std::size_t max_body=0,max_framing=0;
         std::string out_head,out_body;std::size_t head_offset=0,body_offset=0;bool close_after_write=false;bool keep_alive=false;
         std::mutex out_mutex;std::condition_variable out_cv;std::string out_stream;std::size_t out_limit=1024*1024;bool out_closed=false,out_error=false,stream_finished=false;
-        std::mutex body_mutex;std::condition_variable body_cv;std::string body_buf,next;std::size_t body_limit=128*1024;bool body_closed=false;bool early_routed=false,dispatched=false;
+        std::mutex body_mutex;std::condition_variable body_cv;std::string body_buf,next;std::size_t body_limit=128*1024;bool body_closed=false;bool early_routed=false,dispatched=false;std::function<void()> websocket_job;bool websocket_mode=false;
         std::chrono::steady_clock::time_point deadline;bool deadline_set=false;reactor_phase phase=reactor_phase::reading;
         std::shared_ptr<strut_cancellation_source> cancellation;bool is_stream=false,stream_counted=false;
     };
@@ -1364,7 +1369,7 @@ private:
     void add_request_stream_route(const char* method,const strut_string& path,request_stream_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,{},{},std::move(h)});}
 )STRUT_SERVER";
     if (websocket) out << R"STRUT_SERVER(
-    void add_websocket_route(const strut_string& path,websocket_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({{},path.v,{},{},{},std::move(h)});}
+    void add_websocket_route(const strut_string& path,websocket_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({"GET",path.v,{},{},{},std::move(h)});}
 )STRUT_SERVER";
     out << R"STRUT_SERVER(
     class request_scope{public:request_scope(run_state* run,connection* connection,strut_server_request& request):run_(run),connection_(connection),source_(std::make_shared<strut_cancellation_source>()){request.cancellation=source_->token();bool stopping=false;{std::lock_guard<std::mutex> lock(run_->mutex);connection_->request_cancellation=source_;connection_->idle=false;stopping=!run_->accepting;}if(stopping)source_->cancel();}~request_scope(){source_->cancel();std::lock_guard<std::mutex> lock(run_->mutex);if(connection_->request_cancellation==source_)connection_->request_cancellation.reset();}const std::shared_ptr<strut_cancellation_source>& source() const{return source_;}private:run_state* run_;connection* connection_;std::shared_ptr<strut_cancellation_source> source_;};
@@ -1495,8 +1500,15 @@ private:
             if(!conn->early_routed){
                 strut_server_request req=conn->head.request;req.buffered_body_available=true;
                 bool found=false,method_mismatch=false;handler cursor;stream_handler stream_cursor;request_stream_handler request_cursor;
+#ifdef STRUT_USE_WEBSOCKET
+                websocket_handler websocket_cursor;
+#endif
                 const std::string route_method=conn->head_request?"GET":req.method.v;
-                for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;break;}}
+                for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;break;}
+#ifdef STRUT_USE_WEBSOCKET
+                if(route.websocket){websocket_cursor=route.websocket;cursor=nullptr;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}
+#endif
+                }
                 conn->early_routed=true;conn->head.request=req;
                 if(request_cursor){
                     conn->request_stream_fn=request_cursor;conn->max_body=s->max_body_bytes;conn->max_framing=s->max_header_bytes;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::request_stream;conn->is_stream=true;conn->stream_counted=true;
@@ -1506,6 +1518,25 @@ private:
                     if(conn->phase==reactor_phase::closing)reactor_close(run,reactor,conn);
                     return;
                 }
+#ifdef STRUT_USE_WEBSOCKET
+                if(websocket_cursor){
+                    std::string ws_accept;std::vector<std::string> ws_protocols;
+                    const auto ws_opening=strut_validate_websocket_opening(conn->head,ws_accept,ws_protocols);
+                    if(ws_opening==strut_websocket_opening_result::unsupported_version){reactor_send_status(run,reactor,conn,426,"Upgrade Required");return;}
+                    if(ws_opening!=strut_websocket_opening_result::valid){reactor_send_status(run,reactor,conn,400,"Bad Request");return;}
+                    conn->head.request=req;conn->max_body=s->max_websocket_frame;conn->max_framing=s->max_websocket_message;conn->cancellation=std::make_shared<strut_cancellation_source>();
+                    const std::string ws_accept_capture=ws_accept;const std::vector<std::string> ws_protocols_capture=ws_protocols;
+                    const websocket_handler ws_handler_capture=websocket_cursor;
+                    const std::shared_ptr<reactor_connection> ws_conn=conn;
+                    conn->websocket_job=[ws_conn,run,ws_accept_capture,ws_protocols_capture,ws_handler_capture]{reactor_run_websocket(ws_conn,run,ws_accept_capture,ws_protocols_capture,ws_handler_capture);};
+                    conn->websocket_mode=true;conn->is_stream=true;conn->stream_counted=true;conn->phase=reactor_phase::websocket;
+                    {std::lock_guard<std::mutex> lock(conn->body_mutex);if(conn->input.size()>conn->header_end+4)conn->body_buf=conn->input.substr(conn->header_end+4);}
+                    {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){++run->reactor_data->streaming;run->reactor_data->stream_ready.push_back(conn);run->reactor_data->stream_cv.notify_one();}else{conn->phase=reactor_phase::closing;}}
+                    reactor_arm_streams(run,reactor);
+                    if(conn->phase==reactor_phase::closing)reactor_close(run,reactor,conn);
+                    return;
+                }
+#endif
                 if(!found){reactor_send_status(run,reactor,conn,method_mismatch?405:404,method_mismatch?"Method Not Allowed":"Not Found");return;}
                 conn->fn=cursor;conn->stream_fn=stream_cursor;conn->max_body=s->max_body_bytes;conn->max_framing=s->max_header_bytes;conn->cancellation=std::make_shared<strut_cancellation_source>();
             }
@@ -1545,13 +1576,37 @@ private:
             }
         }
         conn->body_cv.notify_all();
-        conn->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(s->read_timeout_ms);conn->deadline_set=true;
+        if(!conn->websocket_mode){conn->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(s->read_timeout_ms);conn->deadline_set=true;}
     }
     static void reactor_push_output(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<strut_reactor>& reactor,const char* data,std::size_t size){
         if(size==0)return;
         {std::unique_lock<std::mutex> lock(conn->out_mutex);while(!conn->out_closed&&!conn->out_error&&conn->out_stream.size()>conn->out_limit)conn->out_cv.wait(lock);if(conn->out_closed||conn->out_error)throw strut_checked_error("NetworkError","HTTP response stream closed");conn->out_stream.append(data,size);}
         if(reactor)reactor->wake();
     }
+#ifdef STRUT_USE_WEBSOCKET
+    static void reactor_run_websocket(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<run_state>& run,const std::string& ws_accept,const std::vector<std::string>& ws_protocols,const websocket_handler& handler){
+        const void* previous_context=strut_execution_context;worker_run_=run.get();worker_connection_=nullptr;strut_execution_context=run.get();
+        try{
+            strut_server_request req=conn->head.request;if(conn->cancellation)req.cancellation=conn->cancellation->token();
+            auto ws=std::make_shared<strut_websocket_state>();
+            ws->offered_protocols=ws_protocols;
+            const std::shared_ptr<strut_reactor> reactor=run->reactor;
+            ws->read=[conn,reactor](std::size_t size){return reactor_request_read(conn,reactor,size);};
+            ws->send=[conn,reactor](const char* data,std::size_t size){reactor_push_output(conn,reactor,data,size);};
+            ws->interrupt=[conn]{std::lock_guard<std::mutex> lock(conn->body_mutex);conn->body_closed=true;conn->body_cv.notify_all();{std::lock_guard<std::mutex> lock2(conn->out_mutex);conn->out_closed=true;conn->out_error=true;}conn->out_cv.notify_all();};
+            ws->commit=[conn,reactor,ws_accept](const std::string& protocol){const std::string head=strut_serialize_websocket_switching_protocols(ws_accept,protocol);reactor_push_output(conn,reactor,head.data(),head.size());};
+            ws->max_frame=conn->max_body;ws->max_message=conn->max_framing;
+            strut_websocket upgraded(ws);
+            handler(req,upgraded);
+            upgraded.finish();
+            bool ws_failed=false;upgraded.invalidate(&ws_failed);
+        }catch(...){std::lock_guard<std::mutex> lock(conn->out_mutex);conn->out_error=true;}conn->out_cv.notify_all();
+        {std::lock_guard<std::mutex> lock(run->mutex);conn->stream_finished=true;conn->phase=reactor_phase::websocket;conn->close_after_write=true;}
+        if(run->reactor)run->reactor->wake();
+        strut_execution_context=previous_context;worker_run_=nullptr;
+    }
+#endif
+
     static void reactor_run_stream(const std::shared_ptr<run_state>& run,const std::shared_ptr<reactor_connection>& conn){
         const void* previous_context=strut_execution_context;worker_run_=run.get();worker_connection_=nullptr;strut_execution_context=run.get();
         try{
@@ -1607,13 +1662,13 @@ private:
         if(!drained)return;
         {std::lock_guard<std::mutex> lock(run->mutex);finished=conn->stream_finished;}
         if(finished){reactor_finish_write(s,run,reactor,conn);return;}
-        reactor->modify(handle,conn->request_stream_fn!=nullptr,false);
+        reactor->modify(handle,conn->request_stream_fn!=nullptr||conn->websocket_mode,false);
     }
     static void reactor_arm_streams(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor){
         {std::lock_guard<std::mutex> lock(run->mutex);if(!run->reactor_data||run->reactor_data->streaming==0)return;}
         std::vector<std::shared_ptr<reactor_connection>> connections;
         {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data)for(auto& kv:run->reactor_data->connections)connections.push_back(kv.second);}
-        for(auto& conn:connections){bool write=false;bool read=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);write=!conn->out_stream.empty();}if(conn->request_stream_fn!=nullptr){std::lock_guard<std::mutex> lock(conn->body_mutex);read=conn->body_buf.size()<conn->body_limit;}if(read||write){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,read,write);}}
+        for(auto& conn:connections){bool write=false;bool read=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);write=!conn->out_stream.empty();}if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::mutex> lock(conn->body_mutex);read=conn->body_buf.size()<conn->body_limit;}if(read||write){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,read,write);}}
     }    static void reactor_worker_loop(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run){
         (void)s;
         for(;;){
@@ -1637,7 +1692,8 @@ private:
         for(;;){
             std::shared_ptr<reactor_connection> conn;
             {std::unique_lock<std::mutex> lock(run->mutex);run->reactor_data->stream_cv.wait(lock,[&]{return run->workers_stopping||(run->reactor_data&&!run->reactor_data->stream_ready.empty());});if(run->reactor_data&&!run->reactor_data->stream_ready.empty()){conn=run->reactor_data->stream_ready.front();run->reactor_data->stream_ready.pop_front();}else if(run->workers_stopping)return;else continue;}
-            if(conn->phase!=reactor_phase::dispatched&&conn->phase!=reactor_phase::request_stream)continue;
+            if(conn->phase!=reactor_phase::dispatched&&conn->phase!=reactor_phase::request_stream&&conn->phase!=reactor_phase::websocket)continue;
+            if(conn->phase==reactor_phase::websocket){if(conn->websocket_job)conn->websocket_job();continue;}
             reactor_run_stream(run,conn);
         }
     }
@@ -1666,11 +1722,11 @@ private:
                 std::shared_ptr<reactor_connection> conn;reactor_phase conn_phase=reactor_phase::closing;{std::lock_guard<std::mutex> lock(run->mutex);auto& map=run->reactor_data->connections;auto f=map.find(event.handle);if(f!=map.end()){conn=f->second;conn_phase=conn->phase;}}
                 if(!conn)continue;
                 if(event.closed||event.error){if(conn_phase==reactor_phase::dispatched&&conn->cancellation){std::shared_ptr<strut_cancellation_source> source=conn->cancellation;source->cancel();}reactor_close(run,reactor,conn);continue;}
-                if(event.readable&&conn_phase==reactor_phase::request_stream){reactor_request_feed(s,run,conn);continue;}
+                if(event.readable&&(conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket)){reactor_request_feed(s,run,conn);continue;}
                 if(event.readable&&(conn_phase==reactor_phase::reading||conn_phase==reactor_phase::waiting_body)){bool closed=false;try{for(;;){char buffer[8192];const std::ptrdiff_t n=conn->socket.read_some(buffer,sizeof(buffer));if(n<0)break;if(n==0){closed=true;break;}conn->input.append(buffer,static_cast<std::size_t>(n));}}catch(...){closed=true;}if(closed){reactor_close(run,reactor,conn);continue;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(conn->head_ready?s->read_timeout_ms:s->idle_timeout_ms);conn->deadline_set=true;reactor_pump(s,run,reactor,conn);}
-                if(event.writable){if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
+                if(event.writable){if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
             }
-            const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&c->phase!=reactor_phase::dispatched&&c->phase!=reactor_phase::writing&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
+            const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&!c->websocket_mode&&c->phase!=reactor_phase::dispatched&&c->phase!=reactor_phase::writing&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
             if(stopping){std::vector<std::shared_ptr<reactor_connection>> idle;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->phase==reactor_phase::reading||c->phase==reactor_phase::waiting_body||c->phase==reactor_phase::closing)idle.push_back(c);}}for(auto& c:idle)reactor_close(run,reactor,c);}
             if(stopping&&run->reactor_data){bool drained=false;{std::lock_guard<std::mutex> lock(run->mutex);drained=run->in_flight==0;}if(drained){run->workers_stopping=true;run->work_cv.notify_all();break;}}
         }
