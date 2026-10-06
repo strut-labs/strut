@@ -1132,7 +1132,7 @@ public:
     }
 private:
 #if defined(__linux__)
-    static std::uint32_t interest(bool readable,bool writable){return static_cast<std::uint32_t>((readable?EPOLLIN:0)|(writable?EPOLLOUT:0));}
+    static std::uint32_t interest(bool readable,bool writable){return static_cast<std::uint32_t>((readable?static_cast<std::uint32_t>(EPOLLIN):static_cast<std::uint32_t>(0))|(writable?static_cast<std::uint32_t>(EPOLLOUT):static_cast<std::uint32_t>(0)));}
     bool ctl(strut_socket_handle handle,int operation,std::uint32_t mask){epoll_event event{};event.events=mask;event.data.fd=handle;return ::epoll_ctl(epfd_,operation,handle,&event)==0;}
     void drain_wake(){std::uint64_t value=0;const ssize_t ignored=::read(wakefd_,&value,sizeof(value));(void)ignored;}
     int epfd_=-1,wakefd_=-1;
@@ -1460,6 +1460,7 @@ private:
     }
     static void reactor_hard_error(const std::shared_ptr<reactor_connection>& conn,std::int32_t status,const char* message){const std::string text(message);conn->out_head="HTTP/1.1 "+std::to_string(status)+" "+(status==400?"Bad Request":status==431?"Request Header Fields Too Large":status==413?"Payload Too Large":status==404?"Not Found":status==405?"Method Not Allowed":status==501?"Not Implemented":"Internal Server Error")+"\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: "+std::to_string(text.size())+"\r\nConnection: close\r\n\r\n";conn->out_body=text;conn->head_offset=0;conn->body_offset=0;conn->close_after_write=true;conn->keep_alive=false;}
     static void reactor_send_status(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn,std::int32_t status,const char* message,strut_http_version version=strut_http_version::http_1_1,bool head_request=false){
+        (void)run;
         conn->head.version=version;conn->head_request=head_request;
         strut_server_response response{status,strut_string(message),"text/plain; charset=utf-8",{}, {}};
         bool ok=false;try{ok=reactor_build_response(conn,response,true);}catch(...){ok=false;}
@@ -1506,7 +1507,8 @@ private:
             reactor->modify(conn->socket.native_handle(),false,false);
             if(conn->phase==reactor_phase::closing){reactor_close(run,reactor,conn);return;}run->work_cv.notify_one();return;
         }
-    }
+    })STRUT_SERVER";
+    out << R"STRUT_SERVER(
     static void reactor_push_output(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<strut_reactor>& reactor,const char* data,std::size_t size){
         if(size==0)return;
         {std::unique_lock<std::mutex> lock(conn->out_mutex);while(!conn->out_closed&&!conn->out_error&&conn->out_stream.size()>conn->out_limit)conn->out_cv.wait(lock);if(conn->out_closed||conn->out_error)throw strut_checked_error("NetworkError","HTTP response stream closed");conn->out_stream.append(data,size);}
@@ -1555,6 +1557,7 @@ private:
         for(auto& conn:connections){bool has=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);has=!conn->out_stream.empty();}if(has){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);}}
     }
     static void reactor_worker_loop(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run){
+        (void)s;
         for(;;){
             std::shared_ptr<reactor_connection> conn;
             {std::unique_lock<std::mutex> lock(run->mutex);run->work_cv.wait(lock,[&]{return run->workers_stopping||(run->reactor_data&&!run->reactor_data->ready.empty());});if(run->reactor_data&&!run->reactor_data->ready.empty()){conn=run->reactor_data->ready.front();run->reactor_data->ready.pop_front();}else if(run->workers_stopping)return;else continue;}
@@ -1580,7 +1583,8 @@ private:
             reactor_run_stream(run,conn);
         }
     }
-
+)STRUT_SERVER";
+    out << R"STRUT_SERVER(
     static void run_reactor_server(const std::shared_ptr<state>& s,const strut_string& host,std::int32_t port,std::int32_t max_requests){
         using std::chrono::steady_clock;
         auto run=std::make_shared<run_state>();
