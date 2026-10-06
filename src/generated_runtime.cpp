@@ -1248,7 +1248,7 @@ public:
 #ifndef _WIN32
         {std::lock_guard<std::mutex> signal_lock(strut_sigpipe_mutex);std::signal(SIGPIPE,SIG_IGN);}
 #endif
-        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn){reactor=false;break;}}
+        auto s=s_;bool reactor=false;const char* flag=std::getenv("STRUT_HTTP_REACTOR");if(flag&&flag[0]=='1'&&s->static_files.empty()){reactor=true;for(const auto& route:s->routes)if(!route.fn&&!route.stream){reactor=false;break;}}
         if(reactor){run_reactor_server(s,host,port,max_requests);return;}
         run_server(host,port,max_requests,[s](strut_tcp_socket& socket){serve_connection(s,worker_run_,worker_connection_,socket);},[s](strut_tcp_socket& socket){set_socket_timeouts(socket,s->write_timeout_ms,s->write_timeout_ms);send_error(socket,503,"Service Unavailable");});
     }
@@ -1338,16 +1338,17 @@ private:
     out << R"STRUT_SERVER(};
     enum class lifecycle_phase{stopped,starting,running,stopping};
     struct connection{explicit connection(strut_tcp_socket value):socket(std::move(value)){}strut_tcp_socket socket;std::shared_ptr<strut_cancellation_source> request_cancellation;bool running=false,idle=false,served_request=false,websocket=false;};
-    enum class reactor_phase{reading,waiting_body,dispatched,writing,closing};
+    enum class reactor_phase{reading,waiting_body,dispatched,writing,streaming,closing};
     struct reactor_connection{
         explicit reactor_connection(strut_tcp_socket value):socket(std::move(value)){}
         strut_tcp_socket socket;std::uint64_t id=0;std::string input;std::size_t header_end=std::string::npos;bool head_ready=false;bool body_ready=false;
-        strut_http_request_head head;handler fn;bool head_request=false;std::size_t request_consumed=0;
+        strut_http_request_head head;handler fn;stream_handler stream_fn;bool head_request=false;std::size_t request_consumed=0;
         std::string out_head,out_body;std::size_t head_offset=0,body_offset=0;bool close_after_write=false;bool keep_alive=false;
+        std::mutex out_mutex;std::condition_variable out_cv;std::string out_stream;std::size_t out_limit=1024*1024;bool out_closed=false,out_error=false,stream_finished=false;
         std::chrono::steady_clock::time_point deadline;bool deadline_set=false;reactor_phase phase=reactor_phase::reading;
-        std::shared_ptr<strut_cancellation_source> cancellation;
+        std::shared_ptr<strut_cancellation_source> cancellation;bool is_stream=false,stream_counted=false;
     };
-    struct reactor_state{std::mutex mutex;std::unordered_map<strut_socket_handle,std::shared_ptr<reactor_connection>> connections;std::deque<std::shared_ptr<reactor_connection>> ready,completed;std::size_t in_flight=0;std::uint64_t next_id=1;};
+    struct reactor_state{std::mutex mutex;std::condition_variable stream_cv;std::unordered_map<strut_socket_handle,std::shared_ptr<reactor_connection>> connections;std::deque<std::shared_ptr<reactor_connection>> ready,stream_ready,completed;std::size_t in_flight=0,streaming=0;std::uint64_t next_id=1;};
     struct run_state{std::mutex mutex;std::condition_variable work_cv,drain_cv;std::deque<std::shared_ptr<connection>> queue,connections;std::shared_ptr<connection> rejecting;strut_tcp_listener listener;std::size_t in_flight=0;bool accepting=true,startup_complete=false,was_running=false,workers_stopping=false,forced=false,deadline_set=false;std::chrono::steady_clock::time_point deadline;std::int32_t shutdown_timeout_ms=0;std::shared_ptr<strut_reactor> reactor;std::shared_ptr<reactor_state> reactor_data;bool reactor_mode=false;};
     struct state{std::vector<route> routes;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false};std::mutex lifecycle_mutex;std::shared_ptr<run_state> current;lifecycle_phase phase=lifecycle_phase::stopped;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;
 )STRUT_SERVER";
@@ -1367,7 +1368,7 @@ private:
     out << R"STRUT_SERVER(
     class request_scope{public:request_scope(run_state* run,connection* connection,strut_server_request& request):run_(run),connection_(connection),source_(std::make_shared<strut_cancellation_source>()){request.cancellation=source_->token();bool stopping=false;{std::lock_guard<std::mutex> lock(run_->mutex);connection_->request_cancellation=source_;connection_->idle=false;stopping=!run_->accepting;}if(stopping)source_->cancel();}~request_scope(){source_->cancel();std::lock_guard<std::mutex> lock(run_->mutex);if(connection_->request_cancellation==source_)connection_->request_cancellation.reset();}const std::shared_ptr<strut_cancellation_source>& source() const{return source_;}private:run_state* run_;connection* connection_;std::shared_ptr<strut_cancellation_source> source_;};
     static void request_stop(const std::shared_ptr<run_state>& run){std::vector<std::shared_ptr<strut_cancellation_source>> cancellations;std::vector<std::shared_ptr<connection>> interrupted;std::vector<std::shared_ptr<reactor_connection>> reactor_idle;std::shared_ptr<connection> rejecting;{std::lock_guard<std::mutex> lock(run->mutex);run->accepting=false;if(!run->deadline_set){run->deadline_set=true;run->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(run->shutdown_timeout_ms);}rejecting=run->rejecting;for(const auto& connection:run->connections){if(connection->request_cancellation)cancellations.push_back(connection->request_cancellation);if(connection->running&&(connection->idle||connection->websocket))interrupted.push_back(connection);}if(run->reactor_data){for(auto& kv:run->reactor_data->connections){if(kv.second->cancellation)cancellations.push_back(kv.second->cancellation);if(kv.second->phase==reactor_phase::reading||kv.second->phase==reactor_phase::waiting_body)reactor_idle.push_back(kv.second);}}}for(const auto& source:cancellations)source->cancel();for(const auto& connection:interrupted)connection->socket.shutdown_io();for(const auto& connection:reactor_idle)connection->socket.shutdown_io();if(rejecting)rejecting->socket.close();run->listener.close();run->work_cv.notify_all();if(run->reactor)run->reactor->wake();}
-    static void force_shutdown_locked(const std::shared_ptr<run_state>& run){if(run->forced)return;run->forced=true;while(!run->queue.empty()){auto connection=run->queue.front();run->queue.pop_front();connection->socket.close();auto found=std::find(run->connections.begin(),run->connections.end(),connection);if(found!=run->connections.end())run->connections.erase(found,found+1);--run->in_flight;}for(const auto& connection:run->connections)if(connection->running){if(connection->request_cancellation)connection->request_cancellation->cancel();connection->socket.close();}if(run->reactor_data){for(auto& kv:run->reactor_data->connections)if(kv.second->cancellation)kv.second->cancellation->cancel();run->in_flight=0;}if(run->reactor)run->reactor->wake();run->workers_stopping=true;run->work_cv.notify_all();run->drain_cv.notify_all();}
+    static void force_shutdown_locked(const std::shared_ptr<run_state>& run){if(run->forced)return;run->forced=true;while(!run->queue.empty()){auto connection=run->queue.front();run->queue.pop_front();connection->socket.close();auto found=std::find(run->connections.begin(),run->connections.end(),connection);if(found!=run->connections.end())run->connections.erase(found,found+1);--run->in_flight;}for(const auto& connection:run->connections)if(connection->running){if(connection->request_cancellation)connection->request_cancellation->cancel();connection->socket.close();}if(run->reactor_data){for(auto& kv:run->reactor_data->connections){if(kv.second->cancellation)kv.second->cancellation->cancel();{std::lock_guard<std::mutex> lock(kv.second->out_mutex);kv.second->out_closed=true;kv.second->out_error=true;}kv.second->out_cv.notify_all();}run->in_flight=0;}if(run->reactor)run->reactor->wake();run->workers_stopping=true;run->work_cv.notify_all();run->drain_cv.notify_all();}
     static bool wait_for_drain(const std::shared_ptr<run_state>& run){std::unique_lock<std::mutex> lock(run->mutex);if(!run->deadline_set){run->deadline_set=true;run->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(run->shutdown_timeout_ms);}bool drained=run->drain_cv.wait_until(lock,run->deadline,[&]{return run->startup_complete&&run->in_flight==0;});if(!drained){force_shutdown_locked(run);drained=run->startup_complete&&run->in_flight==0;}else{run->workers_stopping=true;run->work_cv.notify_all();}return drained;}
     static void publish_lifecycle(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run){std::lock_guard<std::mutex> lifecycle_lock(s->lifecycle_mutex);if(s->current!=run)return;std::lock_guard<std::mutex> run_lock(run->mutex);const bool drained=run->startup_complete&&run->in_flight==0;s->phase=drained?lifecycle_phase::stopped:lifecycle_phase::stopping;s->running.store(!drained&&run->was_running);}
     static void worker_loop(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::function<void(strut_tcp_socket&)>& process){for(;;){std::shared_ptr<connection> connection;{std::unique_lock<std::mutex> lock(run->mutex);run->work_cv.wait(lock,[&]{return run->workers_stopping||!run->queue.empty();});if(run->queue.empty()){if(run->workers_stopping)return;continue;}connection=run->queue.front();run->queue.pop_front();connection->running=true;}const void* previous_context=strut_execution_context;worker_run_=run.get();worker_connection_=connection.get();strut_execution_context=run.get();try{process(connection->socket);}catch(...){connection->socket.close();}strut_execution_context=previous_context;worker_connection_=nullptr;worker_run_=nullptr;bool retired_drained=false;{std::lock_guard<std::mutex> lock(run->mutex);auto found=std::find(run->connections.begin(),run->connections.end(),connection);if(found!=run->connections.end())run->connections.erase(found);if(run->in_flight>0)--run->in_flight;if(run->in_flight==0){retired_drained=run->forced;run->drain_cv.notify_all();}}if(retired_drained)publish_lifecycle(s,run);}})STRUT_SERVER"; out << R"STRUT_SERVER(
@@ -1466,8 +1467,8 @@ private:
         conn->phase=reactor_phase::writing;const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);
     }
     static int reactor_accumulate_chunked(const std::string& in,std::size_t start,std::size_t max_body,std::string& body,std::size_t& consumed){std::size_t pos=start;for(;;){auto eol=in.find("\r\n",pos);if(eol==std::string::npos)return 0;const std::string line=in.substr(pos,eol-pos);std::size_t size=0,value=0,digits=0,p=0;while(p<line.size()&&std::isxdigit(static_cast<unsigned char>(line[p]))){const unsigned char c=static_cast<unsigned char>(line[p++]);const std::size_t d=c>='0'&&c<='9'?c-'0':static_cast<std::size_t>(std::tolower(c)-'a'+10);if(value>(std::numeric_limits<std::size_t>::max()-d)/16)return -1;value=value*16+d;++digits;}if(digits==0)return -1;size=value;while(p<line.size()){if(line[p++]!=';')return -1;const std::size_t name=p;while(p<line.size()&&strut_http_token_char(static_cast<unsigned char>(line[p])))++p;if(name==p)return -1;if(p<line.size()&&line[p]=='='){++p;if(p<line.size()&&line[p]=='"'){++p;bool closed=false;while(p<line.size()){const unsigned char c=static_cast<unsigned char>(line[p++]);if(c=='"'){closed=true;break;}if(c=='\\'){if(p>=line.size())return -1;++p;}}if(!closed)return -1;}else{const std::size_t token=p;while(p<line.size()&&strut_http_token_char(static_cast<unsigned char>(line[p])))++p;if(token==p)return -1;}}}pos=eol+2;if(size>max_body||body.size()>max_body-size)return -1;if(size==0){auto end=in.find("\r\n",pos);if(end==std::string::npos)return 0;if(end!=pos)return -1;consumed=end+2;return 1;}if(in.size()<pos+size+2)return 0;if(in.compare(pos+size,2,"\r\n")!=0)return -1;body.append(in,pos,size);pos+=size+2;}}
-    static void reactor_close(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->remove(handle);{std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){auto& set=run->reactor_data->connections;auto found=set.find(handle);if(found!=set.end()&&found->second==conn)set.erase(found);}if(run->in_flight>0)--run->in_flight;run->drain_cv.notify_all();}conn->socket.close();}
-    static void reactor_finish_write(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){bool stopping=false;{std::lock_guard<std::mutex> lock(run->mutex);stopping=!run->accepting;}if(conn->close_after_write||stopping){reactor_close(run,reactor,conn);return;}conn->input.erase(0,conn->request_consumed);conn->header_end=std::string::npos;conn->head_ready=false;conn->body_ready=false;conn->phase=reactor_phase::reading;const auto handle=conn->socket.native_handle();reactor->modify(handle,true,false);if(!conn->input.empty())reactor_pump(s,run,reactor,conn);}
+    static void reactor_close(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->remove(handle);{std::lock_guard<std::mutex> lock(conn->out_mutex);conn->out_closed=true;conn->out_error=true;}conn->out_cv.notify_all();{std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){if(conn->is_stream&&conn->stream_counted){if(run->reactor_data->streaming>0)--run->reactor_data->streaming;conn->stream_counted=false;}auto& set=run->reactor_data->connections;auto found=set.find(handle);if(found!=set.end()&&found->second==conn)set.erase(found);}if(run->in_flight>0)--run->in_flight;run->drain_cv.notify_all();}conn->socket.close();}
+    static void reactor_finish_write(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){bool stopping=false;{std::lock_guard<std::mutex> lock(run->mutex);stopping=!run->accepting;}if(conn->close_after_write||stopping){reactor_close(run,reactor,conn);return;}if(conn->is_stream&&conn->stream_counted){std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data&&run->reactor_data->streaming>0)--run->reactor_data->streaming;conn->stream_counted=false;conn->is_stream=false;}conn->input.erase(0,conn->request_consumed);conn->header_end=std::string::npos;conn->head_ready=false;conn->body_ready=false;conn->phase=reactor_phase::reading;const auto handle=conn->socket.native_handle();reactor->modify(handle,true,false);if(!conn->input.empty())reactor_pump(s,run,reactor,conn);}
     static void reactor_flush(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){
         if(conn->phase!=reactor_phase::writing)return;try{
             while(conn->head_offset<conn->out_head.size()){
@@ -1496,15 +1497,62 @@ private:
             }
             if(conn->head.upgrade_requested){reactor_send_status(run,reactor,conn,501,"Not Implemented");return;}
             strut_server_request req=conn->head.request;req.buffered_body_available=true;
-            bool found=false,method_mismatch=false;handler cursor;
+            bool found=false,method_mismatch=false;handler cursor;stream_handler stream_cursor;
             const std::string route_method=conn->head_request?"GET":req.method.v;
-            for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}cursor=route.fn;found=true;break;}
+            for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}if(route.fn){cursor=route.fn;stream_cursor=nullptr;found=true;break;}if(route.stream){stream_cursor=route.stream;cursor=nullptr;found=true;break;}}
             if(!found){reactor_send_status(run,reactor,conn,method_mismatch?405:404,method_mismatch?"Method Not Allowed":"Not Found");return;}
-            conn->head.request=req;conn->head.request.buffered_body_available=true;conn->fn=cursor;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::dispatched;
-            {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data)run->reactor_data->ready.push_back(conn);else{conn->phase=reactor_phase::closing;}}
+            conn->head.request=req;conn->head.request.buffered_body_available=true;conn->fn=cursor;conn->stream_fn=stream_cursor;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::dispatched;
+            {std::lock_guard<std::mutex> lock(run->mutex);if(stream_cursor&&run->reactor_data){conn->is_stream=true;conn->stream_counted=true;++run->reactor_data->streaming;run->reactor_data->stream_ready.push_back(conn);run->reactor_data->stream_cv.notify_one();}else if(run->reactor_data)run->reactor_data->ready.push_back(conn);else{conn->phase=reactor_phase::closing;}}
             reactor->modify(conn->socket.native_handle(),false,false);
             if(conn->phase==reactor_phase::closing){reactor_close(run,reactor,conn);return;}run->work_cv.notify_one();return;
         }
+    }
+    static void reactor_push_output(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<strut_reactor>& reactor,const char* data,std::size_t size){
+        if(size==0)return;
+        {std::unique_lock<std::mutex> lock(conn->out_mutex);while(!conn->out_closed&&!conn->out_error&&conn->out_stream.size()>conn->out_limit)conn->out_cv.wait(lock);if(conn->out_closed||conn->out_error)throw strut_checked_error("NetworkError","HTTP response stream closed");conn->out_stream.append(data,size);}
+        if(reactor)reactor->wake();
+    }
+    static void reactor_run_stream(const std::shared_ptr<run_state>& run,const std::shared_ptr<reactor_connection>& conn){
+        const void* previous_context=strut_execution_context;worker_run_=run.get();worker_connection_=nullptr;strut_execution_context=run.get();
+        try{
+            strut_server_request req=conn->head.request;if(conn->cancellation)req.cancellation=conn->cancellation->token();req.buffered_body_available=true;
+            auto writer_state=std::make_shared<strut_http_response_writer_state>();
+            writer_state->version=conn->head.version;writer_state->request_persistent=conn->head.persistent;writer_state->head_request=conn->head_request;
+            writer_state->cancel=[conn]{std::shared_ptr<strut_cancellation_source> source=conn->cancellation;if(source)source->cancel();};
+            writer_state->shutdown_started=[run]{return stopping(run.get());};
+            const std::shared_ptr<strut_reactor> reactor=run->reactor;
+            writer_state->send=[conn,reactor](const char* data,std::size_t size){reactor_push_output(conn,reactor,data,size);};
+            strut_http_response_writer writer(std::move(writer_state));
+            conn->stream_fn(req,writer);
+            writer.finish();
+            conn->keep_alive=writer.reusable();conn->close_after_write=!writer.reusable();
+            writer.invalidate();
+        }catch(...){{std::lock_guard<std::mutex> lock(conn->out_mutex);conn->out_error=true;}conn->out_cv.notify_all();}
+        {std::lock_guard<std::mutex> lock(run->mutex);conn->stream_finished=true;conn->phase=reactor_phase::streaming;}
+        if(run->reactor)run->reactor->wake();
+        strut_execution_context=previous_context;worker_run_=nullptr;
+    }
+    static void reactor_drain_stream(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){
+        const auto handle=conn->socket.native_handle();if(handle==strut_invalid_socket)return;
+        bool drained=false,error=false,finished=false;
+        {std::lock_guard<std::mutex> lock(conn->out_mutex);
+            while(!conn->out_stream.empty()){
+                std::size_t n=0;try{n=conn->socket.write_some(conn->out_stream.data(),conn->out_stream.size());}catch(...){conn->out_error=true;error=true;break;}
+                if(n==0)break;conn->out_stream.erase(0,n);
+            }
+            drained=conn->out_stream.empty();error=error||conn->out_error||conn->out_closed;
+        }
+        if(drained&&error){reactor_close(run,reactor,conn);return;}
+        if(!drained)return;
+        {std::lock_guard<std::mutex> lock(run->mutex);finished=conn->stream_finished;}
+        if(finished){reactor_finish_write(s,run,reactor,conn);return;}
+        reactor->modify(handle,false,false);
+    }
+    static void reactor_arm_streams(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor){
+        {std::lock_guard<std::mutex> lock(run->mutex);if(!run->reactor_data||run->reactor_data->streaming==0)return;}
+        std::vector<std::shared_ptr<reactor_connection>> connections;
+        {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data)for(auto& kv:run->reactor_data->connections)connections.push_back(kv.second);}
+        for(auto& conn:connections){bool has=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);has=!conn->out_stream.empty();}if(has){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);}}
     }
     static void reactor_worker_loop(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run){
         for(;;){
@@ -1524,6 +1572,15 @@ private:
             if(run->reactor)run->reactor->wake();
         }
     }
+    static void reactor_stream_worker_loop(const std::shared_ptr<run_state>& run){
+        for(;;){
+            std::shared_ptr<reactor_connection> conn;
+            {std::unique_lock<std::mutex> lock(run->mutex);run->reactor_data->stream_cv.wait(lock,[&]{return run->workers_stopping||(run->reactor_data&&!run->reactor_data->stream_ready.empty());});if(run->reactor_data&&!run->reactor_data->stream_ready.empty()){conn=run->reactor_data->stream_ready.front();run->reactor_data->stream_ready.pop_front();}else if(run->workers_stopping)return;else continue;}
+            if(conn->phase!=reactor_phase::dispatched)continue;
+            reactor_run_stream(run,conn);
+        }
+    }
+
     static void run_reactor_server(const std::shared_ptr<state>& s,const strut_string& host,std::int32_t port,std::int32_t max_requests){
         using std::chrono::steady_clock;
         auto run=std::make_shared<run_state>();
@@ -1533,11 +1590,12 @@ private:
         run->reactor=reactor;bool accepting=false;{std::lock_guard<std::mutex> lock(run->mutex);accepting=run->accepting;if(accepting)run->listener=std::move(listener);else listener.close();run->startup_complete=true;run->drain_cv.notify_all();}{std::lock_guard<std::mutex> lock(s->lifecycle_mutex);if(s->current==run&&s->phase==lifecycle_phase::starting&&accepting){std::lock_guard<std::mutex> run_lock(run->mutex);run->was_running=true;s->phase=lifecycle_phase::running;s->running.store(true);}else accepting=false;}
         if(!accepting){reactor=nullptr;std::lock_guard<std::mutex> lock(run->mutex);run->workers_stopping=true;run->drain_cv.notify_all();return;}
         const auto listener_handle=run->listener.native_handle();reactor->add(listener_handle,true,false);
-        std::vector<std::thread> workers;try{std::size_t worker_count=strut_runtime_parallelism();if(const char* override_workers=std::getenv("STRUT_WORKERS")){const long value=std::atol(override_workers);if(value>=1&&value<=64)worker_count=static_cast<std::size_t>(value);}if(worker_count>64)worker_count=64;for(std::size_t i=0;i<worker_count;++i)workers.emplace_back([s,run]{reactor_worker_loop(s,run);});}catch(...){request_stop(run);run->workers_stopping=true;run->work_cv.notify_all();for(auto& w:workers)if(w.joinable())w.join();}
+        std::vector<std::thread> workers;std::vector<std::thread> stream_workers;try{std::size_t worker_count=strut_runtime_parallelism();if(const char* override_workers=std::getenv("STRUT_WORKERS")){const long value=std::atol(override_workers);if(value>=1&&value<=64)worker_count=static_cast<std::size_t>(value);}if(worker_count>64)worker_count=64;std::size_t stream_count=std::max<std::size_t>(4,worker_count);if(stream_count>16)stream_count=16;if(const char* override_stream=std::getenv("STRUT_STREAM_WORKERS")){const long value=std::atol(override_stream);if(value>=1&&value<=64)stream_count=static_cast<std::size_t>(value);}for(std::size_t i=0;i<worker_count;++i)workers.emplace_back([s,run]{reactor_worker_loop(s,run);});for(std::size_t i=0;i<stream_count;++i)stream_workers.emplace_back([run]{reactor_stream_worker_loop(run);});}catch(...){request_stop(run);run->workers_stopping=true;run->work_cv.notify_all();if(run->reactor_data)run->reactor_data->stream_cv.notify_all();for(auto& w:workers)if(w.joinable())w.join();for(auto& w:stream_workers)if(w.joinable())w.join();}
         std::vector<strut_reactor_event> events;std::uint64_t admitted=0;
         for(;;){
-            std::deque<std::shared_ptr<reactor_connection>> completions;{std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data)completions.swap(run->reactor_data->completed);}
+            std::deque<std::shared_ptr<reactor_connection>> completions;bool streams_active=false;{std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){completions.swap(run->reactor_data->completed);streams_active=run->reactor_data->streaming>0;}}
             for(auto& conn:completions){const auto handle=conn->socket.native_handle();if(handle==strut_invalid_socket)continue;bool live=false;{std::lock_guard<std::mutex> lock(run->mutex);auto& map=run->reactor_data->connections;auto f=map.find(handle);live=(f!=map.end()&&f->second==conn);}if(!live)continue;conn->phase=reactor_phase::writing;reactor->modify(handle,false,true);}
+            if(streams_active){std::vector<std::shared_ptr<reactor_connection>> candidates;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections)candidates.push_back(kv.second);}for(auto& conn:candidates){bool has=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);has=!conn->out_stream.empty();}if(has){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);}}}
             bool stopping=false;{std::lock_guard<std::mutex> lock(run->mutex);stopping=!run->accepting;}
             try{reactor->wait(events,stopping?25:50);}catch(...){break;}
             for(const auto& event:events){
@@ -1547,13 +1605,13 @@ private:
                 if(!conn)continue;
                 if(event.closed||event.error){if(conn_phase==reactor_phase::dispatched&&conn->cancellation){std::shared_ptr<strut_cancellation_source> source=conn->cancellation;source->cancel();}reactor_close(run,reactor,conn);continue;}
                 if(event.readable&&(conn_phase==reactor_phase::reading||conn_phase==reactor_phase::waiting_body)){bool closed=false;try{for(;;){char buffer[8192];const std::ptrdiff_t n=conn->socket.read_some(buffer,sizeof(buffer));if(n<0)break;if(n==0){closed=true;break;}conn->input.append(buffer,static_cast<std::size_t>(n));}}catch(...){closed=true;}if(closed){reactor_close(run,reactor,conn);continue;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(conn->head_ready?s->read_timeout_ms:s->idle_timeout_ms);conn->deadline_set=true;reactor_pump(s,run,reactor,conn);}
-                if(event.writable&&conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);
+                if(event.writable){if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
             }
             const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&c->phase!=reactor_phase::dispatched&&c->phase!=reactor_phase::writing&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
             if(stopping){std::vector<std::shared_ptr<reactor_connection>> idle;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->phase==reactor_phase::reading||c->phase==reactor_phase::waiting_body||c->phase==reactor_phase::closing)idle.push_back(c);}}for(auto& c:idle)reactor_close(run,reactor,c);}
             if(stopping&&run->reactor_data){bool drained=false;{std::lock_guard<std::mutex> lock(run->mutex);drained=run->in_flight==0;}if(drained){run->workers_stopping=true;run->work_cv.notify_all();break;}}
         }
-        run->workers_stopping=true;run->work_cv.notify_all();publish_lifecycle(s,run);for(auto& w:workers)if(w.joinable())w.detach();
+        run->workers_stopping=true;run->work_cv.notify_all();if(run->reactor_data)run->reactor_data->stream_cv.notify_all();publish_lifecycle(s,run);for(auto& w:workers)if(w.joinable())w.detach();for(auto& w:stream_workers)if(w.joinable())w.detach();
     }
 };
 )STRUT_SERVER";
