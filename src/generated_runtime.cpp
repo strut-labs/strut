@@ -1768,14 +1768,14 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
                 if(event.closed||event.error){if(conn_phase==reactor_phase::dispatched&&conn->cancellation){std::shared_ptr<strut_cancellation_source> source=conn->cancellation;source->cancel();}reactor_close(run,reactor,conn);continue;}
                 if(event.readable){
 #ifdef STRUT_USE_SERVER_TLS
-                if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;}else if(hs==2){reactor_arm_streams(run,reactor);}if(conn->tls_handshake)continue;}
+                if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs<0){reactor_close(run,reactor,conn);continue;}if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;}else if(hs==2){reactor_arm_streams(run,reactor);}if(conn->tls_handshake)continue;}
 #endif
                 }
                 if(event.readable&&(conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket)){reactor_request_feed(s,run,conn);continue;}
                 if(event.readable&&(conn_phase==reactor_phase::reading||conn_phase==reactor_phase::waiting_body)){bool closed=false;try{for(;;){char buffer[8192];const std::ptrdiff_t n=reactor_read_some(conn,buffer,sizeof(buffer));if(n<0)break;if(n==0){closed=true;break;}conn->input.append(buffer,static_cast<std::size_t>(n));}}catch(...){closed=true;}if(closed){reactor_close(run,reactor,conn);continue;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(conn->head_ready?s->read_timeout_ms:s->idle_timeout_ms);conn->deadline_set=true;reactor_pump(s,run,reactor,conn);}
                 if(event.writable){
 #ifdef STRUT_USE_SERVER_TLS
-                if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;reactor_arm_streams(run,reactor);}else if(hs==2){conn->tls_want_write=true;}continue;}
+                if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs<0){reactor_close(run,reactor,conn);continue;}if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;reactor_arm_streams(run,reactor);}else if(hs==2){conn->tls_want_write=true;}continue;}
 #endif
                 if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
             }
