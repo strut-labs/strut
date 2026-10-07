@@ -220,18 +220,22 @@ private:
 };
 class strut_cancellation_token {
 public:
-    strut_cancellation_token():state_(std::make_shared<strut_cancellation_state>()){}
+    strut_cancellation_token()=default;
     explicit strut_cancellation_token(std::shared_ptr<strut_cancellation_state> state):state_(std::move(state)){}
-    bool cancelled() const noexcept{return state_->cancelled.load(std::memory_order_acquire);}
-    void wait() const{std::mutex mutex;std::condition_variable cv;bool done=false;auto subscription=subscribe([&]{{std::lock_guard<std::mutex> lock(mutex);done=true;}cv.notify_one();});std::unique_lock<std::mutex> lock(mutex);cv.wait(lock,[&]{return done;});}
+    bool cancelled() const noexcept{return state_&&state_->cancelled.load(std::memory_order_acquire);}
+    void wait() const{if(!state_)return;std::mutex mutex;std::condition_variable cv;bool done=false;auto subscription=subscribe([&]{{std::lock_guard<std::mutex> lock(mutex);done=true;}cv.notify_one();});std::unique_lock<std::mutex> lock(mutex);cv.wait(lock,[&]{return done;});}
     void throw_if_cancelled() const{if(cancelled())throw strut_checked_error("CancellationError","operation cancelled");}
     template<class F> strut_cancellation_subscription subscribe(F&& function) const{
-        std::function<void()> stored(std::forward<F>(function));if(!stored)return {};auto callback=std::make_shared<strut_cancellation_callback>();callback->function=std::move(stored);std::uint64_t id=0;bool invoke=false;
+        std::function<void()> stored(std::forward<F>(function));if(!stored||!state_)return {};auto callback=std::make_shared<strut_cancellation_callback>();callback->function=std::move(stored);std::uint64_t id=0;bool invoke=false;
         {std::lock_guard<std::mutex> lock(state_->mutex);if(state_->cancelled.load(std::memory_order_acquire))invoke=true;else{id=state_->next_id++;state_->callbacks.emplace(id,callback);}}
         if(invoke){std::function<void()> call;{std::lock_guard<std::mutex> lock(callback->mutex);if(callback->active){call=std::move(callback->function);callback->running=true;callback->running_thread=std::this_thread::get_id();}}try{call();}catch(...){ }{std::lock_guard<std::mutex> lock(callback->mutex);callback->running=false;callback->running_thread={};callback->active=false;}callback->cv.notify_all();return {};}
         return strut_cancellation_subscription(state_,id,std::move(callback));
     }
-private:std::shared_ptr<strut_cancellation_state> state_;friend class strut_cancellation_source;
+private:std::shared_ptr<strut_cancellation_state> state_;
+public:
+    bool valid() const noexcept{return static_cast<bool>(state_);}
+private:
+    friend class strut_cancellation_source;
 };
 class strut_cancellation_source {
 public:
