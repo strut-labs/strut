@@ -1724,10 +1724,10 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
             {std::unique_lock<std::mutex> lock(run->mutex);run->work_cv.wait(lock,[&]{return run->workers_stopping||(run->reactor_data&&!run->reactor_data->ready.empty());});if(run->reactor_data&&!run->reactor_data->ready.empty()){conn=run->reactor_data->ready.front();run->reactor_data->ready.pop_front();}else if(run->workers_stopping)return;else continue;}
             if(conn->phase!=reactor_phase::dispatched)continue;
             const void* previous_context=strut_execution_context;worker_run_=run.get();worker_connection_=nullptr;strut_execution_context=run.get();
-            strut_server_request req=conn->head.request;if(conn->cancellation)req.cancellation=conn->cancellation->token();
+            strut_server_request req=std::move(conn->head.request);if(conn->cancellation)req.cancellation=conn->cancellation->token();
             req.buffered_body_available=true;
             strut_server_response response;
-            try{response=conn->fn(req);}catch(...){response=strut_server_response{500,strut_string("Internal Server Error"),"text/plain; charset=utf-8",{}, {}};}
+            try{response=conn->fn(std::move(req));}catch(...){response=strut_server_response{500,strut_string("Internal Server Error"),"text/plain; charset=utf-8",{}, {}};}
             strut_execution_context=previous_context;worker_run_=nullptr;
             const bool cancelled=conn->cancellation&&conn->cancellation->token().cancelled();
             bool ok=false;try{ok=reactor_build_response(conn,response,cancelled);}catch(...){ok=false;}
