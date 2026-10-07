@@ -1518,7 +1518,7 @@ private:
                 conn->head=parsed.head;conn->head_request=conn->head.request.method.v=="HEAD";conn->head_ready=true;
             }
             if(!conn->early_routed){
-                strut_server_request req=conn->head.request;req.buffered_body_available=true;
+                auto& req=conn->head.request;req.buffered_body_available=true;
                 bool found=false,method_mismatch=false;handler cursor;stream_handler stream_cursor;request_stream_handler request_cursor;
 #ifdef STRUT_USE_WEBSOCKET
                 websocket_handler websocket_cursor;
@@ -1529,7 +1529,7 @@ private:
                 if(route.websocket){websocket_cursor=route.websocket;cursor=nullptr;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}
 #endif
                 }
-                conn->early_routed=true;conn->head.request=req;
+                conn->early_routed=true;
                 if(request_cursor){
                     conn->request_stream_fn=request_cursor;conn->max_body=s->max_body_bytes;conn->max_framing=s->max_header_bytes;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::request_stream;conn->is_stream=true;conn->stream_counted=true;
                     {std::lock_guard<std::mutex> lock(conn->body_mutex);if(conn->input.size()>conn->header_end+4)conn->body_buf=conn->input.substr(conn->header_end+4);}
@@ -1544,7 +1544,7 @@ private:
                     const auto ws_opening=strut_validate_websocket_opening(conn->head,ws_accept,ws_protocols);
                     if(ws_opening==strut_websocket_opening_result::unsupported_version){reactor_send_status(run,reactor,conn,426,"Upgrade Required");return;}
                     if(ws_opening!=strut_websocket_opening_result::valid){reactor_send_status(run,reactor,conn,400,"Bad Request");return;}
-                    conn->head.request=req;conn->max_body=s->max_websocket_frame;conn->max_framing=s->max_websocket_message;conn->cancellation=std::make_shared<strut_cancellation_source>();
+                    conn->max_body=s->max_websocket_frame;conn->max_framing=s->max_websocket_message;conn->cancellation=std::make_shared<strut_cancellation_source>();
                     const std::string ws_accept_capture=ws_accept;const std::vector<std::string> ws_protocols_capture=ws_protocols;
                     const websocket_handler ws_handler_capture=websocket_cursor;
                     const std::shared_ptr<reactor_connection> ws_conn=conn;
