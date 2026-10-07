@@ -218,9 +218,11 @@ private:
     void move_from(strut_cancellation_subscription& other) noexcept{state_=std::move(other.state_);id_=other.id_;callback_=std::move(other.callback_);other.id_=0;}
     std::shared_ptr<strut_cancellation_state> state_;std::uint64_t id_=0;std::shared_ptr<strut_cancellation_callback> callback_;
 };
+struct strut_cancellation_no_state_t{};
 class strut_cancellation_token {
 public:
-    strut_cancellation_token()=default;
+    strut_cancellation_token():state_(std::make_shared<strut_cancellation_state>()){}
+    strut_cancellation_token(strut_cancellation_no_state_t) noexcept:state_(nullptr){}
     explicit strut_cancellation_token(std::shared_ptr<strut_cancellation_state> state):state_(std::move(state)){}
     bool cancelled() const noexcept{return state_&&state_->cancelled.load(std::memory_order_acquire);}
     void wait() const{if(!state_)return;std::mutex mutex;std::condition_variable cv;bool done=false;auto subscription=subscribe([&]{{std::lock_guard<std::mutex> lock(mutex);done=true;}cv.notify_one();});std::unique_lock<std::mutex> lock(mutex);cv.wait(lock,[&]{return done;});}
@@ -843,7 +845,7 @@ struct strut_http_headers {
     friend bool operator==(const std::unordered_map<strut_string,strut_string>& a,const strut_http_headers& b){return b==a;}
     friend bool operator!=(const std::unordered_map<strut_string,strut_string>& a,const strut_http_headers& b){return !(b==a);}
 };
-struct strut_server_request {strut_string method,path,body;strut_http_headers headers;std::unordered_map<strut_string,strut_string> query,params;strut_http_values query_values,cookies;strut_cancellation_token cancellation;bool buffered_body_available=false;
+struct strut_server_request {strut_string method,path,body;strut_http_headers headers;std::unordered_map<strut_string,strut_string> query,params;strut_http_values query_values,cookies;strut_cancellation_token cancellation{strut_cancellation_no_state_t{}};bool buffered_body_available=false;
     strut_string text() const{return text(std::numeric_limits<std::int64_t>::max());}strut_string text(std::int64_t limit) const{if(!buffered_body_available)throw strut_checked_error("HttpError","buffered request body is unavailable for streaming handlers");if(limit<0||static_cast<std::uint64_t>(limit)<body.v.size())throw strut_checked_error("HttpError","request body exceeds helper limit");return body;}
     strut_http_values form() const{return form(std::numeric_limits<std::int64_t>::max());}strut_http_values form(std::int64_t limit) const{const auto value=text(limit);auto found=headers.find(strut_string("content-type"));if(found==headers.end())throw strut_checked_error("HttpError","form request requires application/x-www-form-urlencoded");std::string type=found->second.v;while(!type.empty()&&(type.back()==' '||type.back()=='\t'))type.pop_back();std::size_t begin=0;while(begin<type.size()&&(type[begin]==' '||type[begin]=='\t'))++begin;for(char& c:type)if(c>='A'&&c<='Z')c=static_cast<char>(c-'A'+'a');if(type.substr(begin)!="application/x-www-form-urlencoded")throw strut_checked_error("HttpError","form request requires application/x-www-form-urlencoded");strut_http_values parsed;if(!strut_parse_http_values(value.v,parsed))throw strut_checked_error("HttpError","malformed or oversized URL-encoded form body");return parsed;}
 )STRUT_HTTP_TYPES";
