@@ -830,6 +830,14 @@ struct strut_http_headers {
     template<class K,class V> void emplace(K&& k,V&& v){entries.emplace_back(std::forward<K>(k),std::forward<V>(v));}
     void erase(const strut_string& key){auto it=find(key);if(it!=entries.end())entries.erase(it);}
     operator std::unordered_map<strut_string,strut_string>() const{std::unordered_map<strut_string,strut_string> m;for(const auto& e:entries)m.emplace(e.first,e.second);return m;}
+    strut_http_headers(const std::unordered_map<strut_string,strut_string>& m){for(const auto& e:m)entries.emplace_back(e.first,e.second);}
+    strut_http_headers& operator=(const std::unordered_map<strut_string,strut_string>& m){entries.clear();for(const auto& e:m)entries.emplace_back(e.first,e.second);return *this;}
+    bool operator==(const strut_http_headers& o) const{if(entries.size()!=o.entries.size())return false;for(const auto& e:entries){auto it=o.find(e.first);if(it==o.entries.end()||!(it->second==e.second))return false;}return true;}
+    bool operator!=(const strut_http_headers& o) const{return !(*this==o);}
+    bool operator==(const std::unordered_map<strut_string,strut_string>& o) const{if(entries.size()!=o.size())return false;for(const auto& e:entries){auto it=o.find(e.first);if(it==o.end()||!(it->second==e.second))return false;}return true;}
+    bool operator!=(const std::unordered_map<strut_string,strut_string>& o) const{return !(*this==o);}
+    friend bool operator==(const std::unordered_map<strut_string,strut_string>& a,const strut_http_headers& b){return b==a;}
+    friend bool operator!=(const std::unordered_map<strut_string,strut_string>& a,const strut_http_headers& b){return !(b==a);}
 };
 struct strut_server_request {strut_string method,path,body;strut_http_headers headers;std::unordered_map<strut_string,strut_string> query,params;strut_http_values query_values,cookies;strut_cancellation_token cancellation;bool buffered_body_available=false;
     strut_string text() const{return text(std::numeric_limits<std::int64_t>::max());}strut_string text(std::int64_t limit) const{if(!buffered_body_available)throw strut_checked_error("HttpError","buffered request body is unavailable for streaming handlers");if(limit<0||static_cast<std::uint64_t>(limit)<body.v.size())throw strut_checked_error("HttpError","request body exceeds helper limit");return body;}
