@@ -1013,6 +1013,27 @@ private:
     static strut_bytes read_chunked_locked(strut_http_request_body_state& s,std::unique_lock<std::mutex>& lock,std::size_t requested){if(requested==0)return {};while(s.chunk_remaining==0&&s.phase==strut_http_request_body_phase::open)next_chunk_locked(s,lock);if(s.phase==strut_http_request_body_phase::eof)return {};if(s.buffer.empty())pull_locked(s,lock,std::min(requested,s.chunk_remaining));const std::size_t count=std::min({requested,s.chunk_remaining,s.buffer.size()});auto out=take_locked(s,count);s.chunk_remaining-=count;if(s.chunk_remaining==0)s.need_chunk_crlf=true;return out;}
     std::shared_ptr<strut_http_request_body_state> state_;
 };
+struct strut_route_segment{bool param=false;std::string text;};
+inline std::vector<strut_route_segment> strut_compile_pattern(const std::string& pattern){std::vector<strut_route_segment> out;std::size_t pa=0;for(;;){if(pa>=pattern.size())break;std::size_t ea=pattern.find('/',pa);if(ea==std::string::npos)ea=pattern.size();const std::size_t la=ea-pa;if(la>0&&pattern[pa]==':')out.push_back({true,std::string(pattern,pa+1,la-1)});else out.push_back({false,la?std::string(pattern,pa,la):std::string()});if(ea>=pattern.size())break;pa=ea+1;}return out;}
+inline bool strut_pattern_has_param(const std::string& pattern){return pattern.find(':')!=std::string::npos;}
+inline std::string strut_route_key(const std::vector<strut_route_segment>& segs){std::string k;for(const auto& s:segs){k.push_back('\0');k+=s.text;}return k;}
+struct strut_route_capture{std::size_t offset=0,length=0;};
+struct strut_route_candidate{int route_id=-1;std::vector<std::string> param_names;std::vector<strut_route_capture> captures;};
+struct strut_route_trie_node{std::vector<std::pair<std::string,int>> static_children;int param_child=-1;std::vector<int> terminal_routes;std::vector<std::vector<std::string>> terminal_param_names;};
+struct strut_route_trie{std::vector<strut_route_trie_node> nodes;strut_route_trie(){nodes.emplace_back();}void add(const std::vector<strut_route_segment>& segs,int route_id,std::vector<std::string>&& names){int cur=0;for(const auto& s:segs){if(s.param){if(nodes[cur].param_child<0){nodes[cur].param_child=static_cast<int>(nodes.size());nodes.emplace_back();}cur=nodes[cur].param_child;}else{int found=-1;for(std::size_t i=0;i<nodes[cur].static_children.size();++i)if(nodes[cur].static_children[i].first==s.text){found=nodes[cur].static_children[i].second;break;}if(found<0){found=static_cast<int>(nodes.size());nodes[cur].static_children.emplace_back(s.text,found);nodes.emplace_back();}cur=found;}}nodes[cur].terminal_routes.push_back(route_id);nodes[cur].terminal_param_names.push_back(std::move(names));}};
+template<class R> static bool strut_route_has_websocket(const R& r){
+#ifdef STRUT_USE_WEBSOCKET
+    return (bool)r.websocket;
+#else
+    (void)r;return false;
+#endif
+}
+static bool strut_route_cand_on(){static bool v=std::getenv("STRUT_ROUTE_PROFILE")!=nullptr;return v;}
+static long long& strut_route_cand_iter_ref(){static long long c=0;return c;}
+static long long& strut_route_cand_req_ref(){static long long r=0;return r;}
+static void strut_route_cand_scan(long long n){if(strut_route_cand_on()){static long long last=0;long long& c=strut_route_cand_iter_ref();c+=n;++strut_route_cand_req_ref();if(c-last>=65536||last==0){last=c;FILE* f=fopen("/tmp/route_scan.out","w");if(f){fprintf(f,"candidates=%lld requests=%lld\n",c,strut_route_cand_req_ref());fclose(f);}}}}
+static void strut_trie_match_node(const strut_route_trie& trie,int node,const std::string& path,std::size_t pb,std::vector<strut_route_capture>& caps,std::vector<strut_route_candidate>& out){const std::size_t size=path.size();if(pb>=size){const auto& n=trie.nodes[node];for(std::size_t r=0;r<n.terminal_routes.size();++r){strut_route_candidate cand;cand.route_id=n.terminal_routes[r];cand.param_names=n.terminal_param_names[r];cand.captures=caps;out.push_back(std::move(cand));}return;}std::size_t eb=path.find('/',pb);if(eb==std::string::npos)eb=size;const std::size_t lb=eb-pb;const auto& n=trie.nodes[node];for(const auto& c:n.static_children){if(c.first.size()==lb&&path.compare(pb,lb,c.first)==0)strut_trie_match_node(trie,c.second,path,eb<size?eb+1:size,caps,out);}if(n.param_child>=0){caps.push_back({pb,lb});strut_trie_match_node(trie,n.param_child,path,eb<size?eb+1:size,caps,out);caps.pop_back();}}
+static void strut_trie_match(const strut_route_trie& trie,const std::string& path,std::vector<strut_route_candidate>& out){std::vector<strut_route_capture> caps;strut_trie_match_node(trie,0,path,0,caps,out);}
 inline bool strut_route_match(const std::string& pattern,const std::string& path,std::unordered_map<strut_string,strut_string>& params){std::size_t pa=0,pb=0;for(;;){if(pa>=pattern.size()&&pb>=path.size())return true;if(pa>=pattern.size()||pb>=path.size())return false;std::size_t ea=pattern.find('/',pa);if(ea==std::string::npos)ea=pattern.size();std::size_t eb=path.find('/',pb);if(eb==std::string::npos)eb=path.size();const std::size_t la=ea-pa,lb=eb-pb;if(la==0&&lb==0){pa=ea+1;pb=eb+1;continue;}if(pattern[pa]==':'){params[strut_string(pattern.substr(pa+1,la-1))]=strut_string(path.substr(pb,lb));pa=ea<pattern.size()?ea+1:ea;pb=eb<path.size()?eb+1:eb;}else{if(la!=lb||pattern.compare(pa,la,path,pb,lb)!=0)return false;pa=ea<pattern.size()?ea+1:ea;pb=eb<path.size()?eb+1:eb;}}}
 )STRUT_HTTP_TYPES";
 }
@@ -1371,7 +1392,7 @@ private:
     };
     struct reactor_state{std::mutex mutex;std::condition_variable stream_cv;std::unordered_map<strut_socket_handle,std::shared_ptr<reactor_connection>> connections;std::deque<std::shared_ptr<reactor_connection>> ready,stream_ready,completed;std::size_t in_flight=0,streaming=0;std::uint64_t next_id=1;};
     struct run_state{std::mutex mutex;std::condition_variable work_cv,drain_cv;std::deque<std::shared_ptr<connection>> queue,connections;std::shared_ptr<connection> rejecting;strut_tcp_listener listener;std::size_t in_flight=0;bool accepting=true,startup_complete=false,was_running=false,workers_stopping=false,forced=false,deadline_set=false;std::chrono::steady_clock::time_point deadline;std::int32_t shutdown_timeout_ms=0;std::shared_ptr<strut_reactor> reactor;std::shared_ptr<reactor_state> reactor_data;bool reactor_mode=false;void* tls_ctx=nullptr;};
-    struct state{std::vector<route> routes;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false};std::mutex lifecycle_mutex;std::shared_ptr<run_state> current;lifecycle_phase phase=lifecycle_phase::stopped;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;
+    struct state{std::vector<route> routes;std::unordered_map<std::string,std::vector<int>> exact_routes;strut_route_trie route_trie;std::string static_prefix,static_fallback;std::unordered_map<strut_string,strut_string> static_files;std::atomic<bool> running{false};std::mutex lifecycle_mutex;std::shared_ptr<run_state> current;lifecycle_phase phase=lifecycle_phase::stopped;std::int32_t read_timeout_ms=30000,write_timeout_ms=30000,idle_timeout_ms=5000,shutdown_timeout_ms=5000,max_header_count=100,max_connections=1024;std::size_t max_body_bytes=1024*1024,max_header_bytes=64*1024;
 )STRUT_SERVER";
     if (websocket) out << "std::size_t max_websocket_frame=1024*1024,max_websocket_message=4*1024*1024;";
     out << R"STRUT_SERVER(};
@@ -1379,12 +1400,12 @@ private:
     inline static thread_local run_state* worker_run_=nullptr;
     inline static thread_local connection* worker_connection_=nullptr;
     void require_stopped_locked(const char* action) const{if(s_->phase!=lifecycle_phase::stopped)throw strut_checked_error("NetworkError",std::string("cannot ")+action+" while HTTP server is running");if(s_->current){std::lock_guard<std::mutex> run_lock(s_->current->mutex);if(s_->current->in_flight!=0)throw strut_checked_error("NetworkError",std::string("cannot ")+action+" while HTTP server shutdown is still in progress");}}
-    void add_route(const char* method,const strut_string& path,handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,std::move(h),{},{}});}
-    void add_stream_route(const char* method,const strut_string& path,stream_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,{},std::move(h),{}});}
-    void add_request_stream_route(const char* method,const strut_string& path,request_stream_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,{},{},std::move(h)});}
+    void add_route(const char* method,const strut_string& path,handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,std::move(h),{},{}});{const int rid=static_cast<int>(s_->routes.size())-1;if(strut_pattern_has_param(path.v))s_->route_trie.add(strut_compile_pattern(path.v),rid,{});else s_->exact_routes[strut_route_key(strut_compile_pattern(path.v))].push_back(rid);}}
+    void add_stream_route(const char* method,const strut_string& path,stream_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,{},std::move(h),{}});{const int rid=static_cast<int>(s_->routes.size())-1;if(strut_pattern_has_param(path.v))s_->route_trie.add(strut_compile_pattern(path.v),rid,{});else s_->exact_routes[strut_route_key(strut_compile_pattern(path.v))].push_back(rid);}}
+    void add_request_stream_route(const char* method,const strut_string& path,request_stream_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({method,path.v,{},{},std::move(h)});{const int rid=static_cast<int>(s_->routes.size())-1;if(strut_pattern_has_param(path.v))s_->route_trie.add(strut_compile_pattern(path.v),rid,{});else s_->exact_routes[strut_route_key(strut_compile_pattern(path.v))].push_back(rid);}}
 )STRUT_SERVER";
     if (websocket) out << R"STRUT_SERVER(
-    void add_websocket_route(const strut_string& path,websocket_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({"GET",path.v,{},{},{},std::move(h)});}
+    void add_websocket_route(const strut_string& path,websocket_handler h) const{std::lock_guard<std::mutex> lock(s_->lifecycle_mutex);require_stopped_locked("register routes");s_->routes.push_back({"GET",path.v,{},{},{},std::move(h)});{const int rid=static_cast<int>(s_->routes.size())-1;if(strut_pattern_has_param(path.v))s_->route_trie.add(strut_compile_pattern(path.v),rid,{});else s_->exact_routes[strut_route_key(strut_compile_pattern(path.v))].push_back(rid);}}
 )STRUT_SERVER";
     out << R"STRUT_SERVER(
     class request_scope{public:request_scope(run_state* run,connection* connection,strut_server_request& request):run_(run),connection_(connection),source_(std::make_shared<strut_cancellation_source>()){request.cancellation=source_->token();bool stopping=false;{std::lock_guard<std::mutex> lock(run_->mutex);connection_->request_cancellation=source_;connection_->idle=false;stopping=!run_->accepting;}if(stopping)source_->cancel();}~request_scope(){source_->cancel();std::lock_guard<std::mutex> lock(run_->mutex);if(connection_->request_cancellation==source_)connection_->request_cancellation.reset();}const std::shared_ptr<strut_cancellation_source>& source() const{return source_;}private:run_state* run_;connection* connection_;std::shared_ptr<strut_cancellation_source> source_;};
@@ -1525,13 +1546,19 @@ private:
                 websocket_handler websocket_cursor;
 #endif
                 const std::string route_method=conn->head_request?"GET":req.method.v;
-                for(auto& route:s->routes){req.params.clear();if(!strut_route_match(route.path,req.path.v,req.params))continue;if(route.method!=route_method){method_mismatch=true;continue;}if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;break;}if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;break;}
+                req.params.clear();bool any_path_match=false;std::vector<strut_route_candidate> candidates;
+                {auto it=s->exact_routes.find(strut_route_key(strut_compile_pattern(req.path.v)));if(it!=s->exact_routes.end()){any_path_match=true;for(int rid:it->second){strut_route_candidate cand;cand.route_id=rid;candidates.push_back(std::move(cand));}}}
+                strut_trie_match(s->route_trie,req.path.v,candidates);
+                if(!candidates.empty())any_path_match=true;
+                strut_route_cand_scan(static_cast<long long>(candidates.size()));
+                {int winner=-1;const strut_route_candidate* winner_cand=nullptr;
+                for(const auto& cand:candidates){const auto& route=s->routes[cand.route_id];if(route.method!=route_method){method_mismatch=true;continue;}const bool has_handler=route.fn||route.stream||route.request_stream||strut_route_has_websocket(route);if(!has_handler)continue;if(winner<0||cand.route_id<winner){winner=cand.route_id;winner_cand=&cand;}}
+                if(winner>=0){const auto& route=s->routes[winner];for(std::size_t pi=0;pi<winner_cand->param_names.size();++pi)req.params[strut_string(winner_cand->param_names[pi])]=strut_string(req.path.v.substr(winner_cand->captures[pi].offset,winner_cand->captures[pi].length));if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;}else if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;}else if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;}
 #ifdef STRUT_USE_WEBSOCKET
-                if(route.websocket){websocket_cursor=route.websocket;cursor=nullptr;stream_cursor=nullptr;request_cursor=nullptr;found=true;break;}
+                else if(route.websocket){websocket_cursor=route.websocket;cursor=nullptr;stream_cursor=nullptr;request_cursor=nullptr;found=true;}
 #endif
-                }
-                conn->early_routed=true;
-                if(request_cursor){
+                }else if(any_path_match&&method_mismatch)found=false;}
+                conn->early_routed=true;                if(request_cursor){
                     conn->request_stream_fn=request_cursor;conn->max_body=s->max_body_bytes;conn->max_framing=s->max_header_bytes;conn->cancellation=std::make_shared<strut_cancellation_source>();conn->phase=reactor_phase::request_stream;conn->is_stream=true;conn->stream_counted=true;
                     {std::lock_guard<std::mutex> lock(conn->body_mutex);if(conn->input.size()>conn->header_end+4)conn->body_buf=conn->input.substr(conn->header_end+4);}
                     {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){++run->reactor_data->streaming;run->reactor_data->stream_ready.push_back(conn);run->reactor_data->stream_cv.notify_one();}else{conn->phase=reactor_phase::closing;}}
