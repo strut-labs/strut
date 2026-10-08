@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(strut VERSION 0.0.4 LANGUAGES CXX)
+project(strut VERSION 0.0.5 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 

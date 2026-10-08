@@ -3,5 +3,5 @@
 #include <string_view>
 
 namespace strut {
-inline constexpr std::string_view version = "0.0.4";
+inline constexpr std::string_view version = "0.0.5";
 }

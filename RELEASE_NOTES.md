@@ -1,3 +1,11 @@
+# Unreleased (0.0.5 development)
+
+## Highlights
+
+- (in progress) Two-way FFI / embedding campaign: stable C ABI, native->Strut calls,
+  callbacks, ownership/lifetime rules, checked-error propagation, cross-platform ABI
+  correctness (GCC/Clang/AppleClang/MSVC).
+
 # Strut 0.0.4
 
 Strut 0.0.4 is a large HTTP/backend, runtime, and performance release. It does

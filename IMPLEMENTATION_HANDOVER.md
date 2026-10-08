@@ -1068,14 +1068,23 @@ Generator trigger: when Strut reaches roughly 28-30k+ req/s, or the generator
 exceeds ~80-85% CPU while driving Strut, upgrade/resize the generator and use it
 equally for Strut, Go, and Rust before claiming final percentages.
 
-## NOW — Release A (v0.0.4)
+## Release A (v0.0.4) — COMPLETE, PUBLISHED
 
-A new Strut version is being released immediately after the HTTP/reactor/performance
-campaign: v0.0.4, a large HTTP/backend, runtime, and performance release, tagged from
-the retained main (`0e95d0d` plus release metadata). This snapshots the reactor runtime,
-streaming/WebSocket/TLS, indexed routing, request/response hot-path work, runtime
-building blocks, and extensive certification before the two-way FFI/embedding campaign
-begins. The reactor backend remains opt-in (`STRUT_HTTP_REACTOR=1`) at this release.
+v0.0.4 was released from tag `ce593b4927a05531f2ccab81f4204c8bea05c8b5` (published; assets
+for Linux x64/ARM64, macOS ARM64, Windows x64 + SHA256SUMS; full release matrix and main
+cross-platform certification green). It snapshotted the reactor runtime,
+streaming/WebSocket/TLS, indexed routing, request/response hot-path work, runtime building
+blocks, and extensive certification. The reactor backend remains opt-in
+(`STRUT_HTTP_REACTOR=1`).
+
+## NOW — two-way FFI / embedding (0.0.5 development)
+
+The active major roadmap item. Scope: (A) Strut -> native calls, (B) native -> Strut,
+(C) callbacks, (D) embedding/host-owned runtime lifecycle. A stable, cross-platform C ABI
+(GCC/Clang/AppleClang/MSVC), explicit ownership/lifetime and checked-error contracts, and
+opaque handles for callbacks/host objects. Dogfood against a real host (Nift) once the ABI
+is stable enough to teach something useful. Reconcile the checkpoint sequence with the
+`NEXT — two-way FFI / embedding` section below.
 
 ## NEXT — two-way FFI / embedding (needed for Nift packages)
 

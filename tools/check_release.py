@@ -18,9 +18,17 @@ else:
 checks = {
     "CMake project version": rf"project\(strut VERSION {re.escape(expected)}\b",
     "compiler version": rf'version = "{re.escape(expected)}"',
-    "release notes heading": rf"^# Strut {re.escape(expected)}$",
 }
-texts = [cmake, header, notes]
+texts = [cmake, header]
+if len(sys.argv) > 1:
+    # Explicit tag: require the immutable release heading.
+    checks["release notes heading"] = rf"^# Strut {re.escape(expected)}$"
+    texts.append(notes)
+else:
+    # Development build: accept an Unreleased section or the release heading.
+    if re.search(r"^# Unreleased", notes, re.MULTILINE) is None and re.search(rf"^# Strut {re.escape(expected)}$", notes, re.MULTILINE) is None:
+        checks["unreleased or release notes heading"] = rf"^# (Unreleased|Strut {re.escape(expected)})$"
+        texts.append(notes)
 failed = [name for (name, pattern), text in zip(checks.items(), texts)
           if re.search(pattern, text, re.MULTILINE) is None]
 if failed:
