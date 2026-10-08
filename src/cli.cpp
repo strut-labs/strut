@@ -5,6 +5,8 @@
 #include <iomanip>
 #include <initializer_list>
 #include <unordered_set>
+#include <unordered_map>
+#include <vector>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -20,6 +22,7 @@
 #include "strut/ir.h"
 #include "strut/lsp.h"
 #include "strut/abi_type.h"
+#include "strut/abi_aggregate.h"
 #include "strut/codegen.h"
 #include "strut/diagnostic.h"
 #include "strut/formatter.h"
@@ -335,12 +338,21 @@ void collect_embed_dependencies(const std::filesystem::path& source_path,std::ve
 
 static const char* c_abi_type(const std::string& name){return strut::abi_type_info(name).c_type;}
 static std::string build_c_header(const IRProgram& p,const std::string& guard){
+    const std::string mod=strut::abi_module_slug(p.source_path);
+    std::unordered_map<std::string,std::vector<strut::AbiFieldInfo>> agg_map;
+    std::vector<std::string> agg_order;
+    for(const auto& a:strut::collect_abi_aggregates(p)){agg_map[a.name]=a.fields;agg_order.push_back(a.name);}
+    auto is_ag=[&](const std::string& n){return agg_map.count(n)>0;};
+    auto abi_cpp=[&](const std::string& n){return strut::abi_aggregate_type_name(mod,n);};
     std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
+    for(const auto& name:agg_order){const std::string t=abi_cpp(name);h+="typedef struct "+t+" {";for(const auto& f:agg_map[name])h+=" "+f.c_type+" "+f.name+";";h+=" } "+t+";\n";}
+    if(!agg_order.empty())h+="\n";
     bool any=false,needs_free_string=false,needs_free_bytes=false;
     for(const auto& st:p.statements){if(st->kind!=IRStmt::Kind::function_decl||!st->is_export_c||!st->owner.empty())continue;any=true;
         const bool ret_t=strut::abi_is_transport(st->return_type);
+        const bool ret_a=is_ag(st->return_type);
         if(ret_t){if(strut::abi_is_bytes(st->return_type))needs_free_bytes=true;else needs_free_string=true;}
-        h+=ret_t?std::string("void"):std::string(c_abi_type(st->return_type));
+        h+=ret_t?std::string("void"):(ret_a?abi_cpp(st->return_type):std::string(c_abi_type(st->return_type)));
         h+=" "+st->name+"(";
         bool first=true;auto sep=[&](){if(!first)h+=", ";first=false;};
         for(const auto& pm:st->parameters){
@@ -348,13 +360,13 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
                 const char* el=strut::abi_transport_c_element(pm.type.name);
                 sep();h+=std::string("const ")+el+"* "+pm.name+"_data";
                 sep();h+="size_t "+pm.name+"_len";
-            }else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}
+            }else if(is_ag(pm.type.name)){sep();h+=abi_cpp(pm.type.name)+" "+pm.name;}
+            else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}
         }
         if(ret_t){const char* el=strut::abi_transport_c_element(st->return_type);sep();h+=std::string(el)+"** out_data";sep();h+="size_t* out_len";}
         if(first)h+="void";
         h+=");\n";
     }
-    const std::string mod=strut::abi_module_slug(p.source_path);
     if(needs_free_string)h+="\nvoid "+strut::abi_release_symbol(mod,"string")+"(char* data);\n";
     if(needs_free_bytes)h+="\nvoid "+strut::abi_release_symbol(mod,"bytes")+"(uint8_t* data);\n";
     h+="\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";

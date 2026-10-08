@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 namespace strut {
 // Single source of truth for the FFI-1 export C ABI primitive type table.
 // Used by semantic validation (supported) and C-header generation (c_type) so the
@@ -55,5 +56,25 @@ inline std::string abi_module_slug(const std::string& source_path){
 }
 inline std::string abi_release_symbol(const std::string& module,const std::string& kind){
     return module+"_ffi_free_"+kind;
+}
+
+// FFI-3 aggregate ABI rule. An aggregate is ABI-safe for `export "C"` only if it is a plain
+// value POD: no generics, no bases, no private fields, and every field is an ABI primitive
+// (fixed-width int/uint or IEEE float). string/bytes fields (nested ownership), bool
+// (deferred), nested aggregates, pointers/references, and collections are deliberately NOT
+// permitted yet -- they raise the nested-ownership/ABI questions that belong to a later step.
+struct AbiFieldInfo { std::string name; std::string type_name; std::string c_type; };
+inline bool abi_aggregate_safe(const std::vector<AbiFieldInfo>& fields, std::string& why){
+    if(fields.empty()){ why="aggregate has no fields"; return false; }
+    for(const auto& f:fields){
+        if(abi_is_transport(f.type_name)){ why="field '"+f.name+"' has type '"+f.type_name+"' (string/bytes ownership in aggregates is not ABI-safe yet)"; return false; }
+        if(f.type_name=="void" || !abi_type_info(f.type_name).supported){ why="field '"+f.name+"' has unsupported ABI type '"+f.type_name+"' (only fixed-width int/uint and float fields are allowed)"; return false; }
+    }
+    return true;
+}
+// Deterministic, module-qualified C type name for an exported aggregate (avoids collisions
+// between same-named structs in different modules once modules land).
+inline std::string abi_aggregate_type_name(const std::string& module,const std::string& name){
+    return "strut_ffi_"+module+"_"+name;
 }
 } // namespace strut

@@ -1,5 +1,6 @@
 #include "strut/codegen.h"
 #include "strut/abi_type.h"
+#include "strut/abi_aggregate.h"
 #include "strut/runtime_components.h"
 #include "strut/type.h"
 #include "generated_runtime.h"
@@ -12,6 +13,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
+#include <unordered_map>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -177,6 +179,8 @@ thread_local int strut_codegen_function_depth = 0;
 thread_local std::unordered_set<std::string> strut_codegen_export_impl_names;
 thread_local bool strut_codegen_ffi_free_needed = false;
 thread_local std::string strut_codegen_ffi_module = "strut";
+thread_local std::unordered_map<std::string,std::vector<AbiFieldInfo>> strut_codegen_abi_aggregates;
+thread_local std::vector<std::string> strut_codegen_abi_aggregate_order;
 
 // FFI-2 transport lowering helpers (kept in one place so codegen, the generated header, and
 // the marshalling logic cannot disagree about shape).
@@ -323,37 +327,47 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
         case IRStmt::Kind::function_decl:{(void)0;
                 if(s.is_export_c && s.has_body && s.owner.empty()){
                     auto cprim=[&](const std::string& n){return std::string(abi_type_info(n).c_type);};
+                    auto is_ag=[&](const std::string& n){return strut_codegen_abi_aggregates.find(n)!=strut_codegen_abi_aggregates.end();};
+                    auto abi_cpp=[&](const std::string& n){return abi_aggregate_type_name(strut_codegen_ffi_module,n);};
+                    auto needs_marshal=[&](const std::string& n){return abi_is_transport(n)||is_ag(n);};
                     const bool ret_transport=ffi_ret_is_transport(s);
+                    const bool ret_aggr=is_ag(s.return_type);
                     // 1) private internal implementation (normal Strut C++ signature)
                     o<<cpp_type(s.return_type)<<" "<<ffi_impl_name(s.name)<<"(";
                     for(std::size_t i=0;i<s.parameters.size();++i){if(i)o<<",";o<<function_param_cpp(s,s.parameters[i]);}
                     o<<") {\n";++strut_codegen_function_depth;
                     for(auto&c:s.body)stmt(o,*c,n+4);
                     --strut_codegen_function_depth;o<<"}\n";
-                    // 2) public C-ABI wrapper (borrowed input views; owned output out-params)
+                    // 2) public C-ABI wrapper (transport views / ABI POD structs; owned output out-params)
                     o<<"extern \"C\" STRUT_C_ABI_EXPORT ";
-                    if(ret_transport)o<<"void";else o<<cprim(s.return_type);
+                    if(ret_transport)o<<"void";else if(ret_aggr)o<<abi_cpp(s.return_type);else o<<cprim(s.return_type);
                     o<<" "<<s.name<<"(";
                     bool first=true;auto sep=[&](){if(!first)o<<", ";first=false;};
                     for(const auto& p:s.parameters){
                         if(ffi_param_is_transport(p)){
                             sep();o<<"const "<<abi_transport_c_element(p.type.name)<<"* "<<p.name<<"_data";
                             sep();o<<"std::size_t "<<p.name<<"_len";
+                        }else if(is_ag(p.type.name)){
+                            sep();o<<abi_cpp(p.type.name)<<" "<<p.name;
                         }else{sep();o<<cprim(p.type.name)<<" "<<p.name;}
                     }
                     if(ret_transport){const char* el=abi_transport_c_element(s.return_type);sep();o<<el<<"** out_data";sep();o<<"std::size_t* out_len";}
                     if(first)o<<"void";
                     o<<") {\n";
                     for(const auto& p:s.parameters){
-                        if(!ffi_param_is_transport(p))continue;
-                        if(abi_is_string(p.type.name)){
-                            o<<"    strut_string strut_arg_"<<p.name<<"("<<p.name<<"_data ? std::string("<<p.name<<"_data, "<<p.name<<"_len) : std::string());\n";
-                        }else{
-                            o<<"    strut_bytes strut_arg_"<<p.name<<"; {std::size_t strut_ffi_n_"<<p.name<<" = "<<p.name<<"_data ? "<<p.name<<"_len : 0; strut_arg_"<<p.name<<".resize_native(strut_ffi_n_"<<p.name<<"); if(strut_ffi_n_"<<p.name<<") std::memcpy(strut_arg_"<<p.name<<".data(), "<<p.name<<"_data, strut_ffi_n_"<<p.name<<");}\n";
+                        if(ffi_param_is_transport(p)){
+                            if(abi_is_string(p.type.name)){
+                                o<<"    strut_string strut_arg_"<<p.name<<"("<<p.name<<"_data ? std::string("<<p.name<<"_data, "<<p.name<<"_len) : std::string());\n";
+                            }else{
+                                o<<"    strut_bytes strut_arg_"<<p.name<<"; {std::size_t strut_ffi_n_"<<p.name<<" = "<<p.name<<"_data ? "<<p.name<<"_len : 0; strut_arg_"<<p.name<<".resize_native(strut_ffi_n_"<<p.name<<"); if(strut_ffi_n_"<<p.name<<") std::memcpy(strut_arg_"<<p.name<<".data(), "<<p.name<<"_data, strut_ffi_n_"<<p.name<<");}\n";
+                            }
+                        }else if(is_ag(p.type.name)){
+                            o<<"    "<<cpp_type(p.type.name)<<" strut_arg_"<<p.name<<";\n";
+                            for(const auto& f:strut_codegen_abi_aggregates[p.type.name])o<<"    strut_arg_"<<p.name<<"."<<f.name<<" = "<<p.name<<"."<<f.name<<";\n";
                         }
                     }
                     std::string call=ffi_impl_name(s.name)+"(";bool cfirst=true;
-                    for(const auto& p:s.parameters){if(!cfirst)call+=",";cfirst=false;call+=(ffi_param_is_transport(p)?("strut_arg_"+p.name):p.name);}
+                    for(const auto& p:s.parameters){if(!cfirst)call+=",";cfirst=false;call+=(needs_marshal(p.type.name)?("strut_arg_"+p.name):p.name);}
                     call+=")";
                     if(ret_transport){
                         if(abi_is_string(s.return_type)){
@@ -365,6 +379,11 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
                             o<<"    *out_len = strut_ffi_result.native_size();\n";
                             o<<"    if(strut_ffi_result.native_size()==0){*out_data=nullptr;}else{std::uint8_t* strut_ffi_buf=new std::uint8_t[strut_ffi_result.native_size()];std::memcpy(strut_ffi_buf,strut_ffi_result.data(),strut_ffi_result.native_size());*out_data=strut_ffi_buf;}\n";
                         }
+                    }else if(ret_aggr){
+                        o<<"    "<<cpp_type(s.return_type)<<" strut_ffi_result = "<<call<<";\n";
+                        o<<"    "<<abi_cpp(s.return_type)<<" strut_ffi_out{};\n";
+                        for(const auto& f:strut_codegen_abi_aggregates[s.return_type])o<<"    strut_ffi_out."<<f.name<<" = strut_ffi_result."<<f.name<<";\n";
+                        o<<"    return strut_ffi_out;\n";
                     }else if(s.return_type=="void"){o<<"    "<<call<<";\n";}
                     else{o<<"    return "<<call<<";\n";}
                     o<<"}\n";
@@ -1154,9 +1173,15 @@ inline std::string strut_native_arg(const char* value){return value?value:"";}
 )CPP";
 if(strut_codegen_ffi_free_needed)o<<"extern \"C\" STRUT_C_ABI_EXPORT void "<<abi_release_symbol(strut_codegen_ffi_module,"string")<<"(char* data){ delete[] data; }\n"
                                   <<"extern \"C\" STRUT_C_ABI_EXPORT void "<<abi_release_symbol(strut_codegen_ffi_module,"bytes")<<"(std::uint8_t* data){ delete[] data; }\n";
+for(const auto& name:strut_codegen_abi_aggregate_order){
+    const std::string t=abi_aggregate_type_name(strut_codegen_ffi_module,name);
+    o<<"typedef struct "<<t<<" {";
+    for(const auto& f:strut_codegen_abi_aggregates[name])o<<" "<<f.c_type<<" "<<f.name<<";";
+    o<<" } "<<t<<";\n";
+}
 }
 
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;strut_codegen_export_impl_names.clear();strut_codegen_ffi_free_needed=false;strut_codegen_ffi_module=abi_module_slug(p.source_path);for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->has_body&&st->owner.empty()){strut_codegen_export_impl_names.insert(st->name);if(ffi_ret_is_transport(*st))strut_codegen_ffi_free_needed=true;}}std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::threading)&&program_uses_light_thread_runtime(p)){emit_light_thread_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;strut_codegen_export_impl_names.clear();strut_codegen_ffi_free_needed=false;strut_codegen_ffi_module=abi_module_slug(p.source_path);strut_codegen_abi_aggregates.clear();strut_codegen_abi_aggregate_order.clear();for(const auto& agg:collect_abi_aggregates(p)){strut_codegen_abi_aggregates[agg.name]=agg.fields;strut_codegen_abi_aggregate_order.push_back(agg.name);}for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->has_body&&st->owner.empty()){strut_codegen_export_impl_names.insert(st->name);if(ffi_ret_is_transport(*st))strut_codegen_ffi_free_needed=true;}}std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::threading)&&program_uses_light_thread_runtime(p)){emit_light_thread_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:

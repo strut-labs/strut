@@ -201,6 +201,38 @@ exports, with a generated header for hosts; confirm before implementing.
   aggregates/structs-by-value (FFI-3), generic opaque object handles (deferred until a real
   exported resource needs one), structured error/exception containment (FFI-6), a large FFI
   benchmark campaign. `bool` remains deferred.
-- **Next: FFI-3** — structs/tuples/aggregates formalization + ABI-safe rule enforcement
-  (standard-layout + trivially copyable + all fields ABI-supported; otherwise a wrapper
-  representation). Only then may aggregate-by-value cross the ABI.
+## FFI-3 status (plain POD aggregates, implemented locally, 0.0.5 dev)
+- **ABI-safe aggregate rule (explicit; `abi_aggregate_safe` in `include/strut/abi_type.h`).**
+  A user struct is ABI-safe for `export "C"` iff: not generic, no bases, no private fields,
+  and **every field is an ABI primitive** (fixed-width int/uint or IEEE float). `string`/
+  `bytes` fields (nested ownership), `bool` (deferred), nested aggregates, pointers/
+  references, and collections are rejected with a **precise diagnostic naming the field and
+  why** (e.g. `field 's' has type 'string' (string/bytes ownership in aggregates is not
+  ABI-safe yet)`). `sizeof`/`alignof`/`offsetof` are therefore fully determined by the
+  field list in declaration order; C++ traits alone are NOT treated as the contract.
+- **Distinct generated C-ABI POD (not the internal Strut C++ struct).** The wrapper boundary
+  exposes a generated C struct `strut_ffi_<module>_<Name>` (module-qualified to avoid
+  collisions across modules). The internal Strut struct is never emitted as the C ABI: the
+  wrapper converts field-by-field in (ABI -> internal) and out (internal -> ABI), so the
+  internal representation can evolve without changing the promised ABI. This deliberately
+  avoids the v0.0.4 AppleClang `-Wreturn-type-c-linkage` pattern of returning a C++ user type.
+- **Header is the ABI authority.** `--emit-c-header` emits the `typedef struct
+  strut_ffi_<module>_<Name> { ... }` definition; hosts must not duplicate the struct.
+- **Layout certification from the C side.** `tests/ffi/run_export_aggregate_tests.py` (CTest
+  `strut_ffi_aggregate_tests`) checks the C compiler's own `sizeof`/`offsetof` for the
+  generated structs (e.g. `Pair` = 8 bytes @ offsets 0/4; `Mixed{int32,double,uint8}` = 24
+  bytes @ offsets 0/8/16), plus struct-as-input, struct-as-return, mixed primitive fields,
+  and an internal Strut call to an exported aggregate function (proves internal call sites
+  hit the private impl, not the wrapper). Independent C and C++ hosts.
+- **Naming/tuples:** aggregate C type names are module-qualified. Tuples are NOT implemented
+  in this first FFI-3 step (user structs first); they remain rejected. Nested aggregates,
+  `bool`, string/bytes fields, pointers, and collections remain rejected.
+- **Strut -> native `extern "C"` direction:** the same ABI-safe POD rule and layout govern it
+  (a standard-layout struct with only primitive fields is layout-identical), so the two
+  directions are representation-compatible. The `export "C"` direction is fully implemented
+  and certified here; routing the declaration direction through the same generated typedef is
+  a deliberate follow-up (no incompatible second representation was introduced).
+- Strict local wall: CTest **19/19** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  **299/299** default + reactor; clean under ASan + leak detection.
+- **Next: FFI-4** — pointers / nullable / references (and, if evidenced, nested aggregates /
+  tuples as a later FFI-3 substep). No callbacks, error ABI, R9/R10, or Nift yet.
