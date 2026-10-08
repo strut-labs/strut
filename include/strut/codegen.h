@@ -14,6 +14,7 @@ struct NativeLinkOptions {
     bool fully_static = false;
     bool prefer_dynamic = false;
     bool release = false;
+    bool shared = false;
     std::string target = "native";
 };
 std::string classify_native_failure(const IRProgram& program, std::string_view phase);

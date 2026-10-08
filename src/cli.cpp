@@ -332,7 +332,21 @@ void collect_embed_dependencies(const std::filesystem::path& source_path,std::ve
     for(std::sregex_iterator it(text.begin(),text.end(),pattern),end;it!=end;++it){std::filesystem::path p=(*it)[2].str();if(p.is_relative())p=std::filesystem::current_path()/p;std::error_code ec;if(std::filesystem::is_directory(p,ec)){for(const auto&e:std::filesystem::recursive_directory_iterator(p,ec)){if(ec)break;if(e.is_regular_file())dependencies.push_back(std::filesystem::absolute(e.path()));}}else dependencies.push_back(std::filesystem::absolute(p));}
 }
 
-int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& out, std::ostream& err, bool verbose, bool timings=false, const std::filesystem::path& emit_cpp={}) {
+static const char* c_abi_type(const std::string& name){if(name=="void")return "void";if(name=="bool")return "bool";if(name=="int"||name=="int_32")return "int32_t";if(name=="int_8")return "int8_t";if(name=="int_16")return "int16_t";if(name=="int_64")return "int64_t";if(name=="uint"||name=="uint_32")return "uint32_t";if(name=="uint_8")return "uint8_t";if(name=="uint_16")return "uint16_t";if(name=="uint_64")return "uint64_t";if(name=="float_32")return "float";if(name=="float_64"||name=="double_64")return "double";return "void";}
+static std::string build_c_header(const IRProgram& p,const std::string& guard){
+    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
+    bool any=false;
+    for(const auto& st:p.statements){if(st->kind!=IRStmt::Kind::function_decl||!st->is_export_c||!st->owner.empty())continue;any=true;
+        h+=std::string(c_abi_type(st->return_type))+" "+st->name+"(";
+        if(st->parameters.empty())h+="void";
+        for(std::size_t i=0;i<st->parameters.size();++i){if(i)h+=", ";h+=std::string(c_abi_type(st->parameters[i].type.name))+" "+st->parameters[i].name;}
+        h+=");\n";
+    }
+    h+="\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";
+    if(!any)h="#ifndef "+guard+"\n#define "+guard+"\n#endif\n";
+    return h;
+}
+int compile_source(const std::filesystem::path& path, const std::filesystem::path& output, const NativeLinkOptions& link, std::ostream& out, std::ostream& err, bool verbose, bool timings=false, const std::filesystem::path& emit_cpp={}, const std::filesystem::path& emit_c_header={}) {
     using clock = std::chrono::steady_clock;
     const auto total_begin=clock::now();
     const auto load_begin=clock::now();
@@ -345,6 +359,7 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     for(const auto& w:checked.warnings) err<<rich_diagnostic(path,w,true)<<'\n';
     if(!checked.ok())return 1;
     const auto ir_begin=clock::now(); IRLowerer lowerer; auto lowered=lowerer.lower(program); const auto ir_end=clock::now(); if(!lowered.ok())return 1; lowered.program.source_path=std::filesystem::absolute(path).generic_string();
+    if(!emit_c_header.empty()){std::string guard="STRUT_FFI_";for(char c:std::string(path.filename().string()))guard+=(std::isalnum((unsigned char)c)?(char)std::toupper((unsigned char)c):'_');guard+="_H";std::ofstream hf(emit_c_header,std::ios::binary|std::ios::trunc);if(!hf){err<<path.string()<<": error: cannot write C header to "<<emit_c_header.string()<<'\n';return 1;}hf<<build_c_header(lowered.program,guard);}
     CppBackend backend; std::string backend_error;
     auto ms=[](auto a,auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
     if(!emit_cpp.empty()){const auto cg_begin=clock::now();auto generated=backend.generate(lowered.program);if(!generated.ok()){err<<path.string()<<": error: "<<generated.error<<'\n';return 1;}std::ofstream f(emit_cpp,std::ios::binary|std::ios::trunc);if(!f){err<<path.string()<<": error: cannot write generated C++ to "<<emit_cpp.string()<<'\n';return 1;}f<<generated.cpp;f.close();const auto done=clock::now();if(timings){out<<std::fixed<<std::setprecision(3)<<"timing load_parse_ms="<<ms(load_begin,load_end)<<'\n'<<"timing semantic_ms="<<ms(sema_begin,sema_end)<<'\n'<<"timing ir_ms="<<ms(ir_begin,ir_end)<<'\n'<<"timing codegen_write_ms="<<ms(cg_begin,done)<<'\n'<<"timing total_ms="<<ms(total_begin,done)<<'\n';}return 0;}
@@ -513,6 +528,7 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
     bool verbose = false;
     bool timings = false;
     std::filesystem::path emit_cpp_path;
+    std::filesystem::path emit_c_header_path;
     NativeLinkOptions link_options;
 
     if (argc == 1) {
@@ -618,6 +634,8 @@ int run_cli(int argc, char** argv, std::ostream& out, std::ostream& err) {
         if (arg == "--verbose") { verbose = true; continue; }
         if (arg == "--timings") { timings = true; continue; }
         if (arg == "--emit-cpp") { if(i+1>=argc){err<<"strut: --emit-cpp requires an output path\n";return 2;} emit_cpp_path=argv[++i]; continue; }
+        if (arg == "--emit-c-header") { if(i+1>=argc){err<<"strut: --emit-c-header requires an output path\n";return 2;} emit_c_header_path=argv[++i]; continue; }
+        if (arg == "--shared") { link_options.shared = true; continue; }
         if (arg == "--lib" || arg == "--static-lib" || arg == "--dynamic-lib") {
             if (i + 1 >= argc) { err << "strut: " << arg << " requires a library name or path\n"; return 2; }
             NativeLinkMode mode = NativeLinkMode::platform_default; if(arg=="--static-lib")mode=NativeLinkMode::static_link;else if(arg=="--dynamic-lib")mode=NativeLinkMode::dynamic_link;
@@ -682,7 +700,7 @@ if (link_options.target == "windows-x64") output_path += ".exe";
             else if (link_options.target == "native") output_path += ".exe";
 #endif
         }
-        return compile_source(source_path, output_path, link_options, out, err, verbose, timings, emit_cpp_path);
+        return compile_source(source_path, output_path, link_options, out, err, verbose, timings, emit_cpp_path, emit_c_header_path);
     }
 
     (void)explicit_compile;

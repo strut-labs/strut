@@ -83,3 +83,25 @@ The export surface shape is a genuine decision: (a) a Strut `export "C" function
 (sema/parser/codegen), vs (b) a generated C shim header/source from existing declarations,
 vs (c) a compiler `--emit-c-abi` mode. Recommend (a) for first-class, stable, documented
 exports, with a generated header for hosts; confirm before implementing.
+
+## FFI-1 status (implemented locally, 0.0.5 dev)
+- **Syntax:** first-class `export "C" function name(params) -> type { ... }` (parser/AST/IR
+  flag `is_export_c`; represented through the pipeline, not a codegen text special-case).
+- **Codegen:** generated `extern "C" STRUT_C_ABI_EXPORT <ret> name(...)` with a portable
+  visibility macro (`__declspec(dllexport)` MSVC / `__attribute__((visibility("default")))`
+  GCC/Clang / empty otherwise).
+- **Sema ABI validation:** exports must be free, non-async, non-generic, have a body; the
+  return/parameter types must be ABI-supported primitives (void, bool, fixed-width
+  ints, float_32/float_64/double_*). Checked-error exports are rejected with a deliberate
+  diagnostic until the FFI error ABI (FFI-6). Unsupported (string/bytes/aggregates/…)
+  are rejected at sema — never a questionable ABI.
+- **Artifacts:** `strut --shared -o libfoo.so foo.p` builds a shared library; `strut
+  --emit-c-header foo.h foo.p` writes a generated host header (C and C++ consumable).
+- **Proof:** `tests/ffi/run_export_tests.py` builds the library + header, compiles an
+  INDEPENDENT C host and C++ host against the generated header, links the library, and
+  asserts results (add/mul/scale/bool). Passing locally on Linux.
+- **ABI contract status:** C ABI **under development** (not yet frozen/versioned); freeze
+  at FFI-8/9 after real consumers. Bool uses C `bool` (1 byte) and is included.
+- **Next (FFI-1 remainder):** cross-platform CI fixtures (AppleClang/MSVC) for the export
+  round-trip; a first-class `--shared` Windows `.dll`+import-lib path; and a tiny FFI
+  overhead sanity check vs a direct C call. Then FFI-2 (strings/bytes/handles).
