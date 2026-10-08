@@ -311,7 +311,11 @@ exports, with a generated header for hosts; confirm before implementing.
   (copy-in/out semantics), owning/weak pointers (opaque handle + retain/release later),
   callbacks (FFI-5), error ABI (FFI-6).
 
-## FFI-6 status (checked-error ABI, implemented locally, 0.0.5 dev)
+## FFI-6 status (checked-error ABI — COMPLETE, cross-platform certified)
+- **Cross-platform certification run `37822732197` (commit `cfe5bca`): all five jobs green,
+  with `strut_ffi_error_tests` and `strut_ffi_error_bidir_tests` demonstrably executed on every
+  platform** — macOS ARM64 AppleClang (2.45s / 2.34s), Windows x64 MSVC (3.43s / 3.15s),
+  linux-x64-gcc (2.00s / 1.91s), plus linux-x64-clang and linux-arm64-gcc.
 - **Model lowers the EXISTING Strut checked error** (`strut_checked_error`: `type` name,
   `message`, `code`), not a parallel one. No `std::exception*`/`type_info`/`exception_ptr`/
   RTTI crosses C.
