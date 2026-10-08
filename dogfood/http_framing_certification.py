@@ -30,6 +30,33 @@ def connect_retry(port, deadline=5.0):
             time.sleep(0.02)
 
 
+# The server's listen(...,max_requests) is an exact accept budget and its graceful stop may
+# interrupt a connection that has not yet been served (a benign race near the budget edge).
+# We therefore give the budget headroom and drain it with throwaway requests whose responses
+# (including an empty close) are ignored -- the checked requests are never near the edge.
+DRAIN = 8
+
+
+def drain_plain(port, count):
+    for _ in range(count):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as c:
+                c.sendall(b"GET /get HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                c.shutdown(socket.SHUT_WR)
+                while c.recv(4096):
+                    pass
+        except OSError:
+            pass
+
+
+def drain_tls(port, count):
+    for _ in range(count):
+        try:
+            tls_request(port, b"GET /get HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        except Exception:
+            pass
+
+
 def raw_request(port, payload):
     with connect_retry(port) as connection:
         connection.sendall(payload)
@@ -161,7 +188,7 @@ def main():
     app.limits(16, 16384, 8, 16);
     app.get("/get", (http_request request) => {{ return http_text("get"); }});
     app.post("/post", (http_request request) => {{ return http_text(request.body); }});
-    app.listen("127.0.0.1", {port}, {len(cases)});
+    app.listen("127.0.0.1", {port}, {len(cases) + DRAIN});
 }}
 '''
     with tempfile.TemporaryDirectory(prefix="strut-http-framing-") as temporary:
@@ -191,6 +218,7 @@ def main():
                     raise RuntimeError(f"HTTP/1.0 long-target error used the wrong version: {response!r}")
                 if name in ("head-malformed-header", "head-oversized-header", "head-long-request-line") and response.split(b"\r\n\r\n", 1)[1]:
                     raise RuntimeError(f"malformed HEAD response included a body: {response!r}")
+            drain_plain(port, DRAIN)
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or stdout or stderr:
                 raise RuntimeError(f"server failed: exit={server.returncode} stdout={stdout!r} stderr={stderr!r}")
@@ -207,7 +235,7 @@ def main():
     app.timeouts(2000, 2000, 2000, 2000);
     app.get("/get", (http_request request) => {{ return http_text("get"); }});
     app.post("/post", (http_request request) => {{ return http_text(request.body); }});
-    app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], 4);
+    app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], {4 + DRAIN});
 }}
 ''', encoding="utf-8")
         subprocess.run([compiler, tls_program, "-o", tls_executable], check=True, cwd=root)
@@ -229,6 +257,7 @@ def main():
             for response in (incomplete_head, incomplete_body):
                 if response and status(response) != 400:
                     raise RuntimeError(f"TLS incomplete framing was not rejected: {response!r}")
+            drain_tls(tls_port, DRAIN)
             stdout, stderr = tls_server.communicate(timeout=10)
             if tls_server.returncode != 0 or stdout or stderr:
                 raise RuntimeError(f"TLS framing server failed: exit={tls_server.returncode} stdout={stdout!r} stderr={stderr!r}")
