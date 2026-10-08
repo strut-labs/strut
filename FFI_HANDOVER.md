@@ -111,8 +111,15 @@ exports, with a generated header for hosts; confirm before implementing.
   generated declarations (incl. zero-arg `f(void)` and include-guard/multi-inclusion),
   compiles INDEPENDENT C and C++ hosts against the generated header, links the library,
   and asserts add/mul/double_32/double_64/uint_8/void results. Passing locally on Linux.
-- **Status: FFI-1 CORE IMPLEMENTED; CROSS-PLATFORM CERTIFICATION PENDING** (Linux green
-  locally; macOS/Windows export round-trip + MSVC proper DLL/import-lib mode require CI).
+- **Status: FFI-1 COMPLETE (cross-platform certified).** `tests/ffi/run_export_tests.py` is
+  registered as CTest `strut_ffi_export_tests` and executes on every platform. Cross-platform
+  certification run (`f31dd10`): **linux-x64-gcc, linux-x64-clang, linux-arm64, macOS-arm64
+  AppleClang, windows-x64-msvc — all green, with the FFI-1 round-trip demonstrably executed**
+  (macOS 0.98s, Windows MSVC 1.51s, Linux GCC 0.59s): Strut `--shared` builds the platform
+  library (`.so`/`.dylib`/`.dll` + import lib), `--emit-c-header` generates the header, and
+  independent C and C++ hosts link and call exported functions with correct results.
+- Strict local wall: CTest 17/17 normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  297/297 default + reactor.
 - **Exception containment (FFI-1 limitation, explicit):** FFI-1 exports are restricted to
   non-checked-error primitive functions, but the generated ABI function is the Strut
   function itself emitted `extern "C"` — there is NO catch-all ABI wrapper yet. An
@@ -123,6 +130,7 @@ exports, with a generated header for hosts; confirm before implementing.
   callers must treat exported functions as non-throwing by construction only.
 - **ABI contract status:** C ABI **under development** (not yet frozen/versioned); freeze
   at FFI-8/9 after real consumers. Bool uses C `bool` (1 byte) and is included.
-- **Next (FFI-1 remainder):** cross-platform CI fixtures (AppleClang/MSVC) for the export
-  round-trip; a first-class `--shared` Windows `.dll`+import-lib path; and a tiny FFI
-  overhead sanity check vs a direct C call. Then FFI-2 (strings/bytes/handles).
+- **Next: FFI-2** — strings/bytes/handles with explicit ownership (caller-owned input slices;
+  library-owned results freed via an explicit free function; no hidden allocations). Optional
+  tiny FFI call-overhead sanity vs a direct C call. `bool` remains deferred until its
+  cross-toolchain ABI identity is certified.
