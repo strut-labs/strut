@@ -60,8 +60,19 @@ inline std::string abi_module_slug(const std::string& source_path){
     // Distinct source names that normalize to the same C identifier (e.g. `foo-bar` vs
     // `foo_bar`) MUST NOT produce the same module slug, or their exported symbols/typedefs/
     // release functions collide. Append a deterministic, reproducible suffix (hash of the
-    // original stem) whenever sanitization altered the name.
-    if(changed){const char* hex="0123456789abcdef";const unsigned h=abi_stem_hash(base);out+="_";for(int i=7;i>=0;--i)out+=hex[(h>>(i*4))&0xF];}
+    // original stem). To stay structurally collision-free we ALSO hash any *unchanged* stem
+    // that already looks like a generated slug (`..._<8 lowercase hex>`): otherwise a file
+    // literally named `foo_bar_<hash>` could equal the transformed name of `foo-bar`.
+    // Proof sketch: (a) two unhashed slugs are equal only if their stems are equal; (b) two
+    // hashed slugs collide only if stems + 32-bit hash collide; (c) a hashed slug can never
+    // equal an unhashed one, because the unhashed one would then end in `_<8hex>` and thus be
+    // hashed by rule. So no cross-class collision and no structural same-input collision.
+    bool looks_hashed=false;
+    if(out.size()>=9 && out[out.size()-9]=='_'){
+        looks_hashed=true;
+        for(std::size_t i=out.size()-8;i<out.size();++i){const char c=out[i];if(!((c>='0'&&c<='9')||(c>='a'&&c<='f'))){looks_hashed=false;break;}}
+    }
+    if(changed||looks_hashed){const char* hex="0123456789abcdef";const unsigned h=abi_stem_hash(base);out+="_";for(int i=7;i>=0;--i)out+=hex[(h>>(i*4))&0xF];}
     return out;
 }
 inline std::string abi_release_symbol(const std::string& module,const std::string& kind){
@@ -86,5 +97,29 @@ inline bool abi_aggregate_safe(const std::vector<AbiFieldInfo>& fields, std::str
 // between same-named structs in different modules once modules land).
 inline std::string abi_aggregate_type_name(const std::string& module,const std::string& name){
     return "strut_ffi_"+module+"_"+name;
+}
+
+// FFI-4 borrowed pointer/reference ABI. Only `raw_ptr<T>` (borrowed, possibly null) and
+// `ref<T>` (borrowed, non-null) are ABI candidates, and only when T has a direct primitive C
+// representation. The C shape is `T_c*` for BOTH, but the semantic contract differs
+// (raw_ptr may be null; ref must be non-null). `ptr<T>` (owning) and `weak_ptr<T>` are
+// deliberately NOT representable and must be rejected. Pointer RETURNS are not supported
+// (no defined lifetime/provenance yet).
+inline bool abi_pointer_inner(const std::string& name,bool& is_ref,std::string& inner){
+    if(name.size()>9 && name.rfind("raw_ptr<",0)==0 && name.back()=='>'){is_ref=false;inner=name.substr(8,name.size()-9);return true;}
+    if(name.size()>5 && name.rfind("ref<",0)==0 && name.back()=='>'){is_ref=true;inner=name.substr(4,name.size()-5);return true;}
+    return false;
+}
+inline bool abi_pointer_supported(const std::string& name,bool& is_ref,std::string& c_type){
+    std::string inner;
+    if(!abi_pointer_inner(name,is_ref,inner))return false;
+    if(inner=="void"||!abi_type_info(inner).supported)return false;
+    c_type=std::string(abi_type_info(inner).c_type)+"*";
+    return true;
+}
+// True for pointer-like syntaxes that are intentionally NOT ABI-representable (so sema can
+// give an ownership-specific diagnostic rather than a generic one).
+inline bool abi_pointer_owning(const std::string& name){
+    return (name.rfind("ptr<",0)==0&&name.back()=='>')||(name.rfind("weak_ptr<",0)==0&&name.back()=='>');
 }
 } // namespace strut

@@ -361,7 +361,7 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
                 sep();h+=std::string("const ")+el+"* "+pm.name+"_data";
                 sep();h+="size_t "+pm.name+"_len";
             }else if(is_ag(pm.type.name)){sep();h+=abi_cpp(pm.type.name)+" "+pm.name;}
-            else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}
+            else{bool r;std::string c;if(strut::abi_pointer_supported(pm.type.name,r,c)){sep();h+=c+" "+pm.name;}else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}}
         }
         if(ret_t){const char* el=strut::abi_transport_c_element(st->return_type);sep();h+=std::string(el)+"** out_data";sep();h+="size_t* out_len";}
         if(first)h+="void";

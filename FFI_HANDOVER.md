@@ -253,7 +253,34 @@ exports, with a generated header for hosts; confirm before implementing.
   names/typedefs/release symbols. Certified by `strut_ffi_module_slug_tests`.
 - Strict local wall: CTest **21/21** normal + GCC/Clang -Werror + ASan/UBSan; regressions
   **299/299** default + reactor; clean under ASan + leak detection.
-- **Next: FFI-4** — pointers / nullable / references (addressing borrowed raw pointer,
-  nullable raw pointer, Strut safe owning pointer, and reference as distinct cases; auditing
-  the existing `ptr<T>`/`unsafe` behavior first). Nested aggregates/tuples remain a later
-  FFI-3 substep. No callbacks, error ABI, R9/R10, or Nift yet.
+## FFI-4 status (borrowed primitive pointers/references, implemented locally, 0.0.5 dev)
+- **Scope (deliberately narrow).** Borrowed `raw_ptr<T>` (possibly null) and `ref<T>`
+  (non-null) are ABI candidates, and only when `T` has a direct primitive C representation
+  (fixed-width int/uint or IEEE float). Both lower to the SAME C shape `T_c*`; the semantic
+  contract differs (raw_ptr may be null; ref must be non-null, valid for the call only).
+  Pointees of string/bytes/aggregates, nested ownership, and pointer-to-pointer are rejected.
+- **Safe owning `ptr<T>` and `weak_ptr<T>` are NEVER exposed.** `ptr<T>` lowers internally to
+  `std::shared_ptr<T>`; no `std::shared_ptr`/`std::weak_ptr`/control-block representation may
+  cross the C ABI. Sema rejects them with an ownership-specific diagnostic ("cannot cross the
+  C ABI: safe owning ptr / weak_ptr carries ownership/control-block representation") pointing
+  at borrowed pointers or a future opaque handle API. No handle framework was invented.
+- **Pointer RETURNS rejected.** A borrowed pointer/reference return has no defined
+  lifetime/provenance across the ABI yet; sema rejects it and suggests an out-parameter.
+  Ownership/lifetime are documented: input pointers are borrowed for the call duration only.
+- **One descriptor, both directions.** `abi_pointer_supported`/`abi_pointer_inner`/
+  `abi_pointer_owning` in `abi_type.h` drive sema, the generated C header, the export wrapper,
+  and the `extern "C"` declaration/call-site lowering — no scattered `if (starts_with("raw_ptr<"))`
+  branches. `ref<T>` params are realized internally as `strut_ref<T>` (non-owning) and its C
+  boundary is `T_c*`; `raw_ptr<T>` is identity (`T_c*`).
+- **Null semantics (certified).** `raw_ptr<T>` is nullable and compares against `null`
+  (C `NULL` → true). `ref<T>` is a non-null precondition (NULL is invalid host use, outside
+  the contract until FFI-6). No C++ reference (`T&`) appears in any generated C header.
+- **Certified by** `strut_ffi_pointer_tests` (native→Strut: raw_ptr/ref mutation, read, null;
+  header is pure C, `int32_t*`) and `strut_ffi_pointer_bidir_tests` (Strut→native CP68
+  `unsafe extern "C"` raw/ref mutation, expected `42`/`43`), both from independent C and C++
+  hosts. Rejections: owning pointer, pointer return, pointer to non-primitive.
+- Strict local wall: CTest **23/23** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  **302/302** default + reactor; ASan clean.
+- **Deferred:** nested aggregates/tuples (later FFI-3 substep), pointers to aggregates
+  (copy-in/out semantics), owning/weak pointers (opaque handle + retain/release later),
+  callbacks (FFI-5), error ABI (FFI-6). **Next: FFI-5+** as the campaign dictates.

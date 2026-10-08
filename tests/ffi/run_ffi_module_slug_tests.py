@@ -14,7 +14,9 @@ src = 'export "C" function f() -> string { return "x"; }\n'
 
 with tempfile.TemporaryDirectory(prefix="strut-ffi-slug-") as td:
     td = Path(td)
-    names = ["slug-a.p", "slug_a.p", "a b.p"]
+    # Includes a stem that already *looks like* a generated slug (`slug_a_deadbeef`) to prove
+    # the structural no-collision guarantee, not just the sanitization case.
+    names = ["slug-a.p", "slug_a.p", "a b.p", "slug_a_deadbeef.p"]
     slugs = []
     for n in names:
         (td / n).write_text(src)
