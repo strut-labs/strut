@@ -113,10 +113,14 @@ exports, with a generated header for hosts; confirm before implementing.
   and asserts add/mul/double_32/double_64/uint_8/void results. Passing locally on Linux.
 - **Status: FFI-1 CORE IMPLEMENTED; CROSS-PLATFORM CERTIFICATION PENDING** (Linux green
   locally; macOS/Windows export round-trip + MSVC proper DLL/import-lib mode require CI).
-- **Exception containment:** FFI-1 rejects declared checked errors; exported primitive
-  functions are expected non-fallible. A catch-all/`noexcept` containment policy and the
-  real FFI error ABI are deferred to FFI-6; FFI-1's restricted guarantee is documented
-  (no C++ exception must cross the C ABI).
+- **Exception containment (FFI-1 limitation, explicit):** FFI-1 exports are restricted to
+  non-checked-error primitive functions, but the generated ABI function is the Strut
+  function itself emitted `extern "C"` — there is NO catch-all ABI wrapper yet. An
+  undeclared runtime `std::exception` (e.g. an internal bounds/allocation failure) COULD
+  therefore propagate through the C linkage function. General exception/error containment
+  across the C ABI is NOT implemented in FFI-1; it belongs to the FFI error/wrapper
+  checkpoint (FFI-6), which must guarantee nothing C++ unwinds into a C caller. FFI-1
+  callers must treat exported functions as non-throwing by construction only.
 - **ABI contract status:** C ABI **under development** (not yet frozen/versioned); freeze
   at FFI-8/9 after real consumers. Bool uses C `bool` (1 byte) and is included.
 - **Next (FFI-1 remainder):** cross-platform CI fixtures (AppleClang/MSVC) for the export

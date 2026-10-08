@@ -1905,7 +1905,7 @@ const char* env=std::getenv("CXX");std::string cxx=env&&*env?env:STRUT_HOST_CXX;
  bool link_section=false;
  for(const auto& d:link.search_paths){if(!link_section){cmd+=" /link";link_section=true;}cmd+=" /LIBPATH:\""+d.string()+"\"";}
  for(const auto& lib:link.libraries){std::filesystem::path lp(lib.value);cmd+=" "+(lp.has_extension()?"\""+lib.value+"\"":lib.value+".lib");}
- if(!link_section){cmd+=" /link";link_section=true;}cmd+=" ws2_32.lib";
+ if(!link_section){cmd+=" /link";link_section=true;}cmd+=" ws2_32.lib";if(link.shared){auto implib=output;implib.replace_extension(".lib");cmd+=" /IMPLIB:\""+implib.string()+"\"";}
  if(link.release){cmd+=" /OPT:REF /OPT:ICF";}else{cmd+=" /DEBUG";}
 #else
  #ifdef __APPLE__
