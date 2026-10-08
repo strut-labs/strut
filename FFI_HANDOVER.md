@@ -253,7 +253,13 @@ exports, with a generated header for hosts; confirm before implementing.
   names/typedefs/release symbols. Certified by `strut_ffi_module_slug_tests`.
 - Strict local wall: CTest **21/21** normal + GCC/Clang -Werror + ASan/UBSan; regressions
   **299/299** default + reactor; clean under ASan + leak detection.
-## FFI-4 status (borrowed primitive pointers/references, implemented locally, 0.0.5 dev)
+## FFI-4 status (borrowed primitive pointers/references — COMPLETE, cross-platform certified)
+- **Cross-platform certification run `37792685458` (commit `97c2ba8`, after the MSVC C4456
+  fix-forward `97c2ba8`): all five jobs green, with `strut_ffi_pointer_tests` and
+  `strut_ffi_pointer_bidir_tests` demonstrably executed on every platform** — macOS ARM64
+  AppleClang (2.08s / 2.38s), Windows x64 MSVC (2.22s / 2.22s), linux-x64-gcc (2.07s / 2.05s),
+  plus linux-x64-clang and linux-arm64-gcc. (Earlier run `37789315890` at `c450f3f` was green
+  on all but Windows, which failed the compiler build on MSVC `/WX` C4456 — fixed forward.)
 - **Scope (deliberately narrow).** Borrowed `raw_ptr<T>` (possibly null) and `ref<T>`
   (non-null) are ABI candidates, and only when `T` has a direct primitive C representation
   (fixed-width int/uint or IEEE float). Both lower to the SAME C shape `T_c*`; the semantic
