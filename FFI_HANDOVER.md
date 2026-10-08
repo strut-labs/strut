@@ -137,7 +137,13 @@ exports, with a generated header for hosts; confirm before implementing.
   treat exported functions as non-throwing by construction only.
 - **ABI contract status:** C ABI **under development** (not yet frozen/versioned); freeze
   at FFI-8/9 after real consumers. Bool uses C `bool` (1 byte) and is included.
-## FFI-2 status (strings/bytes, implemented locally, 0.0.5 dev)
+## FFI-2 status (strings/bytes — COMPLETE, cross-platform certified, 0.0.5 dev)
+- **Cross-platform certification run `37767470374` (commit `a5c8c28`): all five jobs green, with
+  `strut_ffi_export_tests` demonstrably executed and passing on every platform** — macOS ARM64
+  AppleClang (2.53s), Windows x64 MSVC (2.90s), linux-x64-gcc (1.85s), linux-x64-clang (2.86s),
+  linux-arm64-gcc (2.42s). This covers `--shared` build (`.so`/`.dylib`/`.dll` + MSVC import
+  lib), `--emit-c-header`, independent C + C++ hosts, and the full FFI-2 ownership round-trip
+  (borrowed input, owned output, explicit release, binary bytes, empty/embedded-NUL/UTF-8).
 - **Transport types (deliberately narrow, FFI-2 only).** `string` and `bytes` are NOT
   primitives and do NOT map to a single C type. They are lowered to explicit data/length
   pairs. These are **ABI plumbing for FFI-2**, NOT evidence that arbitrary Strut `ptr<T>`
