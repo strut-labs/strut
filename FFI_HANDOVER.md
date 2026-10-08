@@ -350,6 +350,25 @@ exports, with a generated header for hosts; confirm before implementing.
   and `query(NULL)`/`release(NULL)` are invalid host behavior (not promised safe).
 - **ABI version.** The generated header defines `STRUT_FFI_ABI_VERSION_MAJOR`/`_MINOR`
   (currently 1/0) — distinct from the Strut language/compiler version. No negotiation yet.
+- **Synchronous fallible callbacks.** A callback type declaring checked errors
+  (`function<(args)->ret : E>` / `: (E1, E2)`) lowers to a status-returning C callback with a
+  **caller-owned, borrowed** error descriptor (no per-failure heap handle):
+  `strut_ffi_status (*)(void* context, args…, [ret* out_value,] <module>_callback_error* out_error)`
+  where `callback_error { const char* type_data; size_t type_len; const char* message_data;
+  size_t message_len; int32_t code; }`. ONE representation both directions.
+  - **native->Strut:** the wrapper copies the descriptor, validates the reported type against
+    the callback's declared errors (undeclared → fatal), and `throw`s the internal checked
+    error; the export's own wrapper turns it into the ordinary opaque host error handle.
+  - **Strut->native:** a generated per-signature trampoline catches the declared
+    `strut_checked_error`, materializes context-owned strings, fills the borrowed descriptor,
+    and returns failure status (native does not see `abort`, and copies before the views
+    expire). `catch(...)`→`abort` remains for undeclared/unexpected exceptions.
+  - Borrowed-view lifetime: valid until the next callback invocation or the enclosing foreign
+    call returns, whichever is first; receivers copy before that. Infallible callback ABI is
+    unchanged (`int32_t (*)(void*, int32_t)`). Certified by
+    `strut_ffi_fallback_callback_tests` (C host callback fails → Strut → host error handle; 10k
+    stress) and `strut_ffi_fallback_callback_bidir_tests` (Strut throw → native → Strut catch:
+    `12/thrown/5`).
 - **Containment (precise scope).** No exception originating from a generated Strut **export
   wrapper** or a Strut **callback trampoline** is allowed to unwind into foreign C: both are
   `try { … } catch (const strut_checked_error&) { …structured… } catch (...) { std::abort(); }`.
@@ -366,11 +385,20 @@ exports, with a generated header for hosts; confirm before implementing.
 - **Certified by** `strut_ffi_error_tests` (success/failure/type/message/code/release/void +
   10k failure/release stress; C + C++ hosts; pure-C header) and
   `strut_ffi_error_bidir_tests` (native status/error -> Strut `ParseError` catch: `30/bad/7`).
-- Strict local wall: CTest **28/28** normal + GCC/Clang -Werror + ASan/UBSan; regressions
-  **307/307** default + reactor; ASan error run clean.
-- **Deferred:** checked-error returns carrying string/bytes/aggregate; callback checked errors
-  (enable after this is solid); FFI-7 retained/cross-thread callbacks; FFI-8 embedding.
-  **Next: FFI-7+** as the campaign dictates.
+- Strict local wall: CTest **30/30** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  **307/307** default + reactor; ASan clean.
+- **Deferred:** checked-error returns carrying string/bytes/aggregate; FFI-7 retained/
+  cross-thread callbacks; FFI-8 embedding. **Next: FFI-7.**
+
+## FFI-6 COMPLETE (final)
+- Normal checked functions: bidirectional. Multiple checked errors: bidirectional concrete
+  identity. Unknown foreign error: explicit fatal contract violation. **Synchronous checked
+  callbacks: bidirectional.** Error ownership: explicit (opaque handle for exports, borrowed
+  caller-owned descriptor for callbacks). Generated export-side exception containment:
+  complete (incl. error-handle allocation). Foreign `extern "C"` implementations:
+  contractually forbidden from throwing C++ exceptions. ABI version 1.0. Cross-platform
+  certified (runs `37822732197`, `37825915909`, `37833884102`; fallible-callback certification
+  recorded below).
 
 ## FFI-5 status (synchronous borrowed callbacks — COMPLETE, cross-platform certified)
 - **Cross-platform certification run `37810967154` (commit `3548707`): all five jobs green,

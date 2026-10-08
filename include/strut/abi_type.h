@@ -153,6 +153,34 @@ inline bool abi_pointer_owning(const std::string& name){
 // int/uint/float parameters and a primitive-or-void return are accepted initially; checked
 // errors (` : `) and async (`future<`) callbacks are rejected. The C++ closure type never
 // crosses the ABI.
+// FFI-6 synchronous fallible callbacks. A callback whose function type declares checked
+// errors (`function<(args)->ret : E>` / `: (E1, E2)`) lowers to a status-returning C callback
+// with a caller-owned, borrowed error descriptor (no per-failure heap handle):
+//   strut_ffi_status (*)(void* context, args..., ret* out_value, <module>_callback_error* out_error)
+// The descriptor's type/message views are borrowed and MUST be copied by the receiver before
+// the next invocation of that callback or the enclosing foreign call returns (whichever is
+// first). One representation is used in both directions.
+inline bool abi_fallback_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args,std::vector<std::string>& errors){
+    args.clear();ret.clear();errors.clear();
+    if(name.rfind("function<(",0)!=0||name.back()!='>')return false;
+    if(name.find("future<")!=std::string::npos)return false;
+    const std::size_t arrow=name.rfind(")->");
+    if(arrow==std::string::npos)return false;
+    const std::string argspec=name.substr(10,arrow-10);
+    const std::string rest=name.substr(arrow+3,name.size()-1-(arrow+3));
+    const std::size_t colon=rest.find(" : ");
+    if(colon==std::string::npos)return false;
+    ret=rest.substr(0,colon);
+    std::string errspec=rest.substr(colon+3);
+    if(errspec.size()>=2&&errspec.front()=='('&&errspec.back()==')')errspec=errspec.substr(1,errspec.size()-2);
+    if(!argspec.empty()){std::size_t p=0;while(true){std::size_t c=argspec.find(',',p);std::string a=(c==std::string::npos)?argspec.substr(p):argspec.substr(p,c-p);args.push_back(a);if(c==std::string::npos)break;p=c+1;}}
+    if(errspec.empty())return false;
+    {std::size_t p=0;while(true){std::size_t c=errspec.find(',',p);std::string e=(c==std::string::npos)?errspec.substr(p):errspec.substr(p,c-p);errors.push_back(e);if(c==std::string::npos)break;p=c+1;}}
+    for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
+    if(ret!="void"&&!abi_type_info(ret).supported)return false;
+    for(const auto& e:errors)if(e.empty())return false;
+    return true;
+}
 inline bool abi_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
     args.clear();ret.clear();
     if(name.rfind("function<(",0)!=0||name.back()!='>')return false;
@@ -181,6 +209,7 @@ inline std::string abi_callback_type_name(const std::string& module,const std::s
 // The error handle is queried for the concrete checked-error type/message/code and released
 // through module-qualified symbols (same allocation/free provenance rule as FFI-2). No
 // thread-local "last error"; no C++ exception object, type_info, or exception_ptr crosses C.
+inline std::string abi_callback_error_type_name(const std::string& module){return "strut_ffi_"+module+"_callback_error";}
 inline std::string abi_error_type_name(const std::string& module){return "strut_ffi_"+module+"_error";}
 inline std::string abi_error_release_symbol(const std::string& module){return module+"_ffi_error_release";}
 inline std::string abi_error_query_symbol(const std::string& module){return module+"_ffi_error_query";}
