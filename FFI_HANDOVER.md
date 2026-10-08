@@ -164,8 +164,9 @@ exports, with a generated header for hosts; confirm before implementing.
   aggregate-by-value checkpoint is not pre-empted. The buffer is allocated by the Strut
   library (`new[]` inside the library) and released only through an exported Strut function
   from the SAME library: `void <module>_ffi_free_string(char*)` /
-  `void <module>_ffi_free_bytes(uint8_t*)`, where `<module>` is a deterministic slug derived
-  from the source module name (same value in codegen and header; overridable later). Hosts
+  `void <module>_ffi_free_bytes(uint8_t*)`, where `<module>` is the digest-qualified module
+  namespace (same value in codegen and header; the header also emits a readable
+  `...#_FFI_FREE_STRING` macro alias — see the module-slug note below). Hosts
   must never `free()`/`delete[]`/`LocalFree()` these. This makes allocation/free provenance
   safe across the Windows DLL/host CRT boundary. **Why module-qualified rather than a generic
   `strut_ffi_free_*`:** two independently built Strut shared libraries loaded into one host
@@ -247,12 +248,18 @@ exports, with a generated header for hosts; confirm before implementing.
 - **Compile-time ABI POD assertions.** For every generated aggregate the emitted C++ asserts
   `std::is_standard_layout` and `std::is_trivially_copyable` on the ABI POD (the contract) —
   not on the internal Strut struct, whose representation is free to change.
-- **Module/C-name collision safety.** `abi_module_slug` appends a deterministic, reproducible
-  hash of the original stem whenever sanitization alters a source name, so distinct modules
-  that normalize to the same C identifier (e.g. `slug-a` vs `slug_a`) get distinct ABI
-  names/typedefs/release symbols. Certified by `strut_ffi_module_slug_tests`.
-- Strict local wall: CTest **21/21** normal + GCC/Clang -Werror + ASan/UBSan; regressions
-  **299/299** default + reactor; clean under ASan + leak detection.
+- **Module/C-name collision safety (no probabilistic surface).** Canonical ABI module identity
+  is the source path (already absolute and '/'-normalized), so modules with the same file name
+  in different directories are distinct. The ABI namespace = readable sanitized prefix + a
+  **128-bit deterministic digest of that identity** (`abi_digest128`: two FNV-1a-64 passes
+  over the identity and its reverse — fixed algorithm/input/output, not `std::hash`), ALWAYS
+  present. There is no 32-bit surface and no sanitization-form ambiguity (`foo-bar` vs
+  `foo_bar` vs `slug_a_deadbeef` are all distinct). The generated header exposes readable
+  **macro aliases** (`EXPORT_AGG_Pair`, `EXPORT_LIB_FFI_FREE_STRING`, …) so hosts never type
+  the digest. Certified by `strut_ffi_module_slug_tests`. (Reproducibility: the identity is the
+  build's absolute path; ship header+library together, or build from a stable path.)
+- Strict local wall: CTest **23/23** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  **302/302** default + reactor; clean under ASan + leak detection.
 ## FFI-4 status (borrowed primitive pointers/references — COMPLETE, cross-platform certified)
 - **Cross-platform certification run `37792685458` (commit `97c2ba8`, after the MSVC C4456
   fix-forward `97c2ba8`): all five jobs green, with `strut_ffi_pointer_tests` and
@@ -265,11 +272,13 @@ exports, with a generated header for hosts; confirm before implementing.
   (fixed-width int/uint or IEEE float). Both lower to the SAME C shape `T_c*`; the semantic
   contract differs (raw_ptr may be null; ref must be non-null, valid for the call only).
   Pointees of string/bytes/aggregates, nested ownership, and pointer-to-pointer are rejected.
-- **Safe owning `ptr<T>` and `weak_ptr<T>` are NEVER exposed.** `ptr<T>` lowers internally to
-  `std::shared_ptr<T>`; no `std::shared_ptr`/`std::weak_ptr`/control-block representation may
-  cross the C ABI. Sema rejects them with an ownership-specific diagnostic ("cannot cross the
-  C ABI: safe owning ptr / weak_ptr carries ownership/control-block representation") pointing
-  at borrowed pointers or a future opaque handle API. No handle framework was invented.
+- **Safe owning pointers and `weak_ptr<T>` are NEVER exposed.** Terminology: Strut *source
+  syntax* for the safe owning pointer is `T*` (e.g. `int* p := new(7)`); its *inner/internal
+  type spelling* is `ptr<T>`; its *generated C++ representation* is `std::shared_ptr<T>`. No
+  `std::shared_ptr`/`std::weak_ptr`/control-block representation may cross the C ABI. Sema
+  rejects them with an ownership-specific diagnostic ("cannot cross the C ABI: safe owning ptr
+  / weak_ptr carries ownership/control-block representation") pointing at borrowed pointers or
+  a future opaque handle API. No handle framework was invented.
 - **Pointer RETURNS rejected.** A borrowed pointer/reference return has no defined
   lifetime/provenance across the ABI yet; sema rejects it and suggests an out-parameter.
   Ownership/lifetime are documented: input pointers are borrowed for the call duration only.
@@ -279,8 +288,11 @@ exports, with a generated header for hosts; confirm before implementing.
   branches. `ref<T>` params are realized internally as `strut_ref<T>` (non-owning) and its C
   boundary is `T_c*`; `raw_ptr<T>` is identity (`T_c*`).
 - **Null semantics (certified).** `raw_ptr<T>` is nullable and compares against `null`
-  (C `NULL` → true). `ref<T>` is a non-null precondition (NULL is invalid host use, outside
-  the contract until FFI-6). No C++ reference (`T&`) appears in any generated C header.
+  (C `NULL` → true). For `ref<T>`, **`NULL` passed by a foreign caller is INVALID
+  FOREIGN-CALLER BEHAVIOR, outside the valid ABI contract**: FFI-4 does NOT detect it, convert
+  it to a checked error, or recover — structured boundary failure is FFI-6. The valid `ref<T>`
+  contract is simply: non-null, pointee alive for the call duration. No C++ reference (`T&`)
+  appears in any generated C header.
 - **Certified by** `strut_ffi_pointer_tests` (native→Strut: raw_ptr/ref mutation, read, null;
   header is pure C, `int32_t*`) and `strut_ffi_pointer_bidir_tests` (Strut→native CP68
   `unsafe extern "C"` raw/ref mutation, expected `42`/`43`), both from independent C and C++

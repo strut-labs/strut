@@ -23,14 +23,14 @@ int main(void) {
         char* out = (char*)0x1; size_t n = 999;
         ff_str_echo("hello", 5, &out, &n);
         CHECK(n == 5 && out != NULL && memcmp(out, "hello", 5) == 0);
-        export_lib_ffi_free_string(out);
+        EXPORT_LIB_FFI_FREE_STRING(out);
     }
     {
         /* transform: concatenation */
         char* out = 0; size_t n = 0;
         ff_str_dup("ab", 2, &out, &n);
         CHECK(n == 4 && out != NULL && memcmp(out, "abab", 4) == 0);
-        export_lib_ffi_free_string(out);
+        EXPORT_LIB_FFI_FREE_STRING(out);
     }
     {
         /* embedded NUL is preserved; length is BYTES (not NUL-terminated, not code points) */
@@ -38,7 +38,7 @@ int main(void) {
         char* out = 0; size_t n = 0;
         ff_str_echo(raw, 3, &out, &n);
         CHECK(n == 3 && memcmp(out, raw, 3) == 0);
-        export_lib_ffi_free_string(out);
+        EXPORT_LIB_FFI_FREE_STRING(out);
     }
     {
         /* non-ASCII UTF-8: length is byte count */
@@ -47,14 +47,14 @@ int main(void) {
         char* out = 0; size_t n = 0;
         ff_str_echo(utf8, 5, &out, &n);
         CHECK(n == 5 && memcmp(out, utf8, 5) == 0);
-        export_lib_ffi_free_string(out);
+        EXPORT_LIB_FFI_FREE_STRING(out);
     }
     {
         /* empty string: canonical (data==NULL, len==0) both in and out */
         char* out = (char*)0x1; size_t n = 999;
         ff_str_echo(NULL, 0, &out, &n);
         CHECK(n == 0 && out == NULL);
-        export_lib_ffi_free_string(out); /* free(NULL) must be safe */
+        EXPORT_LIB_FFI_FREE_STRING(out); /* free(NULL) must be safe */
     }
     {
         /* input lifetime: Strut must not retain the host buffer past the call */
@@ -63,7 +63,7 @@ int main(void) {
         ff_str_echo(mut, 5, &out, &n);
         mut[0] = 'X'; mut[1] = 'Y'; /* mutate host buffer after the call returns */
         CHECK(n == 5 && memcmp(out, "hello", 5) == 0);
-        export_lib_ffi_free_string(out);
+        EXPORT_LIB_FFI_FREE_STRING(out);
     }
     {
         /* owned output survives the call + release; stress ownership (no leak/double-free) */
@@ -72,7 +72,7 @@ int main(void) {
             char* out = 0; size_t n = 0;
             ff_str_echo("stress", 6, &out, &n);
             if (!(n == 6 && out != NULL && memcmp(out, "stress", 6) == 0)) { printf("FAIL stress line %d\n", __LINE__); return 1; }
-            export_lib_ffi_free_string(out);
+            EXPORT_LIB_FFI_FREE_STRING(out);
         }
     }
 
@@ -82,7 +82,7 @@ int main(void) {
         uint8_t* out = (uint8_t*)0x1; size_t n = 999;
         ff_bytes_echo(bin, 6, &out, &n);
         CHECK(n == 6 && out != NULL && memcmp(out, bin, 6) == 0);
-        export_lib_ffi_free_bytes(out);
+        EXPORT_LIB_FFI_FREE_BYTES(out);
     }
     {
         /* single byte 0xff */
@@ -90,14 +90,14 @@ int main(void) {
         uint8_t* out = 0; size_t n = 0;
         ff_bytes_echo(one, 1, &out, &n);
         CHECK(n == 1 && out != NULL && out[0] == 0xff);
-        export_lib_ffi_free_bytes(out);
+        EXPORT_LIB_FFI_FREE_BYTES(out);
     }
     {
         /* empty bytes: canonical (NULL, 0) */
         uint8_t* out = (uint8_t*)0x1; size_t n = 999;
         ff_bytes_echo(NULL, 0, &out, &n);
         CHECK(n == 0 && out == NULL);
-        export_lib_ffi_free_bytes(out);
+        EXPORT_LIB_FFI_FREE_BYTES(out);
     }
     {
         /* bytes output lifetime stress */
@@ -107,7 +107,7 @@ int main(void) {
             uint8_t* out = 0; size_t n = 0;
             ff_bytes_echo(bin, 3, &out, &n);
             if (!(n == 3 && out != NULL && memcmp(out, bin, 3) == 0)) { printf("FAIL bytes stress line %d\n", __LINE__); return 1; }
-            export_lib_ffi_free_bytes(out);
+            EXPORT_LIB_FFI_FREE_BYTES(out);
         }
     }
 

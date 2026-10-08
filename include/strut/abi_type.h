@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <cstdint>
 namespace strut {
 // Single source of truth for the FFI-1 export C ABI primitive type table.
 // Used by semantic validation (supported) and C-header generation (c_type) so the
@@ -44,36 +45,51 @@ inline bool abi_type_supported(const std::string& name){
 // could be released by library B. The module slug is derived deterministically from the
 // source module name (the same for codegen and header generation). It must be overridable
 // (e.g. --ffi-module) once packages/modules land.
-inline unsigned abi_stem_hash(const std::string& s){
-    unsigned h=2166136261u; // FNV-1a 32-bit
-    for(unsigned char c:s){h^=c;h*=16777619u;}
-    return h;
+// Stable, self-defined 128-bit digest (two FNV-1a 64-bit passes over the canonical identity
+// and its reverse). NOT std::hash and NOT implementation-defined; algorithm, input, and
+// output length are fixed here. No cryptographic strength is required -- 128 bits makes an
+// accidental ABI-namespace collision non-credible.
+inline std::uint64_t abi_fnv1a64(const std::string& s,std::uint64_t basis){
+    std::uint64_t h=basis;for(unsigned char c:s){h^=c;h*=1099511628211ULL;}return h;
 }
-inline std::string abi_module_slug(const std::string& source_path){
+inline std::string abi_hex64(std::uint64_t v){
+    const char* H="0123456789abcdef";std::string o;o.reserve(16);
+    for(int i=15;i>=0;--i){o+=H[(v>>(i*4))&0xF];}return o;
+}
+inline std::string abi_digest128(const std::string& canonical){
+    const std::uint64_t h1=abi_fnv1a64(canonical,1469598103934665603ULL);
+    const std::string rev(canonical.rbegin(),canonical.rend());
+    const std::uint64_t h2=abi_fnv1a64(rev,1099511628211ULL);
+    return abi_hex64(h1)+abi_hex64(h2);
+}
+// Canonical ABI module identity = the (already absolute, '/'-normalized) source path. This
+// keeps modules with the same file name in different directories distinct. ABI namespace =
+// sanitized readable prefix + 128-bit digest of that identity; the digest is ALWAYS present,
+// so there is no probabilistic 32-bit surface and no sanitization-form ambiguity (e.g.
+// `foo-bar` vs `foo_bar`, or `slug_a_deadbeef`, cannot collide). Names hosts should reference
+// are the readable macro aliases emitted by the generated header; the digest stays behind
+// them. (Reproducibility note: the identity is the build's absolute path; ship the generated
+// header with its library, or build from a stable path, for stable names.)
+inline std::string abi_module_ident(const std::string& source_path){
     std::size_t slash=source_path.find_last_of("/\\");
     std::string base=(slash==std::string::npos)?source_path:source_path.substr(slash+1);
     std::size_t dot=base.find_last_of('.');
     if(dot!=std::string::npos)base=base.substr(0,dot);
-    std::string out;bool changed=false;
-    for(char c:base){if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')out+=c;else{out+='_';changed=true;}}
-    if(out.empty()||(out[0]>='0'&&out[0]<='9')){out="m_"+out;changed=true;}
-    // Distinct source names that normalize to the same C identifier (e.g. `foo-bar` vs
-    // `foo_bar`) MUST NOT produce the same module slug, or their exported symbols/typedefs/
-    // release functions collide. Append a deterministic, reproducible suffix (hash of the
-    // original stem). To stay structurally collision-free we ALSO hash any *unchanged* stem
-    // that already looks like a generated slug (`..._<8 lowercase hex>`): otherwise a file
-    // literally named `foo_bar_<hash>` could equal the transformed name of `foo-bar`.
-    // Proof sketch: (a) two unhashed slugs are equal only if their stems are equal; (b) two
-    // hashed slugs collide only if stems + 32-bit hash collide; (c) a hashed slug can never
-    // equal an unhashed one, because the unhashed one would then end in `_<8hex>` and thus be
-    // hashed by rule. So no cross-class collision and no structural same-input collision.
-    bool looks_hashed=false;
-    if(out.size()>=9 && out[out.size()-9]=='_'){
-        looks_hashed=true;
-        for(std::size_t i=out.size()-8;i<out.size();++i){const char c=out[i];if(!((c>='0'&&c<='9')||(c>='a'&&c<='f'))){looks_hashed=false;break;}}
-    }
-    if(changed||looks_hashed){const char* hex="0123456789abcdef";const unsigned h=abi_stem_hash(base);out+="_";for(int i=7;i>=0;--i)out+=hex[(h>>(i*4))&0xF];}
+    std::string out;
+    for(char c:base){out+=((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')?c:'_';}
+    if(out.empty()||(out[0]>='0'&&out[0]<='9'))out="m_"+out;
     return out;
+}
+inline std::string abi_module_slug(const std::string& source_path){
+    return abi_module_ident(source_path)+"_"+abi_digest128(source_path);
+}
+// Readable, digest-free macro/identifier stem (uppercased). Distinct modules normally have
+// distinct stems; if two do not, their symbols still differ via the digest and hosts can use
+// the concrete symbol from the header.
+inline std::string abi_module_macro(const std::string& source_path){
+    std::string s=abi_module_ident(source_path);
+    for(char& c:s)c=(c>='a'&&c<='z')?(char)(c-'a'+'A'):c;
+    return s;
 }
 inline std::string abi_release_symbol(const std::string& module,const std::string& kind){
     return module+"_ffi_free_"+kind;

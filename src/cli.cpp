@@ -339,13 +339,15 @@ void collect_embed_dependencies(const std::filesystem::path& source_path,std::ve
 static const char* c_abi_type(const std::string& name){return strut::abi_type_info(name).c_type;}
 static std::string build_c_header(const IRProgram& p,const std::string& guard){
     const std::string mod=strut::abi_module_slug(p.source_path);
+    const std::string mac=strut::abi_module_macro(p.source_path);
     std::unordered_map<std::string,std::vector<strut::AbiFieldInfo>> agg_map;
     std::vector<std::string> agg_order;
     for(const auto& a:strut::collect_abi_aggregates(p)){agg_map[a.name]=a.fields;agg_order.push_back(a.name);}
     auto is_ag=[&](const std::string& n){return agg_map.count(n)>0;};
     auto abi_cpp=[&](const std::string& n){return strut::abi_aggregate_type_name(mod,n);};
     std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
-    for(const auto& name:agg_order){const std::string t=abi_cpp(name);h+="typedef struct "+t+" {";for(const auto& f:agg_map[name])h+=" "+f.c_type+" "+f.name+";";h+=" } "+t+";\n";}
+    // Readable aliases hide the digest-qualified ABI names; hosts should use these.
+    for(const auto& name:agg_order){const std::string t=abi_cpp(name);h+="typedef struct "+t+" {";for(const auto& f:agg_map[name])h+=" "+f.c_type+" "+f.name+";";h+=" } "+t+";\n";h+="#define "+mac+"_"+name+" "+t+"\n";}
     if(!agg_order.empty())h+="\n";
     bool any=false,needs_free_string=false,needs_free_bytes=false;
     for(const auto& st:p.statements){if(st->kind!=IRStmt::Kind::function_decl||!st->is_export_c||!st->owner.empty())continue;any=true;
@@ -367,8 +369,8 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
         if(first)h+="void";
         h+=");\n";
     }
-    if(needs_free_string)h+="\nvoid "+strut::abi_release_symbol(mod,"string")+"(char* data);\n";
-    if(needs_free_bytes)h+="\nvoid "+strut::abi_release_symbol(mod,"bytes")+"(uint8_t* data);\n";
+    if(needs_free_string){const std::string s=strut::abi_release_symbol(mod,"string");h+="\nvoid "+s+"(char* data);\n#define "+mac+"_FFI_FREE_STRING "+s+"\n";}
+    if(needs_free_bytes){const std::string s=strut::abi_release_symbol(mod,"bytes");h+="\nvoid "+s+"(uint8_t* data);\n#define "+mac+"_FFI_FREE_BYTES "+s+"\n";}
     h+="\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";
     if(!any)h="#ifndef "+guard+"\n#define "+guard+"\n#endif\n";
     return h;

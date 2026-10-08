@@ -10,26 +10,26 @@
 
 int main(void) {
     /* layout certification from the C compiler's own view */
-    CHECK(sizeof(strut_ffi_export_agg_Pair) == 8);
-    CHECK(offsetof(strut_ffi_export_agg_Pair, a) == 0);
-    CHECK(offsetof(strut_ffi_export_agg_Pair, b) == 4);
-    CHECK(sizeof(strut_ffi_export_agg_Mixed) == 24);
-    CHECK(offsetof(strut_ffi_export_agg_Mixed, a) == 0);
-    CHECK(offsetof(strut_ffi_export_agg_Mixed, b) == 8);
-    CHECK(offsetof(strut_ffi_export_agg_Mixed, c) == 16);
+    CHECK(sizeof(EXPORT_AGG_Pair) == 8);
+    CHECK(offsetof(EXPORT_AGG_Pair, a) == 0);
+    CHECK(offsetof(EXPORT_AGG_Pair, b) == 4);
+    CHECK(sizeof(EXPORT_AGG_Mixed) == 24);
+    CHECK(offsetof(EXPORT_AGG_Mixed, a) == 0);
+    CHECK(offsetof(EXPORT_AGG_Mixed, b) == 8);
+    CHECK(offsetof(EXPORT_AGG_Mixed, c) == 16);
 
     /* struct as input */
-    strut_ffi_export_agg_Pair p = { 20, 22 };
+    EXPORT_AGG_Pair p = { 20, 22 };
     CHECK(agg_sum(p) == 42);
 
     /* struct as return */
-    strut_ffi_export_agg_Pair q = agg_make(3, 4);
+    EXPORT_AGG_Pair q = agg_make(3, 4);
     CHECK(q.a == 3 && q.b == 4);
 
     /* mixed primitive fields: struct input + struct return */
-    strut_ffi_export_agg_Mixed m = { 7, 2.5, 200 };
+    EXPORT_AGG_Mixed m = { 7, 2.5, 200 };
     CHECK(agg_mixed_weight(m) == 2.5);
-    strut_ffi_export_agg_Mixed r = agg_mixed_make(1, 3.5, 9);
+    EXPORT_AGG_Mixed r = agg_mixed_make(1, 3.5, 9);
     CHECK(r.a == 1 && r.b == 3.5 && r.c == 9);
 
     /* internal Strut call to an exported function must hit the private impl, not the wrapper */

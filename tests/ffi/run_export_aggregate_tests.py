@@ -14,13 +14,11 @@ if len(sys.argv) != 2:
 compiler = Path(sys.argv[1]).resolve()
 root = Path(__file__).resolve().parent
 expected = "agg ok\n"
-decls = ["typedef struct strut_ffi_export_agg_Pair { int32_t a; int32_t b; } strut_ffi_export_agg_Pair;",
-         "typedef struct strut_ffi_export_agg_Mixed { int32_t a; double b; uint8_t c; } strut_ffi_export_agg_Mixed;",
-         "int32_t agg_sum(strut_ffi_export_agg_Pair p);",
-         "strut_ffi_export_agg_Pair agg_make(int32_t x, int32_t y);",
-         "double agg_mixed_weight(strut_ffi_export_agg_Mixed m);",
-         "strut_ffi_export_agg_Mixed agg_mixed_make(int32_t a, double b, uint8_t c);",
-         "int32_t agg_double_sum(strut_ffi_export_agg_Pair p);"]
+# ABI type names carry a module digest, so the header exposes readable macro aliases.
+decls = ["typedef struct ", "#define EXPORT_AGG_Pair ", "#define EXPORT_AGG_Mixed ",
+         "int32_t agg_sum(", "agg_make(int32_t x, int32_t y);",
+         "double agg_mixed_weight(", "agg_mixed_make(int32_t a, double b, uint8_t c);",
+         "int32_t agg_double_sum("]
 
 with tempfile.TemporaryDirectory(prefix="strut-ffi-aggregate-") as td:
     td = Path(td)
