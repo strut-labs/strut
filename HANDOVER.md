@@ -44,7 +44,7 @@ When a design decision changes, update these documents before or alongside imple
 
 ## Current status
 
-Strut `v0.0.3` is published from immutable compiler commit `cf75cd6389373f727c628b85afdf978a0afd3af5`. Supported-platform compiler and regression matrices, release packaging, checksums, installed-layout smoke tests, lifecycle scripts, and official SQLite installation are green.
+Strut `v0.0.3` was published from immutable compiler commit `cf75cd6389373f727c628b85afdf978a0afd3af5` (historical). The current release is `v0.0.4`, tagged from the retained `0e95d0d` line; it is a large HTTP/backend, runtime, and performance release (production-oriented reactor HTTP server — opt-in via `STRUT_HTTP_REACTOR=1`; reactor-native TLS; request/response streaming; WebSockets; indexed routing; request/response hot-path and runtime building-block work). Supported-platform compiler and regression matrices, release packaging, checksums, installed-layout smoke tests, lifecycle scripts, and official SQLite installation remain green.
 
 The authoritative architecture now includes dependency-driven runtime components, structured `TypeId`, a canonical API registry shared by semantic analysis/code generation/editor tooling, LSP integration, reproducible Git packages with immutable locks and verified offline caches, official package shorthand, custom checked errors, atomics, distinct prefix/postfix operator identities, HTTP/TLS lifecycle handling, executable documentation, controlled AI-DX benchmarks, and focused string/thread/atomic runtime slicing. These are implemented foundations, not roadmap items.
 

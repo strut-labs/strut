@@ -1017,7 +1017,12 @@ rewrite it.
   kernels/embedded/hypervisors/bootloaders/drivers/HP-userspace share one
   coherent low-level core instead of six overlapping feature sets.
 
-## NOW — finish the HTTP/runtime performance campaign (active)
+## HTTP/runtime performance campaign — COMPLETE
+
+Status: R0-R8 and the R8.5 hot-path campaign are COMPLETE and closed under exit
+criterion B. Final retained compiler `0e95d0d` (main); independent closure challenge
+and handover in `strut-benchmarks`. No further R8.5 candidates are active. Historical
+record below preserved.
 
 Current status (R0-R7 complete): thread-per-connection replaced by a
 production-oriented reactor; buffered HTTP, response streaming, true
@@ -1063,13 +1068,14 @@ Generator trigger: when Strut reaches roughly 28-30k+ req/s, or the generator
 exceeds ~80-85% CPU while driving Strut, upgrade/resize the generator and use it
 equally for Strut, Go, and Rust before claiming final percentages.
 
-## Potential release after Phase 1
+## NOW — Release A (v0.0.4)
 
-A new Strut version MAY be warranted immediately after the HTTP/reactor/
-performance campaign if the result is production-ready, cross-platform
-certified, materially faster, and ready for reactor promotion. Do not delay a
-strong runtime release until every later roadmap item is complete. The HTTP
-runtime work alone may justify a release.
+A new Strut version is being released immediately after the HTTP/reactor/performance
+campaign: v0.0.4, a large HTTP/backend, runtime, and performance release, tagged from
+the retained main (`0e95d0d` plus release metadata). This snapshots the reactor runtime,
+streaming/WebSocket/TLS, indexed routing, request/response hot-path work, runtime
+building blocks, and extensive certification before the two-way FFI/embedding campaign
+begins. The reactor backend remains opt-in (`STRUT_HTTP_REACTOR=1`) at this release.
 
 ## NEXT — two-way FFI / embedding (needed for Nift packages)
 

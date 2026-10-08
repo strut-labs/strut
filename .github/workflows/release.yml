@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: strut-labs/strut-regression-suite
-          ref: 662bbfebc01a05c9d5566dcd3495651747ae3c7e
+          ref: f62701cd737a01412986fc1f14002fdecb4bd3d0
           path: strut-regression-suite
       - name: Validate tag and release metadata (POSIX)
         if: runner.os != 'Windows'
