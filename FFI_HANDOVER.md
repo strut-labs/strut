@@ -201,8 +201,13 @@ exports, with a generated header for hosts; confirm before implementing.
   aggregates/structs-by-value (FFI-3), generic opaque object handles (deferred until a real
   exported resource needs one), structured error/exception containment (FFI-6), a large FFI
   benchmark campaign. `bool` remains deferred.
-## FFI-3 status (plain POD aggregates — COMPLETE, cross-platform certified, 0.0.5 dev)
-- **Cross-platform certification run `37777610235` (commit `732f63e`): all five jobs green,
+## FFI-3 status (one POD aggregate ABI, both directions — closure, cross-platform cert pending)
+- **One explicit primitive-only POD aggregate C ABI shared by Strut->native and native->Strut.**
+  The native->Strut export direction was certified in run `37777610235` (commit `732f63e`).
+  The bidirectional closure (Strut->native `extern "C"` through the same ABI POD + module-slug
+  disambiguation + ABI-POD static assertions) is implemented and locally certified; its
+  cross-platform run id is recorded here once verified (see completion note at end).
+- **Earlier native->Strut certification run `37777610235` (commit `732f63e`): all five jobs green,
   with `strut_ffi_aggregate_tests` demonstrably executed and passing on every platform** —
   macOS ARM64 AppleClang (1.69s), Windows x64 MSVC (3.56s), linux-x64-gcc (1.25s), plus
   linux-x64-clang and linux-arm64-gcc. FFI-1/FFI-2 CTests remained green in the same run
@@ -232,12 +237,23 @@ exports, with a generated header for hosts; confirm before implementing.
 - **Naming/tuples:** aggregate C type names are module-qualified. Tuples are NOT implemented
   in this first FFI-3 step (user structs first); they remain rejected. Nested aggregates,
   `bool`, string/bytes fields, pointers, and collections remain rejected.
-- **Strut -> native `extern "C"` direction:** the same ABI-safe POD rule and layout govern it
-  (a standard-layout struct with only primitive fields is layout-identical), so the two
-  directions are representation-compatible. The `export "C"` direction is fully implemented
-  and certified here; routing the declaration direction through the same generated typedef is
-  a deliberate follow-up (no incompatible second representation was introduced).
-- Strict local wall: CTest **19/19** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+- **Strut -> native `extern "C"` direction (SAME ABI, symmetric).** `extern "C" function
+  name(...) -> Pair;` declarations now lower their aggregate parameters/returns to the SAME
+  generated ABI POD at the foreign boundary (`strut_ffi_<module>_Pair`), with field-by-field
+  conversion at the call site (internal -> ABI for arguments, ABI -> internal for the return).
+  The internal Strut struct NEVER crosses a C ABI boundary in either direction. Certified by
+  `strut_ffi_aggregate_bidir_tests` (a native C library with a matching POD struct is linked
+  via `--lib`; expected `7`/`11`).
+- **Compile-time ABI POD assertions.** For every generated aggregate the emitted C++ asserts
+  `std::is_standard_layout` and `std::is_trivially_copyable` on the ABI POD (the contract) —
+  not on the internal Strut struct, whose representation is free to change.
+- **Module/C-name collision safety.** `abi_module_slug` appends a deterministic, reproducible
+  hash of the original stem whenever sanitization alters a source name, so distinct modules
+  that normalize to the same C identifier (e.g. `slug-a` vs `slug_a`) get distinct ABI
+  names/typedefs/release symbols. Certified by `strut_ffi_module_slug_tests`.
+- Strict local wall: CTest **21/21** normal + GCC/Clang -Werror + ASan/UBSan; regressions
   **299/299** default + reactor; clean under ASan + leak detection.
-- **Next: FFI-4** — pointers / nullable / references (and, if evidenced, nested aggregates /
-  tuples as a later FFI-3 substep). No callbacks, error ABI, R9/R10, or Nift yet.
+- **Next: FFI-4** — pointers / nullable / references (addressing borrowed raw pointer,
+  nullable raw pointer, Strut safe owning pointer, and reference as distinct cases; auditing
+  the existing `ptr<T>`/`unsafe` behavior first). Nested aggregates/tuples remain a later
+  FFI-3 substep. No callbacks, error ABI, R9/R10, or Nift yet.

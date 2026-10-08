@@ -44,14 +44,24 @@ inline bool abi_type_supported(const std::string& name){
 // could be released by library B. The module slug is derived deterministically from the
 // source module name (the same for codegen and header generation). It must be overridable
 // (e.g. --ffi-module) once packages/modules land.
+inline unsigned abi_stem_hash(const std::string& s){
+    unsigned h=2166136261u; // FNV-1a 32-bit
+    for(unsigned char c:s){h^=c;h*=16777619u;}
+    return h;
+}
 inline std::string abi_module_slug(const std::string& source_path){
     std::size_t slash=source_path.find_last_of("/\\");
     std::string base=(slash==std::string::npos)?source_path:source_path.substr(slash+1);
     std::size_t dot=base.find_last_of('.');
     if(dot!=std::string::npos)base=base.substr(0,dot);
-    std::string out;
-    for(char c:base)out+=((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')?c:'_';
-    if(out.empty()||(out[0]>='0'&&out[0]<='9'))out="m_"+out;
+    std::string out;bool changed=false;
+    for(char c:base){if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')out+=c;else{out+='_';changed=true;}}
+    if(out.empty()||(out[0]>='0'&&out[0]<='9')){out="m_"+out;changed=true;}
+    // Distinct source names that normalize to the same C identifier (e.g. `foo-bar` vs
+    // `foo_bar`) MUST NOT produce the same module slug, or their exported symbols/typedefs/
+    // release functions collide. Append a deterministic, reproducible suffix (hash of the
+    // original stem) whenever sanitization altered the name.
+    if(changed){const char* hex="0123456789abcdef";const unsigned h=abi_stem_hash(base);out+="_";for(int i=7;i>=0;--i)out+=hex[(h>>(i*4))&0xF];}
     return out;
 }
 inline std::string abi_release_symbol(const std::string& module,const std::string& kind){
