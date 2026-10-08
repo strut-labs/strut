@@ -14,3 +14,16 @@ export "C" function do_it(int_32 x) -> void : DemoError {
     }
     return;
 }
+error OtherError {
+    string message;
+    int code;
+}
+export "C" function pick(int_32 x) -> int_32 : (DemoError, OtherError) {
+    if (x == 1) {
+        throw DemoError { message: "one", code: 1 };
+    }
+    if (x == 2) {
+        throw OtherError { message: "two", code: 2 };
+    }
+    return x;
+}

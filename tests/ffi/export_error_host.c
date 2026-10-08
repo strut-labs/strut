@@ -29,6 +29,15 @@ int main(void) {
         CHECK(maybe_fail(-1, &v, &r) != 0 && r != 0);
         EXPORT_ERROR_FFI_ERROR_RELEASE(r);
     }
+    int k; for (k = 1; k <= 2; ++k) {                    /* multiple declared errors: concrete identity */
+        EXPORT_ERROR_FFI_ERROR* pe = 0; int32_t pv = 0;
+        CHECK(pick(k, &pv, &pe) != 0 && pe != 0);
+        const char* pt = 0; size_t ptl = 0; const char* pm = 0; size_t pml = 0; int32_t pc = 0;
+        EXPORT_ERROR_FFI_ERROR_QUERY(pe, &pt, &ptl, &pm, &pml, &pc);
+        if (k == 1) CHECK(ptl == 9 && memcmp(pt, "DemoError", 9) == 0 && pc == 1);
+        else CHECK(ptl == 10 && memcmp(pt, "OtherError", 10) == 0 && pc == 2);
+        EXPORT_ERROR_FFI_ERROR_RELEASE(pe);
+    }
     printf("err ok\n");
     return 0;
 }
