@@ -19,3 +19,15 @@ export "C" function ff_zero() -> int {
 export "C" function ff_note(int value) -> void {
     return;
 }
+export "C" function ff_str_echo(string s) -> string {
+    return s;
+}
+export "C" function ff_str_dup(string s) -> string {
+    return s + s;
+}
+export "C" function ff_str_len(string s) -> int {
+    return s.length;
+}
+export "C" function ff_bytes_echo(bytes b) -> bytes {
+    return b;
+}

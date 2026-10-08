@@ -335,14 +335,27 @@ void collect_embed_dependencies(const std::filesystem::path& source_path,std::ve
 
 static const char* c_abi_type(const std::string& name){return strut::abi_type_info(name).c_type;}
 static std::string build_c_header(const IRProgram& p,const std::string& guard){
-    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
-    bool any=false;
+    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
+    bool any=false,needs_free_string=false,needs_free_bytes=false;
     for(const auto& st:p.statements){if(st->kind!=IRStmt::Kind::function_decl||!st->is_export_c||!st->owner.empty())continue;any=true;
-        h+=std::string(c_abi_type(st->return_type))+" "+st->name+"(";
-        if(st->parameters.empty())h+="void";
-        for(std::size_t i=0;i<st->parameters.size();++i){if(i)h+=", ";h+=std::string(c_abi_type(st->parameters[i].type.name))+" "+st->parameters[i].name;}
+        const bool ret_t=strut::abi_is_transport(st->return_type);
+        if(ret_t){if(strut::abi_is_bytes(st->return_type))needs_free_bytes=true;else needs_free_string=true;}
+        h+=ret_t?std::string("void"):std::string(c_abi_type(st->return_type));
+        h+=" "+st->name+"(";
+        bool first=true;auto sep=[&](){if(!first)h+=", ";first=false;};
+        for(const auto& pm:st->parameters){
+            if(strut::abi_is_transport(pm.type.name)){
+                const char* el=strut::abi_transport_c_element(pm.type.name);
+                sep();h+=std::string("const ")+el+"* "+pm.name+"_data";
+                sep();h+="size_t "+pm.name+"_len";
+            }else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}
+        }
+        if(ret_t){const char* el=strut::abi_transport_c_element(st->return_type);sep();h+=std::string(el)+"** out_data";sep();h+="size_t* out_len";}
+        if(first)h+="void";
         h+=");\n";
     }
+    if(needs_free_string)h+="\nvoid strut_ffi_free_string(char* data);\n";
+    if(needs_free_bytes)h+="\nvoid strut_ffi_free_bytes(uint8_t* data);\n";
     h+="\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";
     if(!any)h="#ifndef "+guard+"\n#define "+guard+"\n#endif\n";
     return h;

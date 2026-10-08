@@ -19,4 +19,21 @@ inline AbiTypeInfo abi_type_info(const std::string& name){
     if(name=="double_64")return {true,"double"};
     return {false,"void"};
 }
+// FFI-2 ABI transport types. `string`/`bytes` are NOT primitives and do NOT map to a
+// single C type; they are exchanged as an explicit borrowed data/length pair on input and
+// an explicit owned data/length out-parameter pair on output. These are ABI plumbing for
+// FFI-2 only -- NOT general Strut pointers (FFI-4) or user aggregates (FFI-3).
+inline bool abi_is_string(const std::string& name){ return name=="string"; }
+inline bool abi_is_bytes(const std::string& name){ return name=="bytes"; }
+inline bool abi_is_transport(const std::string& name){ return abi_is_string(name)||abi_is_bytes(name); }
+// Element type used for the borrowed/owned data pointer of a transport type.
+inline const char* abi_transport_c_element(const std::string& name){
+    if(abi_is_bytes(name))return "uint8_t";
+    return "char";
+}
+// Whether a type may appear in an export "C" signature. string/bytes are accepted only
+// through the explicit FFI-2 transport lowering above. bool remains deliberately deferred.
+inline bool abi_type_supported(const std::string& name){
+    return abi_type_info(name).supported || abi_is_transport(name);
+}
 } // namespace strut

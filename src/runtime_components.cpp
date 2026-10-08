@@ -75,7 +75,7 @@ void request_stmt(std::vector<Id>& out,const IRStmt* s) {
     if(!s)return;
     request_type(out,s->type_id);request_type(out,s->return_type_id);request_type(out,s->alias_target_id);
     if(s->is_async)out.push_back(Id::async);
-    if(s->is_extern_c)out.push_back(Id::ffi);
+    if(s->is_extern_c||s->is_export_c)out.push_back(Id::ffi);
     for(const auto& p:s->parameters)request_type(out,p.type.type_id?p.type.type_id:intern_type(p.type.name));
     for(const auto& f:s->fields)request_type(out,f.type.type_id?f.type.type_id:intern_type(f.type.name));
     request_expr(out,s->value.get());request_expr(out,s->target.get());request_expr(out,s->condition.get());request_expr(out,s->increment.get());request_stmt(out,s->initializer.get());
