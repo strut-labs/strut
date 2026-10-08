@@ -187,6 +187,10 @@ thread_local std::vector<std::string> strut_codegen_abi_aggregate_order;
 thread_local std::unordered_map<std::string,std::pair<std::string,std::vector<std::string>>> strut_codegen_extern_aggs;
 thread_local std::vector<std::string> strut_codegen_ffi_callbacks;
 thread_local bool strut_codegen_ffi_trampoline_needed = false;
+thread_local bool strut_codegen_ffi_error_needed = false;
+thread_local bool strut_codegen_ffi_native_error_needed = false;
+thread_local std::unordered_map<std::string,std::pair<std::string,std::vector<std::string>>> strut_codegen_extern_checked;
+inline std::string ffi_native_error_name(const std::string& m){return "strut_ffi_"+m+"_native_error";}
 
 // FFI-2 transport lowering helpers (kept in one place so codegen, the generated header, and
 // the marshalling logic cannot disagree about shape).
@@ -310,6 +314,17 @@ std::string expr(const IRExpr& e){
                 }else call=name+"("+args+")";
                 return is_abia(sig.first)?(anycb?call:conv_from_abi(sig.first,call)):call;
              }}}
+            if(strut_codegen_extern_checked.count(name)){
+                const auto& sig=strut_codegen_extern_checked[name];const bool rvoid=(sig.first=="void");
+                std::string args;for(std::size_t i=0;i<e.arguments.size();++i){if(i)args+=",";args+=call_argument(*e.arguments[i]);}
+                std::string body="        "+ffi_native_error_name(strut_codegen_ffi_module)+" strut_ffi_err{};\n";
+                if(!rvoid)body+="        "+std::string(abi_type_info(sig.first).c_type)+" strut_ffi_value{};\n";
+                std::string call=name+"(";if(!args.empty())call+=args+", ";if(!rvoid)call+="&strut_ffi_value, ";call+="&strut_ffi_err)";
+                body+="        std::int32_t strut_ffi_status_v = "+call+";\n";
+                body+="        if(strut_ffi_status_v!=0){ throw strut_checked_error(std::string(strut_ffi_err.type?strut_ffi_err.type:\"\",strut_ffi_err.type?strut_ffi_err.type_len:0),std::string(strut_ffi_err.message?strut_ffi_err.message:\"\",strut_ffi_err.message?strut_ffi_err.message_len:0),strut_ffi_err.code); }\n";
+                if(rvoid)return "([&]() -> void {\n"+body+"    }())";
+                return "([&]() -> "+cpp_type(sig.first)+" {\n"+body+"        return strut_ffi_value;\n    }())";
+            }
             std::string out=name+"(";for(size_t i=0;i<e.arguments.size();++i){if(i)out+=",";out+=call_argument(*e.arguments[i]);}return out+")";
         }
         case IRExpr::Kind::lambda:{std::ostringstream o;o<<strut_capture_spec(false)<<"(";for(std::size_t i=0;i<e.lambda_parameters.size();++i){if(i)o<<",";{const auto& tn=e.lambda_parameters[i].type.name;bool generic=!tn.empty();for(unsigned char c:tn)if(std::islower(c))generic=false;o<<"[[maybe_unused]] "<<(generic?"auto":cpp_type(tn))<<" "<<e.lambda_parameters[i].name;}}o<<")";++strut_codegen_function_depth;if(e.lambda_async){o<<" { return strut_async([=]() mutable";if(e.lambda_expression)o<<" { return "<<expr(*e.lambda_expression)<<"; }); }";else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,8);o<<"    });\n}";}}else if(e.lambda_expression){o<<" { return "<<expr(*e.lambda_expression)<<"; }";}else{o<<" {\n";for(const auto& c:e.lambda_body)stmt(o,*c,4);o<<"}";}--strut_codegen_function_depth;return o.str();}
@@ -378,8 +393,9 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
                     for(auto&c:s.body)stmt(o,*c,n+4);
                     --strut_codegen_function_depth;o<<"}\n";
                     // 2) public C-ABI wrapper (transport views / ABI POD structs; owned output out-params)
+                    const bool checked=!s.error_types.empty();
                     o<<"extern \"C\" STRUT_C_ABI_EXPORT ";
-                    if(ret_transport)o<<"void";else if(ret_aggr)o<<abi_cpp(s.return_type);else o<<cprim(s.return_type);
+                    if(checked)o<<"std::int32_t";else if(ret_transport)o<<"void";else if(ret_aggr)o<<abi_cpp(s.return_type);else o<<cprim(s.return_type);
                     o<<" "<<s.name<<"(";
                     bool first=true;auto sep=[&](){if(!first)o<<", ";first=false;};
                     for(const auto& p:s.parameters){
@@ -393,9 +409,12 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
                             sep();o<<"void* "<<p.name<<"_ctx";
                         }else{bool strut_iref;std::string strut_ict;if(ptr_ok(p.type.name,strut_iref,strut_ict)){sep();o<<strut_ict<<" "<<p.name;}else{sep();o<<cprim(p.type.name)<<" "<<p.name;}}
                     }
-                    if(ret_transport){const char* el=abi_transport_c_element(s.return_type);sep();o<<el<<"** out_data";sep();o<<"std::size_t* out_len";}
+                    if(checked){if(s.return_type!="void"){sep();o<<cprim(s.return_type)<<"* out_value";}sep();o<<abi_error_type_name(strut_codegen_ffi_module)<<"** out_error";}
+                    else if(ret_transport){const char* el=abi_transport_c_element(s.return_type);sep();o<<el<<"** out_data";sep();o<<"std::size_t* out_len";}
                     if(first)o<<"void";
                     o<<") {\n";
+                    if(checked)o<<"    *out_error = nullptr;\n";
+                    o<<"    try {\n";
                     for(const auto& p:s.parameters){
                         if(ffi_param_is_transport(p)){
                             if(abi_is_string(p.type.name)){
@@ -420,7 +439,10 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
                     std::string call=ffi_impl_name(s.name)+"(";bool cfirst=true;
                     for(const auto& p:s.parameters){if(!cfirst)call+=",";cfirst=false;call+=(needs_marshal(p.type.name)?("strut_arg_"+p.name):p.name);}
                     call+=")";
-                    if(ret_transport){
+                    if(checked){
+                        if(s.return_type=="void")o<<"    "<<call<<";\n    return 0;\n";
+                        else o<<"    *out_value = "<<call<<";\n    return 0;\n";
+                    }else if(ret_transport){
                         if(abi_is_string(s.return_type)){
                             o<<"    strut_string strut_ffi_result = "<<call<<";\n";
                             o<<"    *out_len = strut_ffi_result.v.size();\n";
@@ -437,9 +459,23 @@ void stmt(std::ostringstream& o,const IRStmt& s,int n){std::string pad(n,' ');em
                         o<<"    return strut_ffi_out;\n";
                     }else if(s.return_type=="void"){o<<"    "<<call<<";\n";}
                     else{o<<"    return "<<call<<";\n";}
+                    o<<"    } catch (const strut_checked_error& strut_ffi_ce) {\n";
+                    if(checked)o<<"        *out_error = new "<<abi_error_type_name(strut_codegen_ffi_module)<<"(strut_ffi_ce);\n        return 1;\n";
+                    else o<<"        std::cerr << \"Strut FFI: uncaught checked error at non-error export\" << std::endl; std::abort();\n";
+                    o<<"    } catch (...) {\n        std::abort();\n    }\n";
                     o<<"}\n";
                     break;
                 }
+                {if(s.is_extern_c && !s.has_body && s.owner.empty() && !s.error_types.empty()){
+                    auto rc=[&](const std::string& t){return std::string(abi_type_info(t).c_type);};
+                    o<<"extern \"C\" std::int32_t "<<s.name<<"(";
+                    bool first=true;auto sep=[&](){if(!first)o<<", ";first=false;};
+                    for(const auto& pm:s.parameters){sep();o<<rc(pm.type.name)<<" "<<pm.name;}
+                    if(s.return_type!="void"){sep();o<<rc(s.return_type)<<"* out_value";}
+                    sep();o<<ffi_native_error_name(strut_codegen_ffi_module)<<"* out_error";
+                    o<<");\n";
+                    break;
+                }}
                 {auto is_abia=[&](const std::string& n){return strut_codegen_abi_aggregates.count(n)>0;};
                  auto abi_of=[&](const std::string& t)->std::string{if(is_abia(t))return abi_aggregate_type_name(strut_codegen_ffi_module,t);bool strut_iref;std::string strut_ict;if(abi_pointer_supported(t,strut_iref,strut_ict))return strut_ict;return cpp_type(t);};
                  bool uses=false;for(const auto& pm:s.parameters){if(is_abia(pm.type.name)){uses=true;break;}bool strut_iref;std::string strut_ict;if(abi_pointer_supported(pm.type.name,strut_iref,strut_ict)&&strut_iref){uses=true;break;}{std::string strut_cbr;std::vector<std::string> strut_cba;if(abi_callback_supported(pm.type.name,strut_cbr,strut_cba)){uses=true;break;}}}
@@ -1250,6 +1286,15 @@ template<class R,class... A> R strut_ffi_cb_trampoline(void* strut_ctx,A... stru
     catch(...) { std::cerr << "Strut FFI callback: unexpected exception" << std::endl; std::abort(); }
 }
 )CPP";
+if(strut_codegen_ffi_error_needed){
+    const std::string et=abi_error_type_name(strut_codegen_ffi_module);
+    const std::string qs=abi_error_query_symbol(strut_codegen_ffi_module);
+    const std::string rs=abi_error_release_symbol(strut_codegen_ffi_module);
+    o<<"struct "<<et<<" { strut_checked_error e; explicit "<<et<<"(const strut_checked_error& x):e(x){} };\n";
+    o<<"extern \"C\" STRUT_C_ABI_EXPORT void "<<qs<<"(const "<<et<<"* strut_h,const char** strut_type,std::size_t* strut_type_len,const char** strut_msg,std::size_t* strut_msg_len,std::int32_t* strut_code){*strut_type=strut_h->e.type.data();*strut_type_len=strut_h->e.type.size();*strut_msg=strut_h->e.message.data();*strut_msg_len=strut_h->e.message.size();*strut_code=strut_h->e.code;}\n";
+    o<<"extern \"C\" STRUT_C_ABI_EXPORT void "<<rs<<"("<<et<<"* strut_h){delete strut_h;}\n";
+}
+if(strut_codegen_ffi_native_error_needed)o<<"struct "<<ffi_native_error_name(strut_codegen_ffi_module)<<" { std::int32_t code; const char* type; std::size_t type_len; const char* message; std::size_t message_len; };\n";
 for(const auto& name:strut_codegen_abi_aggregate_order){
     const std::string t=abi_aggregate_type_name(strut_codegen_ffi_module,name);
     o<<"typedef struct "<<t<<" {";
@@ -1262,7 +1307,7 @@ for(const auto& name:strut_codegen_abi_aggregate_order){
 }
 }
 
-CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;strut_codegen_export_impl_names.clear();strut_codegen_ffi_free_needed=false;strut_codegen_ffi_module=abi_module_slug(p.module_id.empty()?p.source_path:p.module_id);strut_codegen_abi_aggregates.clear();strut_codegen_abi_aggregate_order.clear();for(const auto& agg:collect_abi_aggregates(p)){strut_codegen_abi_aggregates[agg.name]=agg.fields;strut_codegen_abi_aggregate_order.push_back(agg.name);}strut_codegen_ffi_callbacks.clear();for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->has_body&&st->owner.empty())for(const auto& pm:st->parameters){std::string strut_cbr;std::vector<std::string> strut_cba;if(abi_callback_supported(pm.type.name,strut_cbr,strut_cba)&&std::find(strut_codegen_ffi_callbacks.begin(),strut_codegen_ffi_callbacks.end(),pm.type.name)==strut_codegen_ffi_callbacks.end())strut_codegen_ffi_callbacks.push_back(pm.type.name);}}strut_codegen_ffi_trampoline_needed=false;strut_codegen_extern_aggs.clear();for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_extern_c&&!st->has_body&&st->owner.empty()){std::vector<std::string> pt;bool uses=false;if(strut_codegen_abi_aggregates.count(st->return_type))uses=true;for(const auto& pm:st->parameters){pt.push_back(pm.type.name);if(strut_codegen_abi_aggregates.count(pm.type.name))uses=true;{bool strut_iref;std::string strut_ict;if(abi_pointer_supported(pm.type.name,strut_iref,strut_ict)&&strut_iref)uses=true;}{std::string strut_cbr;std::vector<std::string> strut_cba;if(abi_callback_supported(pm.type.name,strut_cbr,strut_cba)){uses=true;strut_codegen_ffi_trampoline_needed=true;if(std::find(strut_codegen_ffi_callbacks.begin(),strut_codegen_ffi_callbacks.end(),pm.type.name)==strut_codegen_ffi_callbacks.end())strut_codegen_ffi_callbacks.push_back(pm.type.name);}}}if(uses)strut_codegen_extern_aggs[st->name]={st->return_type,pt};}}for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->has_body&&st->owner.empty()){strut_codegen_export_impl_names.insert(st->name);if(ffi_ret_is_transport(*st))strut_codegen_ffi_free_needed=true;}}std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::threading)&&program_uses_light_thread_runtime(p)){emit_light_thread_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
+CodegenResult CppBackend::generate(const IRProgram& p) const {CodegenResult r;strut_codegen_source_path=p.source_path;strut_codegen_export_impl_names.clear();strut_codegen_ffi_free_needed=false;strut_codegen_ffi_module=abi_module_slug(p.module_id.empty()?p.source_path:p.module_id);strut_codegen_abi_aggregates.clear();strut_codegen_abi_aggregate_order.clear();for(const auto& agg:collect_abi_aggregates(p)){strut_codegen_abi_aggregates[agg.name]=agg.fields;strut_codegen_abi_aggregate_order.push_back(agg.name);}strut_codegen_ffi_callbacks.clear();for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->has_body&&st->owner.empty())for(const auto& pm:st->parameters){std::string strut_cbr;std::vector<std::string> strut_cba;if(abi_callback_supported(pm.type.name,strut_cbr,strut_cba)&&std::find(strut_codegen_ffi_callbacks.begin(),strut_codegen_ffi_callbacks.end(),pm.type.name)==strut_codegen_ffi_callbacks.end())strut_codegen_ffi_callbacks.push_back(pm.type.name);}}strut_codegen_ffi_trampoline_needed=false;strut_codegen_ffi_native_error_needed=false;strut_codegen_extern_checked.clear();strut_codegen_extern_aggs.clear();for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_extern_c&&!st->has_body&&st->owner.empty()){if(!st->error_types.empty()){std::vector<std::string> cpt;for(const auto& pm:st->parameters)cpt.push_back(pm.type.name);strut_codegen_extern_checked[st->name]={st->return_type,cpt};strut_codegen_ffi_native_error_needed=true;continue;}std::vector<std::string> pt;bool uses=false;if(strut_codegen_abi_aggregates.count(st->return_type))uses=true;for(const auto& pm:st->parameters){pt.push_back(pm.type.name);if(strut_codegen_abi_aggregates.count(pm.type.name))uses=true;{bool strut_iref;std::string strut_ict;if(abi_pointer_supported(pm.type.name,strut_iref,strut_ict)&&strut_iref)uses=true;}{std::string strut_cbr;std::vector<std::string> strut_cba;if(abi_callback_supported(pm.type.name,strut_cbr,strut_cba)){uses=true;strut_codegen_ffi_trampoline_needed=true;if(std::find(strut_codegen_ffi_callbacks.begin(),strut_codegen_ffi_callbacks.end(),pm.type.name)==strut_codegen_ffi_callbacks.end())strut_codegen_ffi_callbacks.push_back(pm.type.name);}}}if(uses)strut_codegen_extern_aggs[st->name]={st->return_type,pt};}}strut_codegen_ffi_error_needed=false;for(const auto& st:p.statements){if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->has_body&&st->owner.empty()){strut_codegen_export_impl_names.insert(st->name);if(ffi_ret_is_transport(*st))strut_codegen_ffi_free_needed=true;if(!st->error_types.empty())strut_codegen_ffi_error_needed=true;}}std::ostringstream o;const auto components=analyze_runtime_components(p);if(!components.ok()){r.error=components.error;return r;}const auto has=[&](RuntimeComponentId id){return components.contains(id);};const bool complex=has(RuntimeComponentId::filesystem)||has(RuntimeComponentId::environment)||has(RuntimeComponentId::time)||has(RuntimeComponentId::process)||has(RuntimeComponentId::threading)||has(RuntimeComponentId::channels)||has(RuntimeComponentId::mutex)||has(RuntimeComponentId::async)||has(RuntimeComponentId::networking)||has(RuntimeComponentId::http_client)||has(RuntimeComponentId::http_server)||has(RuntimeComponentId::sqlite)||has(RuntimeComponentId::embedded_assets)||has(RuntimeComponentId::ffi);if(!complex&&program_uses_minimal_runtime(p)){emit_minimal_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::threading)&&program_uses_light_thread_runtime(p)){emit_light_thread_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::sqlite)&&program_uses_light_sqlite_runtime(p)){emit_light_sqlite_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_client)&&program_uses_light_http_client_runtime(p)){emit_light_http_client_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::json)&&program_uses_light_json_runtime(p)){emit_light_json_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::async)&&program_uses_light_async_runtime(p)){emit_light_async_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::http_server)&&program_uses_light_http_runtime(p)){emit_light_http_runtime(o,minimal_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}if(has(RuntimeComponentId::filesystem)&&program_uses_light_filesystem_runtime(p)){emit_light_filesystem_runtime(o,minimal_features(p),filesystem_features(p));emit_entry_support(o);for(auto&s:p.statements)stmt(o,*s,0);r.cpp=o.str();return r;}const bool use_curl=has(RuntimeComponentId::http_client);const bool use_sqlite=has(RuntimeComponentId::sqlite);if(use_curl)o<<"#define STRUT_USE_CURL 1\n#include <curl/curl.h>\n";if(use_sqlite)o<<"#define STRUT_USE_SQLITE 1\n#include <sqlite3.h>\n";o<<"#include \"json.h\"\n#include <cstdint>\n#include <iostream>\n#include <string>\n#include <vector>\n#include <array>\n#include <map>\n#include <unordered_map>\n#include <set>\n#include <unordered_set>\n#include <stack>\n#include <deque>\n#include <list>\n#include <tuple>\n#include <stdexcept>\n#include <charconv>\n#include <algorithm>\n#include <cctype>\n#include <utility>\n#include <optional>\n#include <memory>\n#include <optional>\n#include <type_traits>\n#include <functional>\n#include <filesystem>\n#include <fstream>\n#include <sstream>\n#include <chrono>\n#include <thread>\n#include <mutex>\n#include <condition_variable>\n#include <queue>\n#include <future>\n#include <cerrno>\n#include <cstring>\n#ifdef _WIN32\n#include <windows.h>\n#include <dbghelp.h>\n#include <winsock2.h>\n#include <ws2tcpip.h>\n#else\n#include <sys/types.h>\n#include <sys/wait.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <unistd.h>\n#include <execinfo.h>\n#endif\n";
 o<<R"CPP(
 template<class T> class strut_ref {
 public:

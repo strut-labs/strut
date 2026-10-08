@@ -175,4 +175,13 @@ inline bool abi_callback_supported(const std::string& name,std::string& ret,std:
 inline std::string abi_callback_type_name(const std::string& module,const std::string& sig){
     return "strut_ffi_"+module+"_cb_"+abi_digest128(sig).substr(0,16);
 }
+
+// FFI-6 checked-error ABI. Exported checked-error functions return `strut_ffi_status`
+// (0 = success, nonzero = failure) and write a module-owned opaque error handle on failure.
+// The error handle is queried for the concrete checked-error type/message/code and released
+// through module-qualified symbols (same allocation/free provenance rule as FFI-2). No
+// thread-local "last error"; no C++ exception object, type_info, or exception_ptr crosses C.
+inline std::string abi_error_type_name(const std::string& module){return "strut_ffi_"+module+"_error";}
+inline std::string abi_error_release_symbol(const std::string& module){return module+"_ffi_error_release";}
+inline std::string abi_error_query_symbol(const std::string& module){return module+"_ffi_error_query";}
 } // namespace strut

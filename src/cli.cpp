@@ -346,7 +346,10 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
     for(const auto& a:strut::collect_abi_aggregates(p)){agg_map[a.name]=a.fields;agg_order.push_back(a.name);}
     auto is_ag=[&](const std::string& n){return agg_map.count(n)>0;};
     auto abi_cpp=[&](const std::string& n){return strut::abi_aggregate_type_name(mod,n);};
-    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
+    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\ntypedef int32_t strut_ffi_status;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
+    bool needs_error=false;
+    for(const auto& st:p.statements)if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->owner.empty()&&!st->error_types.empty())needs_error=true;
+    if(needs_error){const std::string et=strut::abi_error_type_name(mod);const std::string qs=strut::abi_error_query_symbol(mod);const std::string rs=strut::abi_error_release_symbol(mod);h+="typedef struct "+et+" "+et+";\n";h+="#define "+mac+"_FFI_ERROR "+et+"\n";h+="void "+qs+"(const "+et+"* e, const char** type, size_t* type_len, const char** message, size_t* message_len, int32_t* code);\n";h+="#define "+mac+"_FFI_ERROR_QUERY "+qs+"\n";h+="void "+rs+"("+et+"* e);\n";h+="#define "+mac+"_FFI_ERROR_RELEASE "+rs+"\n\n";}
     // Readable aliases hide the digest-qualified ABI names; hosts should use these.
     for(const auto& name:agg_order){const std::string t=abi_cpp(name);h+="typedef struct "+t+" {";for(const auto& f:agg_map[name])h+=" "+f.c_type+" "+f.name+";";h+=" } "+t+";\n";h+="#define "+mac+"_"+name+" "+t+"\n";}
     if(!agg_order.empty())h+="\n";
@@ -358,8 +361,9 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
     for(const auto& st:p.statements){if(st->kind!=IRStmt::Kind::function_decl||!st->is_export_c||!st->owner.empty())continue;any=true;
         const bool ret_t=strut::abi_is_transport(st->return_type);
         const bool ret_a=is_ag(st->return_type);
+        const bool checked=!st->error_types.empty();
         if(ret_t){if(strut::abi_is_bytes(st->return_type))needs_free_bytes=true;else needs_free_string=true;}
-        h+=ret_t?std::string("void"):(ret_a?abi_cpp(st->return_type):std::string(c_abi_type(st->return_type)));
+        if(checked)h+="strut_ffi_status";else h+=ret_t?std::string("void"):(ret_a?abi_cpp(st->return_type):std::string(c_abi_type(st->return_type)));
         h+=" "+st->name+"(";
         bool first=true;auto sep=[&](){if(!first)h+=", ";first=false;};
         for(const auto& pm:st->parameters){
@@ -370,7 +374,8 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
             }else if(is_ag(pm.type.name)){sep();h+=abi_cpp(pm.type.name)+" "+pm.name;}
             else{std::string strut_cbr;std::vector<std::string> strut_cba;bool strut_iref;std::string strut_ict;if(strut::abi_callback_supported(pm.type.name,strut_cbr,strut_cba)){sep();h+=strut::abi_callback_type_name(mod,pm.type.name)+" "+pm.name;sep();h+="void* "+pm.name+"_ctx";}else if(strut::abi_pointer_supported(pm.type.name,strut_iref,strut_ict)){sep();h+=strut_ict+" "+pm.name;}else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}}
         }
-        if(ret_t){const char* el=strut::abi_transport_c_element(st->return_type);sep();h+=std::string(el)+"** out_data";sep();h+="size_t* out_len";}
+        if(checked){if(st->return_type!="void"){sep();h+=std::string(c_abi_type(st->return_type))+"* out_value";}sep();h+=strut::abi_error_type_name(mod)+"** out_error";}
+        else if(ret_t){const char* el=strut::abi_transport_c_element(st->return_type);sep();h+=std::string(el)+"** out_data";sep();h+="size_t* out_len";}
         if(first)h+="void";
         h+=");\n";
     }

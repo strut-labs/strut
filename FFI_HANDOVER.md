@@ -311,6 +311,44 @@ exports, with a generated header for hosts; confirm before implementing.
   (copy-in/out semantics), owning/weak pointers (opaque handle + retain/release later),
   callbacks (FFI-5), error ABI (FFI-6).
 
+## FFI-6 status (checked-error ABI, implemented locally, 0.0.5 dev)
+- **Model lowers the EXISTING Strut checked error** (`strut_checked_error`: `type` name,
+  `message`, `code`), not a parallel one. No `std::exception*`/`type_info`/`exception_ptr`/
+  RTTI crosses C.
+- **C ABI:** `typedef int32_t strut_ffi_status;` (0 success, nonzero failure) + a module-owned
+  **opaque error handle** `strut_ffi_<module>_error*` written to an `out_error` out-parameter.
+  Query: `<module>_ffi_error_query(e, &type,&type_len,&message,&message_len,&code)` (borrowed
+  views valid until release). Release: `<module>_ffi_error_release(e)`. Module-qualified
+  symbols + header macro aliases (same provenance rule as FFI-2; no generic release symbol, no
+  thread-local "last error"). Errors are explicit values, not TLS.
+- **Exported checked-error functions** (now accepted where previously rejected):
+  `export "C" function f(args) -> T : E` lowers to `strut_ffi_status f(args..., T* out_value,
+  <module>_ffi_error** out_error)` (no `out_value` for `void`). Success: status 0, value set,
+  error NULL. Failure: status != 0, concrete error (type/message/code) preserved. FFI-6 initial
+  scope requires a **primitive or void return** for checked exports (string/aggregate returns
+  deferred).
+- **Native -> Strut:** `extern "C" function native(args) -> T : E;` lowers to a C
+  status-returning call with a caller-provided native error descriptor
+  (`strut_ffi_<module>_native_error { code, type/type_len, message/message_len }`); a nonzero
+  status becomes `throw E(...)` inside Strut, catchable by `try/catch (E e)`. Symmetric with
+  the export direction.
+- **UNIVERSAL containment (closes the FFI-1 limitation):** every `export "C"` wrapper is now
+  `try { ... } catch (const strut_checked_error&) { <structured, if declared> } catch (...) {
+  std::abort(); }`. No C++ exception can unwind through any supported C ABI boundary. For a
+  function with no declared error channel an unexpected/internal exception is a contained
+  fatal boundary (never a fabricated success value). Declared checked errors use the
+  structured channel.
+- **Non-error exports unchanged:** functions with no declared checked errors keep their
+  existing direct signatures; only their bodies gained the containment boundary.
+- **Certified by** `strut_ffi_error_tests` (success/failure/type/message/code/release/void +
+  10k failure/release stress; C + C++ hosts; pure-C header) and
+  `strut_ffi_error_bidir_tests` (native status/error -> Strut `ParseError` catch: `30/bad/7`).
+- Strict local wall: CTest **28/28** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  **307/307** default + reactor; ASan error run clean.
+- **Deferred:** checked-error returns carrying string/bytes/aggregate; callback checked errors
+  (enable after this is solid); FFI-7 retained/cross-thread callbacks; FFI-8 embedding.
+  **Next: FFI-7+** as the campaign dictates.
+
 ## FFI-5 status (synchronous borrowed callbacks — COMPLETE, cross-platform certified)
 - **Cross-platform certification run `37810967154` (commit `3548707`): all five jobs green,
   with `strut_ffi_callback_tests` and `strut_ffi_callback_bidir_tests` demonstrably executed on
