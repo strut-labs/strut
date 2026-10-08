@@ -146,4 +146,33 @@ inline bool abi_pointer_supported(const std::string& name,bool& is_ref,std::stri
 inline bool abi_pointer_owning(const std::string& name){
     return (name.rfind("ptr<",0)==0&&name.back()=='>')||(name.rfind("weak_ptr<",0)==0&&name.back()=='>');
 }
+
+// FFI-5 callback ABI. A Strut function value `function<(args)->ret>` (canonical spelling) is a
+// synchronous, borrowed, same-thread callback. It lowers to a C function pointer whose first
+// parameter is an opaque `void* context`: `ret (*)(void* context, args...)`. Only primitive
+// int/uint/float parameters and a primitive-or-void return are accepted initially; checked
+// errors (` : `) and async (`future<`) callbacks are rejected. The C++ closure type never
+// crosses the ABI.
+inline bool abi_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
+    args.clear();ret.clear();
+    if(name.rfind("function<(",0)!=0||name.back()!='>')return false;
+    if(name.find("future<")!=std::string::npos)return false;
+    if(name.find(" : ")!=std::string::npos)return false; // checked errors (FFI-6)
+    const std::size_t arrow=name.rfind(")->");
+    if(arrow==std::string::npos)return false;
+    const std::string argpart=name.substr(10,arrow-10);
+    ret=name.substr(arrow+3,name.size()-1-(arrow+3));
+    if(!argpart.empty()){
+        std::size_t p=0;
+        while(true){std::size_t c=argpart.find(',',p);std::string a=(c==std::string::npos)?argpart.substr(p):argpart.substr(p,c-p);args.push_back(a);if(c==std::string::npos)break;p=c+1;}
+    }
+    for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
+    if(ret!="void"&&!abi_type_info(ret).supported)return false;
+    return true;
+}
+// Deterministic callback typedef name, derived from the callback signature (not discovery
+// order), scoped by the digest-qualified module namespace.
+inline std::string abi_callback_type_name(const std::string& module,const std::string& sig){
+    return "strut_ffi_"+module+"_cb_"+abi_digest128(sig).substr(0,16);
+}
 } // namespace strut

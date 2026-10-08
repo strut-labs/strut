@@ -350,6 +350,10 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
     // Readable aliases hide the digest-qualified ABI names; hosts should use these.
     for(const auto& name:agg_order){const std::string t=abi_cpp(name);h+="typedef struct "+t+" {";for(const auto& f:agg_map[name])h+=" "+f.c_type+" "+f.name+";";h+=" } "+t+";\n";h+="#define "+mac+"_"+name+" "+t+"\n";}
     if(!agg_order.empty())h+="\n";
+    std::vector<std::string> cbs;
+    for(const auto& st:p.statements)if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->owner.empty())for(const auto& pm:st->parameters){std::string strut_cbr;std::vector<std::string> strut_cba;if(strut::abi_callback_supported(pm.type.name,strut_cbr,strut_cba)&&std::find(cbs.begin(),cbs.end(),pm.type.name)==cbs.end())cbs.push_back(pm.type.name);}
+    for(const auto& sig:cbs){std::string strut_cbr;std::vector<std::string> strut_cba;strut::abi_callback_supported(sig,strut_cbr,strut_cba);h+="typedef "+(strut_cbr=="void"?std::string("void"):std::string(strut::abi_type_info(strut_cbr).c_type))+" (*"+strut::abi_callback_type_name(mod,sig)+")(void* context";for(const auto& t:strut_cba)h+=", "+std::string(strut::abi_type_info(t).c_type);h+=");\n";}
+    if(!cbs.empty())h+="\n";
     bool any=false,needs_free_string=false,needs_free_bytes=false;
     for(const auto& st:p.statements){if(st->kind!=IRStmt::Kind::function_decl||!st->is_export_c||!st->owner.empty())continue;any=true;
         const bool ret_t=strut::abi_is_transport(st->return_type);
@@ -364,7 +368,7 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
                 sep();h+=std::string("const ")+el+"* "+pm.name+"_data";
                 sep();h+="size_t "+pm.name+"_len";
             }else if(is_ag(pm.type.name)){sep();h+=abi_cpp(pm.type.name)+" "+pm.name;}
-            else{bool strut_iref;std::string strut_ict;if(strut::abi_pointer_supported(pm.type.name,strut_iref,strut_ict)){sep();h+=strut_ict+" "+pm.name;}else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}}
+            else{std::string strut_cbr;std::vector<std::string> strut_cba;bool strut_iref;std::string strut_ict;if(strut::abi_callback_supported(pm.type.name,strut_cbr,strut_cba)){sep();h+=strut::abi_callback_type_name(mod,pm.type.name)+" "+pm.name;sep();h+="void* "+pm.name+"_ctx";}else if(strut::abi_pointer_supported(pm.type.name,strut_iref,strut_ict)){sep();h+=strut_ict+" "+pm.name;}else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}}
         }
         if(ret_t){const char* el=strut::abi_transport_c_element(st->return_type);sep();h+=std::string(el)+"** out_data";sep();h+="size_t* out_len";}
         if(first)h+="void";

@@ -309,4 +309,39 @@ exports, with a generated header for hosts; confirm before implementing.
   **302/302** default + reactor; ASan clean.
 - **Deferred:** nested aggregates/tuples (later FFI-3 substep), pointers to aggregates
   (copy-in/out semantics), owning/weak pointers (opaque handle + retain/release later),
-  callbacks (FFI-5), error ABI (FFI-6). **Next: FFI-5+** as the campaign dictates.
+  callbacks (FFI-5), error ABI (FFI-6).
+
+## FFI-5 status (synchronous borrowed callbacks, implemented locally, 0.0.5 dev)
+- **One C callback representation, both directions.** A Strut function value
+  `function<(args)->ret>` (canonical spelling) lowers to a C function pointer whose first
+  parameter is an opaque `void* context`: `ret (*)(void* context, args...)`. The C++ closure
+  type (`std::function`) NEVER crosses the ABI. Generated typedef is
+  `strut_ffi_<module>_cb_<sigdigest>` (signature-derived, deterministic).
+- **Initial surface:** primitive `int/uint` (fixed-width) and `double_32`/`double_64`
+  parameters; primitive-or-`void` return; synchronous; same-thread; **borrowed for the
+  duration of the foreign call only**. Checked-error callbacks (FFI-6), async/`future`
+  callbacks (FFI-7), callback returns, and non-primitive callback parameters/returns are
+  rejected with specific diagnostics.
+- **native -> Strut (A):** an exported function may take a callback; the wrapper builds a
+  `std::function` capturing the C fn pointer + context and invokes it synchronously. Certified
+  by `strut_ffi_callback_tests` (repeated invocation, context round-trip, C + C++ hosts,
+  pure-C typedef).
+- **Strut -> native (B):** an `extern "C"` declaration may take a callback; the compiler emits
+  a type-erased trampoline template `strut_ffi_cb_trampoline<R,A...>` and passes a
+  stack-scoped `std::function` context (the call is wrapped in an IIFE so the context is an
+  lvalue alive for the call). Certified by `strut_ffi_callback_bidir_tests` (capturing lambda
+  `x => x*base`, base=3 => `21`).
+- **Calling convention:** ordinary platform C calling convention throughout; the generated
+  typedef, trampoline, and native fixture declaration all use it (no `__stdcall`).
+- **Exception containment at the callback boundary (temporary policy):** the trampoline
+  `catch(...)`es and calls `std::abort()` (deterministic process failure) — an unexpected
+  Strut/C++ exception never unwinds through native C frames, and is not silently turned into a
+  fabricated result. Structured propagation is deferred to FFI-6; this is not the FFI-6
+  contract.
+- **Lifetime contract (prominent):** callbacks and their context are **borrowed for the
+  duration of the foreign call only** — native code MUST NOT retain the function pointer or
+  context for later use; retained/cross-thread callbacks are FFI-7.
+- Strict local wall: CTest **26/26** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+  **307/307** default + reactor; ASan callback run clean.
+- **Next: FFI-6** (checked-error propagation both directions + host error retrieval) or the
+  campaign's next evidenced step.
