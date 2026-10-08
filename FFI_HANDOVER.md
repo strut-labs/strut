@@ -201,7 +201,12 @@ exports, with a generated header for hosts; confirm before implementing.
   aggregates/structs-by-value (FFI-3), generic opaque object handles (deferred until a real
   exported resource needs one), structured error/exception containment (FFI-6), a large FFI
   benchmark campaign. `bool` remains deferred.
-## FFI-3 status (plain POD aggregates, implemented locally, 0.0.5 dev)
+## FFI-3 status (plain POD aggregates — COMPLETE, cross-platform certified, 0.0.5 dev)
+- **Cross-platform certification run `37777610235` (commit `732f63e`): all five jobs green,
+  with `strut_ffi_aggregate_tests` demonstrably executed and passing on every platform** —
+  macOS ARM64 AppleClang (1.69s), Windows x64 MSVC (3.56s), linux-x64-gcc (1.25s), plus
+  linux-x64-clang and linux-arm64-gcc. FFI-1/FFI-2 CTests remained green in the same run
+  (export 1.40s, multilib 2.20s on linux-x64-gcc).
 - **ABI-safe aggregate rule (explicit; `abi_aggregate_safe` in `include/strut/abi_type.h`).**
   A user struct is ABI-safe for `export "C"` iff: not generic, no bases, no private fields,
   and **every field is an ABI primitive** (fixed-width int/uint or IEEE float). `string`/
