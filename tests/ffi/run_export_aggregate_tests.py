@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-aggregate-") as td:
     if os.name == "nt":
         lib = td / "export_agg.dll"; implib = td / "export_agg.lib"
         subprocess.run([str(compiler), "--shared", "--emit-c-header", str(header),
-                        "-o", str(lib), str(root / "export_agg.p")], check=True)
+                        "-o", str(lib), "export_agg.p"], check=True, cwd=str(root))
         assert header.is_file() and lib.is_file() and implib.is_file(), "artifacts missing"
         text = header.read_text()
         for decl in decls:
@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-aggregate-") as td:
         ext = ".dylib" if platform.system() == "Darwin" else ".so"
         lib = td / ("libexport_agg" + ext)
         subprocess.run([str(compiler), "--shared", "--emit-c-header", str(header),
-                        "-o", str(lib), str(root / "export_agg.p")], check=True)
+                        "-o", str(lib), "export_agg.p"], check=True, cwd=str(root))
         assert header.is_file() and lib.is_file(), "artifacts missing"
         text = header.read_text()
         for decl in decls:

@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-multilib-") as td:
         for src, out in libs:
             header = td / (src + ".h"); lib = td / (out + ".dll"); implib = td / (out + ".lib")
             subprocess.run([str(compiler), "--shared", "--emit-c-header", str(header),
-                            "-o", str(lib), str(root / (src + ".p"))], check=True)
+                            "-o", str(lib), src + ".p"], check=True, cwd=str(root))
             assert header.is_file() and lib.is_file() and implib.is_file(), f"artifacts missing for {src}"
             implibs.append(implib)
         exe = td / "host.exe"
@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-multilib-") as td:
         for src, out in libs:
             header = td / (src + ".h"); lib = td / ("lib" + out + ext)
             subprocess.run([str(compiler), "--shared", "--emit-c-header", str(header),
-                            "-o", str(lib), str(root / (src + ".p"))], check=True)
+                            "-o", str(lib), src + ".p"], check=True, cwd=str(root))
             assert header.is_file() and lib.is_file(), f"artifacts missing for {src}"
         exe = td / "host"
         cc = os.environ.get("CC", "cc")

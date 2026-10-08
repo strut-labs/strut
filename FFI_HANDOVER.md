@@ -248,17 +248,25 @@ exports, with a generated header for hosts; confirm before implementing.
 - **Compile-time ABI POD assertions.** For every generated aggregate the emitted C++ asserts
   `std::is_standard_layout` and `std::is_trivially_copyable` on the ABI POD (the contract) —
   not on the internal Strut struct, whose representation is free to change.
-- **Module/C-name collision safety (no probabilistic surface).** Canonical ABI module identity
-  is the source path (already absolute and '/'-normalized), so modules with the same file name
-  in different directories are distinct. The ABI namespace = readable sanitized prefix + a
-  **128-bit deterministic digest of that identity** (`abi_digest128`: two FNV-1a-64 passes
-  over the identity and its reverse — fixed algorithm/input/output, not `std::hash`), ALWAYS
-  present. There is no 32-bit surface and no sanitization-form ambiguity (`foo-bar` vs
-  `foo_bar` vs `slug_a_deadbeef` are all distinct). The generated header exposes readable
-  **macro aliases** (`EXPORT_AGG_Pair`, `EXPORT_LIB_FFI_FREE_STRING`, …) so hosts never type
-  the digest. Certified by `strut_ffi_module_slug_tests`. (Reproducibility: the identity is the
-  build's absolute path; ship header+library together, or build from a stable path.)
-- Strict local wall: CTest **23/23** normal + GCC/Clang -Werror + ASan/UBSan; regressions
+- **ABI module identity is LOGICAL and checkout-independent.** Canonical identity is the
+  source path **as provided to the compiler** (project/package-relative when builds invoke with
+  relative paths), NEVER the build machine's absolute path — so the same project built under
+  different checkout roots / CI workspaces / package-cache paths yields identical public ABI
+  names. The ABI namespace = readable sanitized prefix + an always-present **128-bit
+  deterministic digest** of that logical identity (`abi_digest128`: two FNV-1a-64 passes,
+  fixed algorithm/input/output, not `std::hash`). This is a **deterministic strongly-
+  disambiguated namespace, not an injectivity proof** — an accidental collision is non-credible
+  but not impossible. No 32-bit surface; no sanitization-form ambiguity (`foo-bar`/`foo_bar`/
+  `slug_a_deadbeef` distinct).
+- **Readable, module-qualified aliases; unique include guards.** The generated header exposes
+  aliases derived from the full logical id (`PKGA_UTIL_Pair`, `MODULE_A_UTIL_FFI_FREE_STRING`)
+  so hosts never type the digest AND two headers that both define `Pair` (or both own results)
+  coexist without collision. The include guard is also derived from the digest-qualified module
+  slug, so two same-named sources in different modules do not swallow each other's declarations.
+  Certified by `strut_ffi_module_slug_tests` and `strut_ffi_abi_identity_tests` (same module in
+  two different absolute roots ⇒ identical headers; two `util.p` headers with `Pair` compile
+  together under `-Wall -Wextra -Werror` / MSVC `/W4 /WX`).
+- Strict local wall: CTest **24/24** normal + GCC/Clang -Werror + ASan/UBSan; regressions
   **302/302** default + reactor; clean under ASan + leak detection.
 ## FFI-4 status (borrowed primitive pointers/references — COMPLETE, cross-platform certified)
 - **Cross-platform certification run `37792685458` (commit `97c2ba8`, after the MSVC C4456

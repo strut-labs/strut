@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-export-") as td:
     if os.name == "nt":
         lib = td / "export_lib.dll"; implib = td / "export_lib.lib"
         subprocess.run([str(compiler), "--shared", "--emit-c-header", str(header),
-                        "-o", str(lib), str(root / "export_lib.p")], check=True)
+                        "-o", str(lib), "export_lib.p"], check=True, cwd=str(root))
         assert header.is_file(), "generated C header missing"
         assert lib.is_file(), "DLL missing"
         assert implib.is_file(), "import library missing"
@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-export-") as td:
         ext = ".dylib" if platform.system() == "Darwin" else ".so"
         lib = td / ("libexport_lib" + ext)
         subprocess.run([str(compiler), "--shared", "--emit-c-header", str(header),
-                        "-o", str(lib), str(root / "export_lib.p")], check=True)
+                        "-o", str(lib), "export_lib.p"], check=True, cwd=str(root))
         assert header.is_file() and lib.is_file(), "artifacts missing"
         text = header.read_text()
         for decl in decls:

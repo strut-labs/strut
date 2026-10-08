@@ -24,13 +24,13 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-agg-bidir-") as td:
         subprocess.run(["cl", "/nologo", "/c", str(src), "/Fo:" + str(td / "native.obj")], check=True)
         subprocess.run(["lib", "/nologo", "/OUT:" + str(td / "ffi_nativeagg.lib"), str(td / "native.obj")], check=True)
         exe = td / "prog.exe"
-        subprocess.run([str(compiler), "--lib", "ffi_nativeagg", "--lib-path", str(td), "-o", str(exe), str(prog)], check=True)
+        subprocess.run([str(compiler), "--lib", "ffi_nativeagg", "--lib-path", str(td), "-o", str(exe), "export_agg_extern.p"], check=True, cwd=str(root))
     else:
         cc = os.environ.get("CC", "cc")
         subprocess.run([cc, "-c", str(src), "-o", str(td / "native.o")], check=True)
         subprocess.run(["ar", "rcs", str(td / "libffi_nativeagg.a"), str(td / "native.o")], check=True)
         exe = td / "prog"
-        subprocess.run([str(compiler), "--lib", "ffi_nativeagg", "--lib-path", str(td), "-o", str(exe), str(prog)], check=True)
+        subprocess.run([str(compiler), "--lib", "ffi_nativeagg", "--lib-path", str(td), "-o", str(exe), "export_agg_extern.p"], check=True, cwd=str(root))
     out = subprocess.check_output([str(exe)], text=True)
     if out != expected:
         raise SystemExit(f"unexpected bidir output: {out!r}")

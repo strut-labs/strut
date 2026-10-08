@@ -74,7 +74,7 @@ struct IRStmt {
     std::string overload_name;
 };
 
-struct IRProgram { std::vector<IRStmtPtr> statements; std::string source_path; std::vector<std::string> standard_modules; };
+struct IRProgram { std::vector<IRStmtPtr> statements; std::string source_path; std::string module_id; std::vector<std::string> standard_modules; };
 
 struct IRResult {
     IRProgram program;

@@ -62,34 +62,42 @@ inline std::string abi_digest128(const std::string& canonical){
     const std::uint64_t h2=abi_fnv1a64(rev,1099511628211ULL);
     return abi_hex64(h1)+abi_hex64(h2);
 }
-// Canonical ABI module identity = the (already absolute, '/'-normalized) source path. This
-// keeps modules with the same file name in different directories distinct. ABI namespace =
-// sanitized readable prefix + 128-bit digest of that identity; the digest is ALWAYS present,
-// so there is no probabilistic 32-bit surface and no sanitization-form ambiguity (e.g.
-// `foo-bar` vs `foo_bar`, or `slug_a_deadbeef`, cannot collide). Names hosts should reference
-// are the readable macro aliases emitted by the generated header; the digest stays behind
-// them. (Reproducibility note: the identity is the build's absolute path; ship the generated
-// header with its library, or build from a stable path, for stable names.)
-inline std::string abi_module_ident(const std::string& source_path){
-    std::size_t slash=source_path.find_last_of("/\\");
-    std::string base=(slash==std::string::npos)?source_path:source_path.substr(slash+1);
-    std::size_t dot=base.find_last_of('.');
-    if(dot!=std::string::npos)base=base.substr(0,dot);
+// Canonical ABI module identity is the LOGICAL module path AS PROVIDED to the compiler
+// (project/package-relative when builds invoke with relative source paths) -- NEVER the
+// build machine's absolute filesystem path. This makes the same project built under different
+// checkout roots / CI workspaces / package-cache paths produce the SAME public ABI names.
+// The ABI namespace = readable sanitized prefix + an always-present 128-bit deterministic
+// digest of that logical identity (no 32-bit surface; no sanitization-form ambiguity). This is
+// a deterministic STRONGLY-DISAMBIGUATED namespace, NOT a proof of injectivity (two 64-bit
+// FNV-1a passes make an accidental collision non-credible, not impossible). Hosts reference
+// the readable module-qualified macro aliases emitted by the generated header, not the digest.
+// Callers must pass a stable (typically relative) source path for reproducible ABI names.
+inline std::string abi_sanitize(const std::string& s,bool keep_case,const char* fallback){
     std::string out;
-    for(char c:base){out+=((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')?c:'_';}
-    if(out.empty()||(out[0]>='0'&&out[0]<='9'))out="m_"+out;
+    for(char c:s){out+=((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')?c:'_';}
+    if(out.empty()||(out[0]>='0'&&out[0]<='9'))out=std::string(fallback)+out;
+    if(!keep_case)for(char& c:out)c=(c>='a'&&c<='z')?(char)(c-'a'+'A'):c;
     return out;
 }
-inline std::string abi_module_slug(const std::string& source_path){
-    return abi_module_ident(source_path)+"_"+abi_digest128(source_path);
+inline std::string abi_module_ident(const std::string& id){
+    std::size_t slash=id.find_last_of("/\\");
+    std::string base=(slash==std::string::npos)?id:id.substr(slash+1);
+    std::size_t dot=base.find_last_of('.');
+    if(dot!=std::string::npos)base=base.substr(0,dot);
+    return abi_sanitize(base,true,"m_");
 }
-// Readable, digest-free macro/identifier stem (uppercased). Distinct modules normally have
-// distinct stems; if two do not, their symbols still differ via the digest and hosts can use
-// the concrete symbol from the header.
-inline std::string abi_module_macro(const std::string& source_path){
-    std::string s=abi_module_ident(source_path);
-    for(char& c:s)c=(c>='a'&&c<='z')?(char)(c-'a'+'A'):c;
-    return s;
+inline std::string abi_module_slug(const std::string& id){
+    return abi_module_ident(id)+"_"+abi_digest128(id);
+}
+// Module-qualified, digest-free, CHECKOUT-INDEPENDENT macro prefix. Uses the full logical id
+// (directory components included) so `pkgA/util.p` and `pkgB/util.p` -- and two headers that
+// both define `Pair` -- get distinct aliases (`PKGA_UTIL_Pair` vs PKGB_UTIL_Pair`).
+inline std::string abi_module_macro(const std::string& id){
+    std::string raw=id;
+    const std::size_t slash=raw.find_last_of("/\\");
+    const std::size_t dot=raw.find_last_of('.');
+    if(dot!=std::string::npos&&(slash==std::string::npos||slash<dot))raw=raw.substr(0,dot);
+    return abi_sanitize(raw,false,"M_");
 }
 inline std::string abi_release_symbol(const std::string& module,const std::string& kind){
     return module+"_ffi_free_"+kind;
