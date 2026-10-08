@@ -4,11 +4,16 @@ import re
 import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
-expected = sys.argv[1].removeprefix("v") if len(sys.argv) > 1 else "0.0.3"
 
 cmake = (root / "CMakeLists.txt").read_text()
 header = (root / "include/strut/version.h").read_text()
 notes = (root / "RELEASE_NOTES.md").read_text()
+
+if len(sys.argv) > 1:
+    expected = sys.argv[1].removeprefix("v")
+else:
+    match = re.search(r"project\(strut VERSION ([0-9]+\.[0-9]+\.[0-9]+)", cmake)
+    expected = match.group(1) if match else "0.0.3"
 
 checks = {
     "CMake project version": rf"project\(strut VERSION {re.escape(expected)}\b",
