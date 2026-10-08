@@ -1067,6 +1067,7 @@ inline void strut_fs_touch(const strut_string& p){std::ofstream f(strut_fs_path(
 
 void emit_entry_support(std::ostringstream& o){o<<R"CPP(
 #include <cstdio>
+#include <stdio.h>
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
