@@ -91,15 +91,32 @@ exports, with a generated header for hosts; confirm before implementing.
   visibility macro (`__declspec(dllexport)` MSVC / `__attribute__((visibility("default")))`
   GCC/Clang / empty otherwise).
 - **Sema ABI validation:** exports must be free, non-async, non-generic, have a body; the
-  return/parameter types must be ABI-supported primitives (void, bool, fixed-width
-  ints, float_32/float_64/double_*). Checked-error exports are rejected with a deliberate
-  diagnostic until the FFI error ABI (FFI-6). Unsupported (string/bytes/aggregates/…)
-  are rejected at sema — never a questionable ABI.
+  return/parameter types must be ABI-supported primitives. **bool is DEFERRED** from the
+  FFI-1 exported ABI (C `_Bool`/C++ `bool` cross-toolchain identity not yet certified).
+  Supported: void, int/int_8/16/32/64, uint/uint_8/16/32/64, double_32 (->C float),
+  double_64 (->C double). Checked-error exports are rejected with a deliberate diagnostic
+  until the FFI error ABI (FFI-6); non-ABI types (string/bytes/aggregates/…) are rejected
+  at sema. **Duplicate exported C symbol names are rejected** (no overloading across C ABI).
+- **Single ABI type table:** `include/strut/abi_type.h` (`abi_type_info`) is the one source
+  of truth used by BOTH sema validation and C-header generation (no drift; the exhaustive
+  primitive fixture caught a `double_32`/`float_32` naming mistake early).
+- **`export` composition:** `export` is NOT an existing Strut construct in this repo (not a
+  keyword; `private` exists for struct methods; the roadmap's "package/export/private
+  boundary" is a future item). `export "C"` is parsed with a guarded lookahead
+  (`export` + string `"C"` + `function`) so it composes with a future ordinary `export`
+  and does not consume a bare `export`.
 - **Artifacts:** `strut --shared -o libfoo.so foo.p` builds a shared library; `strut
   --emit-c-header foo.h foo.p` writes a generated host header (C and C++ consumable).
-- **Proof:** `tests/ffi/run_export_tests.py` builds the library + header, compiles an
-  INDEPENDENT C host and C++ host against the generated header, links the library, and
-  asserts results (add/mul/scale/bool). Passing locally on Linux.
+- **Proof:** `tests/ffi/run_export_tests.py` builds the library + header, checks the
+  generated declarations (incl. zero-arg `f(void)` and include-guard/multi-inclusion),
+  compiles INDEPENDENT C and C++ hosts against the generated header, links the library,
+  and asserts add/mul/double_32/double_64/uint_8/void results. Passing locally on Linux.
+- **Status: FFI-1 CORE IMPLEMENTED; CROSS-PLATFORM CERTIFICATION PENDING** (Linux green
+  locally; macOS/Windows export round-trip + MSVC proper DLL/import-lib mode require CI).
+- **Exception containment:** FFI-1 rejects declared checked errors; exported primitive
+  functions are expected non-fallible. A catch-all/`noexcept` containment policy and the
+  real FFI error ABI are deferred to FFI-6; FFI-1's restricted guarantee is documented
+  (no C++ exception must cross the C ABI).
 - **ABI contract status:** C ABI **under development** (not yet frozen/versioned); freeze
   at FFI-8/9 after real consumers. Bool uses C `bool` (1 byte) and is included.
 - **Next (FFI-1 remainder):** cross-platform CI fixtures (AppleClang/MSVC) for the export

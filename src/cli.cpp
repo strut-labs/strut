@@ -19,6 +19,7 @@
 #include "strut/lexer.h"
 #include "strut/ir.h"
 #include "strut/lsp.h"
+#include "strut/abi_type.h"
 #include "strut/codegen.h"
 #include "strut/diagnostic.h"
 #include "strut/formatter.h"
@@ -332,7 +333,7 @@ void collect_embed_dependencies(const std::filesystem::path& source_path,std::ve
     for(std::sregex_iterator it(text.begin(),text.end(),pattern),end;it!=end;++it){std::filesystem::path p=(*it)[2].str();if(p.is_relative())p=std::filesystem::current_path()/p;std::error_code ec;if(std::filesystem::is_directory(p,ec)){for(const auto&e:std::filesystem::recursive_directory_iterator(p,ec)){if(ec)break;if(e.is_regular_file())dependencies.push_back(std::filesystem::absolute(e.path()));}}else dependencies.push_back(std::filesystem::absolute(p));}
 }
 
-static const char* c_abi_type(const std::string& name){if(name=="void")return "void";if(name=="bool")return "bool";if(name=="int"||name=="int_32")return "int32_t";if(name=="int_8")return "int8_t";if(name=="int_16")return "int16_t";if(name=="int_64")return "int64_t";if(name=="uint"||name=="uint_32")return "uint32_t";if(name=="uint_8")return "uint8_t";if(name=="uint_16")return "uint16_t";if(name=="uint_64")return "uint64_t";if(name=="float_32")return "float";if(name=="float_64"||name=="double_64")return "double";return "void";}
+static const char* c_abi_type(const std::string& name){return strut::abi_type_info(name).c_type;}
 static std::string build_c_header(const IRProgram& p,const std::string& guard){
     std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stdbool.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
     bool any=false;

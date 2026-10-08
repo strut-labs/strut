@@ -4,10 +4,18 @@ export "C" function ff_add(int a, int b) -> int {
 export "C" function ff_mul(int_64 a, int_64 b) -> int_64 {
     return a * b;
 }
-export "C" function ff_scale(double_64 value, double_64 factor) -> double_64 {
+export "C" function ff_scale(double_32 value, double_32 factor) -> double_32 {
     return value * factor;
 }
-export "C" function ff_negate(bool flag) -> int {
-    if (flag) { return 1; }
-    return 0;
+export "C" function ff_scale64(double_64 value, double_64 factor) -> double_64 {
+    return value * factor;
+}
+export "C" function ff_byte(uint_8 value) -> uint_8 {
+    return value;
+}
+export "C" function ff_zero() -> int {
+    return 7;
+}
+export "C" function ff_note(int value) -> void {
+    return;
 }
