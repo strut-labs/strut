@@ -311,7 +311,11 @@ exports, with a generated header for hosts; confirm before implementing.
   (copy-in/out semantics), owning/weak pointers (opaque handle + retain/release later),
   callbacks (FFI-5), error ABI (FFI-6).
 
-## FFI-5 status (synchronous borrowed callbacks, implemented locally, 0.0.5 dev)
+## FFI-5 status (synchronous borrowed callbacks — COMPLETE, cross-platform certified)
+- **Cross-platform certification run `37810967154` (commit `3548707`): all five jobs green,
+  with `strut_ffi_callback_tests` and `strut_ffi_callback_bidir_tests` demonstrably executed on
+  every platform** — macOS ARM64 AppleClang (3.84s / 3.24s), Windows x64 MSVC (2.62s / 2.47s),
+  linux-x64-gcc (2.04s / 1.95s), plus linux-x64-clang and linux-arm64-gcc.
 - **One C callback representation, both directions.** A Strut function value
   `function<(args)->ret>` (canonical spelling) lowers to a C function pointer whose first
   parameter is an opaque `void* context`: `ret (*)(void* context, args...)`. The C++ closure
