@@ -201,12 +201,12 @@ exports, with a generated header for hosts; confirm before implementing.
   aggregates/structs-by-value (FFI-3), generic opaque object handles (deferred until a real
   exported resource needs one), structured error/exception containment (FFI-6), a large FFI
   benchmark campaign. `bool` remains deferred.
-## FFI-3 status (one POD aggregate ABI, both directions — closure, cross-platform cert pending)
-- **One explicit primitive-only POD aggregate C ABI shared by Strut->native and native->Strut.**
-  The native->Strut export direction was certified in run `37777610235` (commit `732f63e`).
-  The bidirectional closure (Strut->native `extern "C"` through the same ABI POD + module-slug
-  disambiguation + ABI-POD static assertions) is implemented and locally certified; its
-  cross-platform run id is recorded here once verified (see completion note at end).
+## FFI-3 status (one POD aggregate ABI, both directions — COMPLETE, cross-platform certified)
+- **One explicit primitive-only POD aggregate C ABI shared by Strut->native and native->Strut,
+  certified across supported platforms (run `37783089417`, commit `d0ca784`, all five jobs
+  green).** The bidirectional closure tests executed on every platform: macOS ARM64 AppleClang
+  (bidir 2.07s / slug 6.29s), Windows x64 MSVC (bidir 2.60s / slug 7.57s), linux-x64-gcc
+  (bidir 1.70s / slug 4.85s), plus linux-x64-clang and linux-arm64-gcc.
 - **Earlier native->Strut certification run `37777610235` (commit `732f63e`): all five jobs green,
   with `strut_ffi_aggregate_tests` demonstrably executed and passing on every platform** —
   macOS ARM64 AppleClang (1.69s), Windows x64 MSVC (3.56s), linux-x64-gcc (1.25s), plus
