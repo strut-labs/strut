@@ -34,6 +34,18 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-ident-") as td:
     assert headers[0] == headers[1], "absolute build path leaked into generated ABI names"
     assert "#define PROG_Pair " in headers[0], "expected module-qualified aggregate alias"
 
+    # ---- 1b. equivalent logical path spellings -> same identity ----
+    d = dirs[0]
+    (d / "sub").mkdir(exist_ok=True)
+    spellings = ["prog.p", "./prog.p", "sub/../prog.p"]
+    eq = []
+    for k, sp in enumerate(spellings):
+        h = d / ("eq%d.h" % k)
+        subprocess.run([str(compiler), "--shared", "--emit-c-header", str(h),
+                        "-o", str(d / ("libeq%d." % k + sh)), sp], check=True, cwd=str(d))
+        eq.append(h.read_text())
+    assert eq[0] == eq[1] == eq[2], "equivalent logical path spellings produced different ABI names"
+
     # ---- 2. two headers with the same struct short name coexist ----
     pkgs = td / "pkgs"
     for mod, fn, x, y in [("module_a", "a_pair", 1, 2), ("module_b", "b_pair", 3, 4)]:

@@ -392,7 +392,7 @@ int compile_source(const std::filesystem::path& path, const std::filesystem::pat
     for(const auto& d:checked.diagnostics) err<<rich_diagnostic(path,d)<<'\n';
     for(const auto& w:checked.warnings) err<<rich_diagnostic(path,w,true)<<'\n';
     if(!checked.ok())return 1;
-    const auto ir_begin=clock::now(); IRLowerer lowerer; auto lowered=lowerer.lower(program); const auto ir_end=clock::now(); if(!lowered.ok())return 1; lowered.program.source_path=std::filesystem::absolute(path).generic_string(); lowered.program.module_id=path.generic_string();
+    const auto ir_begin=clock::now(); IRLowerer lowerer; auto lowered=lowerer.lower(program); const auto ir_end=clock::now(); if(!lowered.ok())return 1; lowered.program.source_path=std::filesystem::absolute(path).generic_string(); {std::string strut_mid=path.generic_string();for(char&strut_c:strut_mid)if(strut_c=='\\')strut_c='/';strut_mid=std::filesystem::path(strut_mid).lexically_normal().generic_string();lowered.program.module_id=strut_mid;}
     if(!emit_c_header.empty()){std::string guard="STRUT_FFI_";for(char c:strut::abi_module_slug(lowered.program.module_id.empty()?lowered.program.source_path:lowered.program.module_id))guard+=(std::isalnum((unsigned char)c)?(char)std::toupper((unsigned char)c):'_');guard+="_H";std::ofstream hf(emit_c_header,std::ios::binary|std::ios::trunc);if(!hf){err<<path.string()<<": error: cannot write C header to "<<emit_c_header.string()<<'\n';return 1;}hf<<build_c_header(lowered.program,guard);}
     CppBackend backend; std::string backend_error;
     auto ms=[](auto a,auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
