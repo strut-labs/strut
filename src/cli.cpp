@@ -354,8 +354,9 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
         if(first)h+="void";
         h+=");\n";
     }
-    if(needs_free_string)h+="\nvoid strut_ffi_free_string(char* data);\n";
-    if(needs_free_bytes)h+="\nvoid strut_ffi_free_bytes(uint8_t* data);\n";
+    const std::string mod=strut::abi_module_slug(p.source_path);
+    if(needs_free_string)h+="\nvoid "+strut::abi_release_symbol(mod,"string")+"(char* data);\n";
+    if(needs_free_bytes)h+="\nvoid "+strut::abi_release_symbol(mod,"bytes")+"(uint8_t* data);\n";
     h+="\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n";
     if(!any)h="#ifndef "+guard+"\n#define "+guard+"\n#endif\n";
     return h;

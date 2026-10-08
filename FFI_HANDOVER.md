@@ -62,7 +62,9 @@ documents the unsafe boundary.
 - FFI-0 (this doc): baseline matrix + ABI/lifetime/error/callback contract + plan.
 - FFI-1: **export** — Strut builds a shared library exposing C ABI entry points
   (`export "C" function`/equivalent or a generated C shim); a C host compiles/links/calls
-  it. Round-trips primitives + plain-layout aggregate + checked error. Cross-platform.
+  it. Round-trips primitives only (aggregates are FFI-3; checked-error propagation is
+  FFI-6). Cross-platform. [Historical: the original FFI-1 plan over-scoped aggregate +
+  checked error; the checkpoint was deliberately narrowed.]
 - FFI-2: strings/bytes/handles with explicit ownership + free functions.
 - FFI-3: structs/tuples/aggregates formalization + ABI-safe rule enforcement.
 - FFI-4: pointers/nullable/references.
@@ -136,7 +138,8 @@ exports, with a generated header for hosts; confirm before implementing.
   checkpoint (FFI-6), which must guarantee nothing C++ unwinds into a C caller. Callers must
   treat exported functions as non-throwing by construction only.
 - **ABI contract status:** C ABI **under development** (not yet frozen/versioned); freeze
-  at FFI-8/9 after real consumers. Bool uses C `bool` (1 byte) and is included.
+  at FFI-8/9 after real consumers. `bool` is **deferred** (not exported, not an aggregate
+  field) until its cross-toolchain ABI identity is explicitly certified.
 ## FFI-2 status (strings/bytes — COMPLETE, cross-platform certified, 0.0.5 dev)
 - **Cross-platform certification run `37767470374` (commit `a5c8c28`): all five jobs green, with
   `strut_ffi_export_tests` demonstrably executed and passing on every platform** — macOS ARM64
@@ -160,14 +163,24 @@ exports, with a generated header for hosts; confirm before implementing.
   for bytes) — chosen deliberately over returning a struct by value so FFI-3's
   aggregate-by-value checkpoint is not pre-empted. The buffer is allocated by the Strut
   library (`new[]` inside the library) and released only through an exported Strut function
-  from the SAME library: `void strut_ffi_free_string(char*)` /
-  `void strut_ffi_free_bytes(uint8_t*)`. Hosts must never `free()`/`delete[]`/`LocalFree()`
-  these. This makes allocation/free provenance safe across the Windows DLL/host CRT
-  boundary.
-- **Empty/null.** Canonical empty is `data == NULL, len == 0` for both input and output, for
-  both string and bytes. `NULL` + non-zero length is invalid host use (documented
-  precondition; defensively treated as empty rather than dereferenced). `free(NULL)` is safe.
-  FFI-2 does not yet encode optional/nullability semantics (no NULL-means-null).
+  from the SAME library: `void <module>_ffi_free_string(char*)` /
+  `void <module>_ffi_free_bytes(uint8_t*)`, where `<module>` is a deterministic slug derived
+  from the source module name (same value in codegen and header; overridable later). Hosts
+  must never `free()`/`delete[]`/`LocalFree()` these. This makes allocation/free provenance
+  safe across the Windows DLL/host CRT boundary. **Why module-qualified rather than a generic
+  `strut_ffi_free_*`:** two independently built Strut shared libraries loaded into one host
+  would otherwise each export the same generic name — a duplicate-symbol failure at the MSVC
+  import-library link step and interposition on ELF/mach-o, so a buffer from library A could be
+  released by library B. Certified by the permanent `strut_ffi_multilib_tests` CTest (two
+  libraries, one host, each buffer released through its own module's symbol).
+- **Empty/null contract (valid input only).** Canonical empty is `data == NULL, len == 0` for
+  both input and output, for both string and bytes. `data != NULL` means `len` bytes are valid
+  for the duration of the call. `data == NULL && len > 0` is an **invalid host call, outside
+  the valid ABI contract** — there is no promised behavior for it. The current wrapper avoids
+  dereferencing such a pointer for defensive reasons only; **silent-empty is NOT contractual
+  and must not be relied upon.** Structured handling of invalid ABI arguments is deferred to
+  FFI-6 (status/error handle). `free(NULL)`/release of a canonical empty result is safe. FFI-2
+  does not encode optional/nullability semantics (no NULL-means-null).
 - **String semantics (actual, not invented).** Strut `string` is `std::string`-backed:
   length is a **BYTE count** (not code points), **embedded NUL is preserved**, and the ABI
   does not scan for a terminator. No Unicode validation is claimed beyond what Strut string

@@ -33,8 +33,8 @@ decls = ["int32_t ff_add(int32_t a, int32_t b);",
          "void ff_str_dup(const char* s_data, size_t s_len, char** out_data, size_t* out_len);",
          "int32_t ff_str_len(const char* s_data, size_t s_len);",
          "void ff_bytes_echo(const uint8_t* b_data, size_t b_len, uint8_t** out_data, size_t* out_len);",
-         "void strut_ffi_free_string(char* data);",
-         "void strut_ffi_free_bytes(uint8_t* data);"]
+         "void export_lib_ffi_free_string(char* data);",
+         "void export_lib_ffi_free_bytes(uint8_t* data);"]
 
 with tempfile.TemporaryDirectory(prefix="strut-ffi-export-") as td:
     td = Path(td)

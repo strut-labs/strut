@@ -36,4 +36,24 @@ inline const char* abi_transport_c_element(const std::string& name){
 inline bool abi_type_supported(const std::string& name){
     return abi_type_info(name).supported || abi_is_transport(name);
 }
+// FFI-2 release symbols are module-qualified (`<module>_ffi_free_string`/`_bytes`) rather
+// than generic (`strut_ffi_free_string`). Two independently built Strut shared libraries
+// loaded into one host would otherwise each export the same generic name: that collides on
+// the MSVC import-library link step and interposes on ELF/mach-o, so a buffer from library A
+// could be released by library B. The module slug is derived deterministically from the
+// source module name (the same for codegen and header generation). It must be overridable
+// (e.g. --ffi-module) once packages/modules land.
+inline std::string abi_module_slug(const std::string& source_path){
+    std::size_t slash=source_path.find_last_of("/\\");
+    std::string base=(slash==std::string::npos)?source_path:source_path.substr(slash+1);
+    std::size_t dot=base.find_last_of('.');
+    if(dot!=std::string::npos)base=base.substr(0,dot);
+    std::string out;
+    for(char c:base)out+=((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_')?c:'_';
+    if(out.empty()||(out[0]>='0'&&out[0]<='9'))out="m_"+out;
+    return out;
+}
+inline std::string abi_release_symbol(const std::string& module,const std::string& kind){
+    return module+"_ffi_free_"+kind;
+}
 } // namespace strut
