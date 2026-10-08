@@ -335,13 +335,32 @@ exports, with a generated header for hosts; confirm before implementing.
   status-returning call with a caller-provided native error descriptor
   (`strut_ffi_<module>_native_error { code, type/type_len, message/message_len }`); a nonzero
   status becomes `throw E(...)` inside Strut, catchable by `try/catch (E e)`. Symmetric with
-  the export direction.
-- **UNIVERSAL containment (closes the FFI-1 limitation):** every `export "C"` wrapper is now
-  `try { ... } catch (const strut_checked_error&) { <structured, if declared> } catch (...) {
-  std::abort(); }`. No C++ exception can unwind through any supported C ABI boundary. For a
-  function with no declared error channel an unexpected/internal exception is a contained
-  fatal boundary (never a fabricated success value). Declared checked errors use the
-  structured channel.
+  the export direction. **Multiple declared errors** `: (E1, E2)` preserve concrete identity.
+  **Unknown-error policy:** if native reports a type NOT in the declared set, that is a native
+  ABI contract violation → deterministic fatal boundary (`std::abort` with a diagnostic); the
+  error is never coerced into a declared type.
+- **Out-parameter preconditions (checked exports).** For `T f(..., T* out_value, error** out_error)`:
+  `out_error` must be non-NULL; for non-void `T`, `out_value` must be non-NULL. On success:
+  status 0, `*out_error = NULL`, `out_value` populated. On failure: status non-zero,
+  `*out_error != NULL`, `out_value` is **unspecified** (not promised zeroed). `void` checked
+  functions have no `out_value`.
+- **Error-handle contract.** The handle stays valid until released; `query` returns
+  type/message **borrowed views into the handle** (no NUL dependence; byte length
+  authoritative), invalid after release; `release` is called exactly once, by the SAME module,
+  and `query(NULL)`/`release(NULL)` are invalid host behavior (not promised safe).
+- **ABI version.** The generated header defines `STRUT_FFI_ABI_VERSION_MAJOR`/`_MINOR`
+  (currently 1/0) — distinct from the Strut language/compiler version. No negotiation yet.
+- **Containment (precise scope).** No exception originating from a generated Strut **export
+  wrapper** or a Strut **callback trampoline** is allowed to unwind into foreign C: both are
+  `try { … } catch (const strut_checked_error&) { …structured… } catch (...) { std::abort(); }`.
+  The checked-error catch that allocates the opaque handle is itself wrapped
+  (`try { *out_error = new …; } catch (...) { std::abort(); }`) so a `bad_alloc` while
+  *marshalling the error* cannot escape either. For a function with no declared error channel,
+  an unexpected/internal exception is a contained fatal boundary (never a fabricated success).
+  **Foreign `extern "C"` implementations MUST obey the C ABI**: they must NOT throw C++
+  exceptions across the boundary; failure must be reported through the FFI-6 status/error
+  contract (throwing is a native-ABI contract violation). We deliberately do NOT wrap every
+  ordinary native call in try/catch.
 - **Non-error exports unchanged:** functions with no declared checked errors keep their
   existing direct signatures; only their bodies gained the containment boundary.
 - **Certified by** `strut_ffi_error_tests` (success/failure/type/message/code/release/void +

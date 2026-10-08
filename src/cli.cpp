@@ -346,7 +346,7 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
     for(const auto& a:strut::collect_abi_aggregates(p)){agg_map[a.name]=a.fields;agg_order.push_back(a.name);}
     auto is_ag=[&](const std::string& n){return agg_map.count(n)>0;};
     auto abi_cpp=[&](const std::string& n){return strut::abi_aggregate_type_name(mod,n);};
-    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\ntypedef int32_t strut_ffi_status;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
+    std::string h="#ifndef "+guard+"\n#define "+guard+"\n\n#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n/* Strut C FFI ABI generation (distinct from the Strut compiler/language version). */\n#define STRUT_FFI_ABI_VERSION_MAJOR 1\n#define STRUT_FFI_ABI_VERSION_MINOR 0\n\ntypedef int32_t strut_ffi_status;\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n";
     bool needs_error=false;
     for(const auto& st:p.statements)if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->owner.empty()&&!st->error_types.empty())needs_error=true;
     if(needs_error){const std::string et=strut::abi_error_type_name(mod);const std::string qs=strut::abi_error_query_symbol(mod);const std::string rs=strut::abi_error_release_symbol(mod);h+="typedef struct "+et+" "+et+";\n";h+="#define "+mac+"_FFI_ERROR "+et+"\n";h+="void "+qs+"(const "+et+"* e, const char** type, size_t* type_len, const char** message, size_t* message_len, int32_t* code);\n";h+="#define "+mac+"_FFI_ERROR_QUERY "+qs+"\n";h+="void "+rs+"("+et+"* e);\n";h+="#define "+mac+"_FFI_ERROR_RELEASE "+rs+"\n\n";}

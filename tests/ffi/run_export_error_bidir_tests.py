@@ -12,7 +12,7 @@ if len(sys.argv) != 2:
     raise SystemExit("usage: run_export_error_bidir_tests.py /path/to/strut")
 compiler = Path(sys.argv[1]).resolve()
 root = Path(__file__).resolve().parent
-expected = "30\nbad\n7\n"
+expected = "30\nbad\n7\none\n1\ntwo\n2\n"
 
 with tempfile.TemporaryDirectory(prefix="strut-ffi-err-bidir-") as td:
     td = Path(td)
@@ -32,4 +32,13 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-err-bidir-") as td:
     if out != expected:
         raise SystemExit(f"unexpected error bidir output: {out!r}")
 
-print("bidirectional checked-error ABI passed (native status/error -> Strut checked error)")
+    # unknown native error type (not in the declared set) is a contract violation -> fatal boundary
+    exe2 = td / ("prog_unknown.exe" if os.name == "nt" else "prog_unknown")
+    subprocess.run([str(compiler), "--lib", "ffi_errnative", "--lib-path", str(td), "-o", str(exe2), "export_error_unknown.p"], check=True, cwd=str(root))
+    r = subprocess.run([str(exe2)], capture_output=True, text=True)
+    if r.returncode == 0:
+        raise SystemExit("unknown native error type did not trigger the fatal boundary")
+    if "undeclared error 'Mystery'" not in (r.stderr + r.stdout):
+        raise SystemExit(f"unknown-error diagnostic missing: {r.stderr!r} {r.stdout!r}")
+
+print("bidirectional checked-error ABI passed (multi-error identity; native status/error -> Strut; unknown-error fatal boundary)")
