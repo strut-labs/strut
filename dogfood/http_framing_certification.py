@@ -16,19 +16,22 @@ def available_port():
         return listener.getsockname()[1]
 
 
-def wait_until_listening(port):
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
+def connect_retry(port, deadline=5.0):
+    # No throwaway readiness probe: the server's max_requests is an exact accept budget, and a
+    # probe connection could be counted (or discarded before accept on some platforms), racing
+    # the real requests. Instead we retry the first real connect until the listener is up.
+    end = time.monotonic() + deadline
+    while True:
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                return
+            return socket.create_connection(("127.0.0.1", port), timeout=5)
         except OSError:
+            if time.monotonic() >= end:
+                raise
             time.sleep(0.02)
-    raise RuntimeError("HTTP framing server did not start")
 
 
 def raw_request(port, payload):
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
+    with connect_retry(port) as connection:
         connection.sendall(payload)
         connection.shutdown(socket.SHUT_WR)
         response = bytearray()
@@ -47,7 +50,7 @@ def tls_raw_request(port, payload):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
+    with connect_retry(port) as raw:
         with context.wrap_socket(raw, server_hostname="localhost") as connection:
             connection.sendall(payload)
             half_close = socket.socket(fileno=connection.fileno())
@@ -69,7 +72,7 @@ def tls_request(port, payload):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
+    with connect_retry(port) as raw:
         with context.wrap_socket(raw, server_hostname="localhost") as connection:
             connection.sendall(payload)
             response = bytearray()
@@ -158,7 +161,7 @@ def main():
     app.limits(16, 16384, 8, 16);
     app.get("/get", (http_request request) => {{ return http_text("get"); }});
     app.post("/post", (http_request request) => {{ return http_text(request.body); }});
-    app.listen("127.0.0.1", {port}, {len(cases) + 1});
+    app.listen("127.0.0.1", {port}, {len(cases)});
 }}
 '''
     with tempfile.TemporaryDirectory(prefix="strut-http-framing-") as temporary:
@@ -169,9 +172,10 @@ def main():
         subprocess.run([compiler, program, "-o", executable], check=True, cwd=root)
         server = subprocess.Popen([executable], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            wait_until_listening(port)
             for name, payload, expected_status, expected_body in cases:
                 response = raw_request(port, payload)
+                if not response:
+                    raise RuntimeError(f"{name}: server closed the connection without responding")
                 observed = status(response)
                 if observed != expected_status:
                     raise RuntimeError(f"{name}: status {observed}, expected {expected_status}: {response!r}")
@@ -203,7 +207,7 @@ def main():
     app.timeouts(2000, 2000, 2000, 2000);
     app.get("/get", (http_request request) => {{ return http_text("get"); }});
     app.post("/post", (http_request request) => {{ return http_text(request.body); }});
-    app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], 5);
+    app.listen_tls("127.0.0.1", {tls_port}, args[0], args[1], 4);
 }}
 ''', encoding="utf-8")
         subprocess.run([compiler, tls_program, "-o", tls_executable], check=True, cwd=root)
@@ -216,7 +220,6 @@ def main():
             stderr=subprocess.PIPE,
         )
         try:
-            wait_until_listening(tls_port)
             malformed = tls_request(tls_port, b"GET  /get HTTP/1.1\r\nHost: localhost\r\n\r\n")
             valid = tls_request(tls_port, b"GET /get HTTP/1.1\r\nHost: localhost\r\n\r\n")
             if status(malformed) != 400 or status(valid) != 200:
