@@ -399,6 +399,24 @@ Strut at -O0; the benchmark harness now mandates --release and logs the effectiv
 ~14% parity chase is recorded as FUTURE work in investigation/http-campfire-transfer/. Full detail:
 `investigation/http-campfire-transfer/{README,PLAN,RESULTS,LEDGER}.md`.
 
+## FFI-7 design (retained / cross-thread callback lifetime) - implementation start
+Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
+- C ABI stays `ret (*)(void* context, args...)`; the callback TRAMPOLINE is unchanged.
+- Retention is a separate OPAQUE HANDLE: `<module>_ffi_callback####` wrapping a heap context that
+  owns the Strut callable (`std::function` internally, never across the ABI) + error strings +
+  a thread-safe refcount. No `std::function`, registry-global, or generic `free()` across the ABI.
+- Ownership: `handle = <module>_ffi_cb_retain(handle)` (inc) / `release(handle)` (dec->destruct,
+  deterministic; `release(NULL)` invalid host behavior). Retained handles may outlive the
+  originating call and be invoked from a foreign thread; borrowed callbacks (FFI-5) unchanged.
+- Cross-thread invocation: allowed; the trampoline runs the Strut callable on the calling thread
+  with a documented execution-context rule (Strut cancellation/token binding + checked error
+  containment: no unwinding into the foreign thread's C frame; fallible retained callbacks use the
+  FFI-6 status/descriptor). Runtime shutdown invalidates and releases outstanding handles.
+- Reentrancy: callback -> exported Strut -> same/native callback allowed for synchronous
+  transient + retained handles; tested (native->Strut->native->Strut).
+- No hidden global registry: handles are per-module opaque pointers (no g_handles table).
+Semantics recorded; implementation + tests + five-platform gate as the immediate FFI-7 work.
+
 ## Release sequence (after this dev line)
 FFI-7 -> FFI-8 -> FFI-9 consumers -> FFI-10 Nift dogfood -> final ABI audit -> full certification
 -> v0.0.5 release. v0.0.4 immutable; no v0.0.5 tag until the full FFI roadmap is complete.
