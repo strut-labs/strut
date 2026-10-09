@@ -31,6 +31,7 @@ struct embed_context {
     std::filesystem::path tmp;
     std::string slug;
     std::string module_id;
+    unsigned long load_seq = 0;
     int (*invoke_fn)(const char*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*) = nullptr;
     void (*release_fn)(void*) = nullptr;
 private:
@@ -155,7 +156,7 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
         return 1;
     }
     std::string slug = slug_of(ctx->module_id);
-    std::filesystem::path lib = ctx->tmp / ("libembed_" + slug + ".so");
+    std::filesystem::path lib = ctx->tmp / ("libembed_" + slug + "_" + std::to_string(ctx->load_seq++) + ".so");
     strut::NativeLinkOptions link;
     link.shared = true;
     link.release = true;
@@ -166,19 +167,25 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
         return 1;
     }
     std::string load_error;
-    ctx->library = load_library(lib, load_error);
-    if (!ctx->library) {
+    void* new_library = load_library(lib, load_error);
+    if (!new_library) {
         if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "load", load_error, 0);
         return 1;
     }
-    ctx->slug = slug;
-    ctx->invoke_fn = reinterpret_cast<int (*)(const char*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*)>(
-        find_symbol(ctx->library, "strut_embed_invoke_" + slug));
-    ctx->release_fn = reinterpret_cast<void (*)(void*)>(find_symbol(ctx->library, "strut_embed_release_" + slug));
-    if (!ctx->invoke_fn) {
+    auto new_invoke = reinterpret_cast<int (*)(const char*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*)>(
+        find_symbol(new_library, "strut_embed_invoke_" + slug));
+    if (!new_invoke) {
+        close_library(new_library);
         if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "build", "embedding dispatcher not emitted (no supported exported functions)", 0);
         return 1;
     }
+    auto new_release = reinterpret_cast<void (*)(void*)>(find_symbol(new_library, "strut_embed_release_" + slug));
+    // Successful load atomically replaces the current module: unload the previous exactly once.
+    close_library(ctx->library);
+    ctx->library = new_library;
+    ctx->slug = slug;
+    ctx->invoke_fn = new_invoke;
+    ctx->release_fn = new_release;
     return 0;
 }
 
@@ -219,7 +226,7 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
 
 void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
     if (!v) return;
-    if (v->kind == STRUT_EMBED_VALUE_STRING && v->s.data) {
+    if ((v->kind == STRUT_EMBED_VALUE_STRING || v->kind == STRUT_EMBED_VALUE_BYTES) && v->s.data) {
         if (c) reinterpret_cast<embed_context*>(c)->release_buffer(const_cast<char*>(v->s.data));
         else std::free(const_cast<char*>(v->s.data));
     }
@@ -228,7 +235,11 @@ void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
 
 void strut_embed_error_release(strut_embed_context* c, strut_embed_error* e) {
     if (!e) return;
-    if (c && e->owner) {
+    if (e->owner) {
+        auto fn = reinterpret_cast<void (*)(void*)>(e->owner);
+        if (e->type) fn(e->type);
+        if (e->message) fn(e->message);
+    } else if (c) {
         embed_context* ctx = reinterpret_cast<embed_context*>(c);
         if (e->type) ctx->release_buffer(e->type);
         if (e->message) ctx->release_buffer(e->message);

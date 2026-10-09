@@ -4,9 +4,32 @@
 #include "strut/embed.h"
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+typedef HANDLE embed_thr;
+static embed_thr e_thr(void* (*fn)(void*), void* a) { DWORD id; return CreateThread(0, 0, (LPTHREAD_START_ROUTINE)(void*)fn, a, 0, &id); }
+static void e_join(embed_thr h) { WaitForSingleObject(h, INFINITE); CloseHandle(h); }
+#else
+#include <pthread.h>
+typedef pthread_t embed_thr;
+static embed_thr e_thr(void* (*fn)(void*), void* a) { pthread_t t; pthread_create(&t, 0, fn, a); return t; }
+static void e_join(embed_thr t) { pthread_join(t, 0); }
+#endif
 
 static int failures = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d\n", __LINE__); ++failures; } } while (0)
+
+struct conc_work { strut_embed_context* c; int bad; };
+static void* conc_worker(void* a) {
+    struct conc_work* w = (struct conc_work*)a;
+    strut_embed_error* e = 0;
+    for (int i = 0; i < 2000; ++i) {
+        strut_embed_value n; memset(&n, 0, sizeof n); n.kind = STRUT_EMBED_VALUE_INT; n.i = i;
+        strut_embed_value o;
+        if (strut_embed_invoke(w->c, "neg", &n, 1, &o, &e) != 0 || o.i != -(int64_t)i) { w->bad = 1; break; }
+    }
+    return 0;
+}
 
 int main(void) {
     strut_embed_context* ctx = strut_embed_context_create();
@@ -16,6 +39,7 @@ int main(void) {
         "export \"C\" function add(int_32 a, int_32 b) -> int_32 { return a + b; }\n"
         "export \"C\" function greet(string name) -> string { return \"hi \" + name; }\n"
         "export \"C\" function neg(int_32 x) -> int_32 { return -x; }\n"
+        "export \"C\" function echo_bytes(bytes b) -> bytes { return b; }\n"
         "error EmbedErr { string message; }\n"
         "export \"C\" function risky(int_32 x) -> int_32 : EmbedErr { if (x < 0) { throw EmbedErr { message: \"bad\" }; } return x; }\n";
     strut_embed_error* err = 0;
@@ -113,6 +137,72 @@ int main(void) {
     strut_embed_error_release(fctx, mfe);
     strut_embed_context_destroy(fctx);
 
+    /* bytes: empty, embedded NUL, arbitrary binary, repeated release */
+    { struct { const char* p; size_t n; } cases[3] = {{NULL,0},{"a\0b",3},{"\xff\x00\xfe\x01",4}};
+      for (int ci = 0; ci < 3; ++ci) {
+        strut_embed_value b; memset(&b,0,sizeof b); b.kind = STRUT_EMBED_VALUE_BYTES; b.s.data = cases[ci].p; b.s.len = cases[ci].n;
+        CHECK(strut_embed_invoke(ctx, "echo_bytes", &b, 1, &out, &err) == 0);
+        CHECK(out.kind == STRUT_EMBED_VALUE_BYTES && out.s.len == cases[ci].n &&
+              (cases[ci].n == 0 || memcmp(out.s.data, cases[ci].p, cases[ci].n) == 0));
+        strut_embed_value_free(ctx, &out);
+      }
+      for (int i = 0; i < 200; ++i) {
+        strut_embed_value b; memset(&b,0,sizeof b); b.kind = STRUT_EMBED_VALUE_BYTES; b.s.data = "bin"; b.s.len = 3;
+        CHECK(strut_embed_invoke(ctx, "echo_bytes", &b, 1, &out, &err) == 0);
+        strut_embed_value_free(ctx, &out);
+      }
+    }
+    /* host-owned error released with ctx == NULL (routing is internal) */
+    { strut_embed_error* he = 0;
+      CHECK(strut_embed_context_load_source(ctx, "function bad( -> {", 17, &he) != 0);
+      CHECK(he && he->owner == 0);
+      strut_embed_error_release(NULL, he); }
+    /* value_free is a safe no-op for primitives/empty and after release (double-release safe) */
+    { strut_embed_value pv; memset(&pv,0,sizeof pv); pv.kind = STRUT_EMBED_VALUE_INT; pv.i = 5;
+      strut_embed_value_free(ctx, &pv); CHECK(pv.kind == STRUT_EMBED_VALUE_VOID); }
+
+    /* reload semantics: successful load replaces; failed load keeps the previous active */
+    { strut_embed_value n; n.kind = STRUT_EMBED_VALUE_INT; n.i = 4; strut_embed_value oy;
+      CHECK(strut_embed_invoke(ctx, "add", args, 2, &oy, &err) == 0 && oy.i == 42);   /* A active */
+      strut_embed_error* re = 0;
+      CHECK(strut_embed_context_load_source(ctx, "export \"C\" function ok( -> int { return", 40, &re) != 0);
+      strut_embed_error_release(ctx, re);
+      CHECK(strut_embed_invoke(ctx, "add", args, 2, &oy, &err) == 0 && oy.i == 42);   /* A still active */
+      const char* srcb2 = "export \"C\" function twice(int_32 x) -> int_32 { return x * 2; }\n";
+      CHECK(strut_embed_context_load_source(ctx, srcb2, strlen(srcb2), &err) == 0);    /* B replaces A */
+      CHECK(strut_embed_invoke(ctx, "twice", &n, 1, &oy, &err) == 0 && oy.i == 8);
+      CHECK(strut_embed_invoke(ctx, "add", args, 2, &oy, &err) != 0);                 /* A no longer active */
+      strut_embed_error_release(ctx, err); err = 0; }
+
+    /* same-ID multi-context: both load the identical logical module independently */
+    { strut_embed_context* c1 = strut_embed_context_create();
+      strut_embed_context* c2 = strut_embed_context_create();
+      strut_embed_error* e1 = 0;
+      CHECK(strut_embed_context_load_source(c1, src, strlen(src), &e1) == 0);
+      CHECK(strut_embed_context_load_source(c2, src, strlen(src), &e1) == 0);
+      strut_embed_value n; n.kind = STRUT_EMBED_VALUE_INT; n.i = 3; strut_embed_value o1, o2;
+      CHECK(strut_embed_invoke(c1, "neg", &n, 1, &o1, &e1) == 0 && o1.i == -3);
+      CHECK(strut_embed_invoke(c2, "neg", &n, 1, &o2, &e1) == 0 && o2.i == -3);
+      strut_embed_context_destroy(c1);
+      CHECK(strut_embed_invoke(c2, "neg", &n, 1, &o2, &e1) == 0 && o2.i == -3);
+      strut_embed_context_destroy(c2); }
+
+    /* concurrency: two independent contexts on two native threads (no global embedding lock) */
+    {
+        strut_embed_context* ca = strut_embed_context_create();
+        strut_embed_context* cb = strut_embed_context_create();
+        strut_embed_error* ce = 0;
+        CHECK(strut_embed_context_load_source(ca, src, strlen(src), &ce) == 0);
+        CHECK(strut_embed_context_load_source(cb, src, strlen(src), &ce) == 0);
+        struct cwork { strut_embed_context* c; int bad; } wa = { ca, 0 }, wb = { cb, 0 };
+        embed_thr ta = e_thr(conc_worker, &wa);
+        embed_thr tb = e_thr(conc_worker, &wb);
+        e_join(ta);
+        e_join(tb);
+        CHECK(wa.bad == 0 && wb.bad == 0);
+        strut_embed_context_destroy(ca);
+        strut_embed_context_destroy(cb);
+    }
     strut_embed_context_destroy(ctx);
     if (failures == 0) printf("embed ok\n");
     return failures == 0 ? 0 : 1;

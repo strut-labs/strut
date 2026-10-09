@@ -16,7 +16,8 @@ enum {
     STRUT_EMBED_VALUE_BOOL = 1,
     STRUT_EMBED_VALUE_INT = 2,
     STRUT_EMBED_VALUE_FLOAT = 3,
-    STRUT_EMBED_VALUE_STRING = 4
+    STRUT_EMBED_VALUE_STRING = 4,
+    STRUT_EMBED_VALUE_BYTES = 5
 };
 typedef struct strut_embed_value {
     int kind;
@@ -49,6 +50,12 @@ int strut_embed_context_load_file(strut_embed_context* ctx, const char* path, st
 
 int strut_embed_invoke(strut_embed_context* ctx, const char* name, const strut_embed_value* args, size_t nargs, strut_embed_value* out, strut_embed_error** out_err);
 
+/* Release a value returned by strut_embed_invoke. Module-owned string/bytes payloads are
+ * freed through the module token captured at load; primitives/empty/void are no-ops. The value
+ * is zeroed, so an accidental second release is a no-op.
+ * Release a host- or module-owned error: routing is internal via the error's ownership tag, so
+ * callers need not know which allocation domain produced it. ctx may be NULL for host-owned
+ * errors; module-owned error payloads MUST be released before strut_embed_context_destroy. */
 void strut_embed_value_free(strut_embed_context* ctx, strut_embed_value* v);
 void strut_embed_error_release(strut_embed_context* ctx, strut_embed_error* e);
 
