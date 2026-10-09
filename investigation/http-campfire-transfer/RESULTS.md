@@ -61,6 +61,27 @@ materially higher, consistent with callgrind (~59.6k Ir/req, string/refcount/loc
 Toolchain (node A): Ubuntu 24.04, glibc 2.39, gcc 13.3, cmake build of strut@793bc48; Rust via
 apt rustc/cargo, axum 0.7.9, tokio multi-thread (available_parallelism=1).
 
+## Per-request COMPUTE (local callgrind, matched c=12, startup-negligible)
+| mode | Ir / request | note |
+|---|---|---|
+| worker | ~124 900 | matched 8s run (90 53 req); earlier ~59.6k was under-sampled |
+| reactor | ~111 700 | matched 8s run (9 957 req) |
+
+Both modes burn a large, comparable compute budget dominated by std::string machinery
+(local_data/_M_construct/_M_dispose/dtor/_Alloc_hider/_S_copy/length/capacity/substr/append),
+plus shared_ptr<reactor_connection>::get, strut_parse_http_request_head, strut_http_token_char,
+pthread_mutex lock/unlock, memcpy, malloc/free. Reactor's real throughput edge comes from lower
+sync/scheduling (no worker handoff cv), not lower compute. => The remaining Rust gap (~1.34x on
+reactor) is a COMPUTE-copy/materialization problem, not syscall volume (reactor: 3 sock ops + 1
+eventfd + 0.55 epoll/req) and not writer-state locks (0/req). Rust per-request Ir is the next
+comparative datum to obtain (locally, same methodology).
+
+CORRECTED conclusion: the largest measured removable category is per-request STRING
+MATERIALIZATION in request-head construction (method/path/header-name/value strings) and response
+serialization, present identically in worker and reactor. Next: reactor ownership ledger counters
+(cancellation/completion/reactor_connection) to separate the sync/ownership tax from the string
+tax, then ONE candidate on the measured dominant cost.
+
 ## PARITY ASSESSMENT (after baseline): B - PARITY IS POSSIBLE BUT UNPROVEN
 
 Evidence: (1) 2.2x gap, (2) Strut's per-request instruction count ~59.6k Ir dominated by
