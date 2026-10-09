@@ -98,6 +98,31 @@ parse+response path, and the eventfd_write = 1.0/req (one wake syscall per reque
 separate candidate. Only then implement HTTP-C-borrowed-owner-1 (or an eventfd-reduction
 candidate) on the measured dominant cost.
 
+## EXACT BODY + METADATA CHAIN (canon.cpp / generated runtime) -- DISPROVES the bundled candidate on reactor
+Body "Hello, World!" (13 bytes):
+  1915: literal -> strut_string("...") (SSO, no heap) -> strut_server_response.body (strut_string, moved; SSO)
+  1506 write_buffered: content_length(...) + writer.write(body) -> sent (no separate owned std::string copy; ~1 byte-copy)
+=> body creation/copying is SSO and essentially FREE; Candidate A (borrowed/static body) saves ~nothing on the
+reactor. The static-body hypothesis is DISPROVEN as the ~10x cause.
+
+Response metadata+head per request (strut_serialize_http_response_head, line 1083/1551):
+  media_type(content_type) validation   ~838 Ir (0.7%)
+  head string: 1 reserve(192) + ~6-8 SSO appends (status int, reason, "Content-Type: ", literal ct,
+     "Content-Length: ", length int) ~1-2k Ir
+  empty headers: names vector + validation loop -> ~0
+  Content-Length via strut_append_integer (cheap)
+=> total metadata+head ~2-3k Ir/request (~2-3%). Real but NOT parity-scale alone.
+NOTE: the worker writer/appearance lock logic (writer_state, mutate, require) is NOT on the reactor
+response path (writer_require=0 measured); reactor serializes structured head directly (line 1551).
+
+CONCLUSION: neither body copying nor response metadata explains the ~10x gap. The gap must live in
+REQUEST-side materialization (method/target/header strings -> strut_string; http_request object +
+headers unordered_map construction per request; route dispatch) and the wide string/alloc/ownership
+tail -- to be split by SEMANTIC COUNTERS at runtime sites (request method/path/header constructions,
+request object construction, route match, response construction) and allocations/request, then ONE
+measured candidate. The bundled "trusted metadata + borrowed body" candidate is therefore NOT the
+first implementation.
+
 ## `strut_http_media_type` audit (the flagged boring-duplicate-work candidate)
 Source: a strict media-type VALIDATOR (tokenizes type/subtype + params, quoted-string handling).
 It is invoked per request when a response content type is set; for the canonical `http_text`

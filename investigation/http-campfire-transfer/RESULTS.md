@@ -152,16 +152,13 @@ Strut reactor    111 731 / 111 664 Ir/req   => ~9.96x Rust
 Strut worker     _            124 900 Ir/req (single run)
 => banked ~10x user-space instruction gap (stable across replication).
 
-## Stage budget (approximate, reactor 111.7k Ir/req; cost is spready, top single fn ~0.8%)
-- string machinery: the largest family, spread over construct/copy/assign/substr/append/destroy
-  (SSO-heavy; partially alloc-free but instruction-expensive)
-- parser/validation: parse_http_request_head, token_char, field_value, target, reg_name,
-  media_type (~838 Ir/req) -- single-digit % total
-- shared_ptr (reactor_connection::get, sp_counted) ~1-2%; mutex lock/unlock ~1%; memcpy/memmove
-  ~1-2%; malloc/free ~1-2%; reactor_pump/dispatch ~1-2%; route/hash containers, iostream tail
-There is NO single >5% hot function: the ~10x gap is an ACCUMULATION of bounded costs (strings x
-ownership x validation x containers), not one omnibus loop. => first candidate must be a
-CUMULATIVE structural reduction, not a micro-opt.
+## Stage budget (ATTRIBUTION PENDING -- see correction)
+The `callgrind_annotate` bucketing attempt failed (parser returned 0 rows), so NO quantitative
+per-family percentages are claimed yet. Only the broad, profile-supported conclusion is stated:
+string machinery is the most prominent family (many basic_string operations appear high in the
+reactor top-function list), and there is no single >5%-Ir hot function (top single entry ~0.8%).
+Exact family percentages and the request/routing/response split are NOT yet measured; they
+require temporary semantic counters at runtime sites (next step), not callgrind text parsing.
 
 ## First parity-scale candidate (selected, to be implemented+measured next)
 INTERNAL TRUSTED response metadata + static/borrowed body emission:
