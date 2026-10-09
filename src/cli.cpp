@@ -359,18 +359,24 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
     if(!fbs.empty()){const std::string cbe=strut::abi_callback_error_type_name(mod);h+="typedef struct "+cbe+" { const char* type_data; size_t type_len; const char* message_data; size_t message_len; int32_t code; } "+cbe+";\n";h+="#define "+mac+"_CALLBACK_ERROR "+cbe+"\n";for(const auto& sig:fbs){std::string strut_cbr;std::vector<std::string> strut_cba,strut_cbe2;strut::abi_fallback_callback_supported(sig,strut_cbr,strut_cba,strut_cbe2);h+="typedef strut_ffi_status (*"+strut::abi_callback_type_name(mod,sig)+")(void* context";for(const auto& t:strut_cba)h+=", "+std::string(strut::abi_type_info(t).c_type);if(strut_cbr!="void")h+=", "+std::string(strut::abi_type_info(strut_cbr).c_type)+"* out_value";h+=", "+cbe+"* out_error);\n";}}
     if(!cbs.empty()||!fbs.empty())h+="\n";
     std::vector<std::string> rcs;
-    for(const auto& st:p.statements)if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->owner.empty()){auto rc_push=[&](const std::string& ty){std::string rr;std::vector<std::string> ra;if(strut::abi_retained_callback_supported(ty,rr,ra)&&std::find(rcs.begin(),rcs.end(),ty)==rcs.end())rcs.push_back(ty);};rc_push(st->return_type);for(const auto& pm:st->parameters)rc_push(pm.type.name);}
+    for(const auto& st:p.statements)if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->owner.empty()){auto rc_push=[&](const std::string& ty){std::string rr;std::vector<std::string> ra,re;if((strut::abi_retained_callback_supported(ty,rr,ra)||strut::abi_retained_callback_fallible(ty,rr,ra,re))&&std::find(rcs.begin(),rcs.end(),ty)==rcs.end())rcs.push_back(ty);};rc_push(st->return_type);for(const auto& pm:st->parameters)rc_push(pm.type.name);}
     auto rc_type=[&](const std::string& sig){return strut::abi_retained_callback_type_name(mod,sig);};
+    {
+        bool ncsp=false;for(const auto& st:p.statements)if(st->kind==IRStmt::Kind::function_decl&&st->is_export_c&&st->owner.empty())for(const auto& pm:st->parameters){std::string n2;std::vector<std::string> a2,e2;if(strut::abi_native_callback_fallible(pm.type.name,n2,a2,e2))ncsp=true;}
+        bool rcs_fallible_T=false;for(const auto& sig:rcs){std::string r2;std::vector<std::string> a2,e2;if(strut::abi_retained_callback_fallible(sig,r2,a2,e2))rcs_fallible_T=true;}
+        if((rcs_fallible_T||ncsp)&&fbs.empty()&&cbs.empty()){const std::string cbe=strut::abi_callback_error_type_name(mod);h+="typedef struct "+cbe+" { const char* type_data; size_t type_len; const char* message_data; size_t message_len; int32_t code; } "+cbe+";\n";}
+    }
     if(!rcs.empty()){
         for(const auto& sig:rcs){
-            std::string rr;std::vector<std::string> ra;strut::abi_retained_callback_supported(sig,rr,ra);
+            std::string rr;std::vector<std::string> ra,re;const bool rfle=strut::abi_retained_callback_fallible(sig,rr,ra,re);if(!rfle)strut::abi_retained_callback_supported(sig,rr,ra);
             const std::string tn=rc_type(sig);
             h+="typedef struct "+tn+" "+tn+";\n";
             h+=tn+"* "+strut::abi_retained_retain_symbol(mod,sig)+"("+tn+"* handle);\n";
             h+="void "+strut::abi_retained_release_symbol(mod,sig)+"("+tn+"* handle);\n";
             std::string ap;
             for(std::size_t i=0;i<ra.size();++i){ap+=", "+std::string(strut::abi_type_info(ra[i]).c_type)+" a"+std::to_string(i);}
-            h+=std::string(strut::abi_type_info(rr).c_type)+" "+strut::abi_retained_invoke_symbol(mod,sig)+"("+tn+"* handle"+ap+");\n";
+            if(!rfle)h+=std::string(strut::abi_type_info(rr).c_type)+" "+strut::abi_retained_invoke_symbol(mod,sig)+"("+tn+"* handle"+ap+");\n";
+            else h+="int32_t "+strut::abi_retained_invoke_symbol(mod,sig)+"("+tn+"* handle"+ap+(ra.empty()?std::string(""):std::string(", "))+std::string(strut::abi_type_info(rr).c_type)+"* out_value, "+strut::abi_callback_error_type_name(mod)+"* out_error);\n";
             std::string sm=strut::abi_retained_callback_sigid(sig);for(char& ch:sm)ch=static_cast<char>(std::toupper((unsigned char)ch));
             h+="#define "+mac+"_RETAINED_CB_"+sm+" "+tn+"\n";
             h+="#define "+mac+"_RETAINED_RETAIN_"+sm+" "+strut::abi_retained_retain_symbol(mod,sig)+"\n";
@@ -395,7 +401,8 @@ static std::string build_c_header(const IRProgram& p,const std::string& guard){
                 sep();h+="size_t "+pm.name+"_len";
             }else if(is_ag(pm.type.name)){sep();h+=abi_cpp(pm.type.name)+" "+pm.name;}
             else if(strut::abi_retained_inner(pm.type.name)!=""){sep();h+=rc_type(pm.type.name)+std::string("* ")+pm.name;}
-            else if(strut::abi_native_callback_inner(pm.type.name)!=""){std::string nc_ret;std::vector<std::string> nc_args;strut::abi_native_callback_supported(pm.type.name,nc_ret,nc_args);std::string nc_fd="void*";for(std::size_t i=0;i<nc_args.size();++i)nc_fd+=", "+std::string(strut::abi_type_info(nc_args[i]).c_type);sep();h+=std::string(strut::abi_type_info(nc_ret).c_type)+" (*"+pm.name+")("+nc_fd+")";sep();h+="void* "+pm.name+"_ctx";sep();h+="void (*"+pm.name+"_retain_ctx)(void*)";sep();h+="void (*"+pm.name+"_release_ctx)(void*)";}
+            else if(strut::abi_native_callback_inner(pm.type.name)!=""){std::string nc_ret;std::vector<std::string> nc_args,nc_errs;const bool nc_fle=strut::abi_native_callback_fallible(pm.type.name,nc_ret,nc_args,nc_errs);if(!nc_fle)strut::abi_native_callback_supported(pm.type.name,nc_ret,nc_args);std::string nc_fd="void*";for(std::size_t i=0;i<nc_args.size();++i)nc_fd+=", "+std::string(strut::abi_type_info(nc_args[i]).c_type);sep();if(nc_fle)h+="int32_t (*"+pm.name+")("+nc_fd+(nc_args.empty()?"":", ")+std::string(strut::abi_type_info(nc_ret).c_type)+"*"+", "+strut::abi_callback_error_type_name(mod)+"*)";else h+=std::string(strut::abi_type_info(nc_ret).c_type)+" (*"+pm.name+")("+nc_fd+")";sep();h+="void* "+pm.name+"_ctx";sep();h+="void (*"+pm.name+"_retain_ctx)(void*)";sep();h+="void (*"+pm.name+"_release_ctx)(void*)";}
+            else if(strut::abi_native_callback_inner(pm.type.name)!=""){std::string nc_ret;std::vector<std::string> nc_args,nc_errs;const bool nc_fle=strut::abi_native_callback_fallible(pm.type.name,nc_ret,nc_args,nc_errs);if(!nc_fle)strut::abi_native_callback_supported(pm.type.name,nc_ret,nc_args);std::string nc_fd="void*";for(std::size_t i=0;i<nc_args.size();++i)nc_fd+=", "+std::string(strut::abi_type_info(nc_args[i]).c_type);if(nc_fle)h+="int32_t (*"+pm.name+")("+nc_fd+(nc_args.empty()?"":", ")+std::string(strut::abi_type_info(nc_ret).c_type)+"*"+", "+strut::abi_callback_error_type_name(mod)+"*)";else h+=std::string(strut::abi_type_info(nc_ret).c_type)+" (*"+pm.name+")("+nc_fd+")";sep();h+="void* "+pm.name+"_ctx";sep();h+="void (*"+pm.name+"_retain_ctx)(void*)";sep();h+="void (*"+pm.name+"_release_ctx)(void*)";}
             else{std::string strut_cbr;std::vector<std::string> strut_cba,strut_cbe;bool strut_iref;std::string strut_ict;if(strut::abi_callback_supported(pm.type.name,strut_cbr,strut_cba)||strut::abi_fallback_callback_supported(pm.type.name,strut_cbr,strut_cba,strut_cbe)){sep();h+=strut::abi_callback_type_name(mod,pm.type.name)+" "+pm.name;sep();h+="void* "+pm.name+"_ctx";}else if(strut::abi_pointer_supported(pm.type.name,strut_iref,strut_ict)){sep();h+=strut_ict+" "+pm.name;}else{sep();h+=std::string(c_abi_type(pm.type.name))+" "+pm.name;}}
         }
         if(checked){if(st->return_type!="void"){sep();h+=std::string(c_abi_type(st->return_type))+"* out_value";}sep();h+=strut::abi_error_type_name(mod)+"** out_error";}

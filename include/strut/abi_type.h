@@ -222,21 +222,36 @@ inline std::string abi_retained_inner(const std::string& name){
     if(name.rfind("retained_callback<",0)!=0||name.back()!='>')return {};
     return name.substr(18,name.size()-19);
 }
-inline bool abi_retained_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
-    args.clear();ret.clear();
+inline bool abi_retained_callback_parse(const std::string& name,std::string& ret,std::vector<std::string>& args,std::vector<std::string>& errs){
+    args.clear();ret.clear();errs.clear();
     const std::string inner=abi_retained_inner(name);
-    if(inner.empty()||inner.find(" : ")!=std::string::npos||inner.find("future<")!=std::string::npos)return false;
-    const std::size_t arrow=inner.rfind(")->");
+    if(inner.empty()||inner.find("future<")!=std::string::npos)return false;
+    std::string core=inner;
+    const std::size_t colon=inner.rfind(" : ");
+    if(colon!=std::string::npos){core=inner.substr(0,colon);const std::string es=inner.substr(colon+3);std::string e=es;if(!e.empty()&&e.front()=='('&&e.back()==')')e=e.substr(1,e.size()-2);std::size_t p=0;if(!e.empty())while(true){std::size_t c=e.find(',',p);std::string x=(c==std::string::npos)?e.substr(p):e.substr(p,c-p);while(!x.empty()&&x.front()==' ')x=x.substr(1);while(!x.empty()&&x.back()==' ')x.pop_back();if(!x.empty())errs.push_back(x);if(c==std::string::npos)break;p=c+1;}}
+    const std::size_t arrow=core.rfind(")->");
     if(arrow==std::string::npos)return false;
-    const std::string argpart=inner.substr(1,arrow-1);
-    ret=inner.substr(arrow+3);
+    const std::string argpart=core.substr(1,arrow-1);
+    ret=core.substr(arrow+3);
     if(!argpart.empty()){
         std::size_t p=0;
         while(true){std::size_t c=argpart.find(',',p);std::string a=(c==std::string::npos)?argpart.substr(p):argpart.substr(p,c-p);args.push_back(a);if(c==std::string::npos)break;p=c+1;}
     }
+    return true;
+}
+inline bool abi_retained_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
+    args.clear();ret.clear();std::vector<std::string> errs;
+    if(!abi_retained_callback_parse(name,ret,args,errs)||!errs.empty())return false;
     for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
     if(ret!="void"&&!abi_type_info(ret).supported)return false;
     return true;
+}
+inline bool abi_retained_callback_fallible(const std::string& name,std::string& ret,std::vector<std::string>& args,std::vector<std::string>& errs){
+    args.clear();ret.clear();errs.clear();
+    if(!abi_retained_callback_parse(name,ret,args,errs)||errs.empty())return false;
+    for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
+    if(ret!="void"&&!abi_type_info(ret).supported)return false;
+    return abi_callback_error_type_name("").empty()?true:true;
 }
 inline std::string abi_retained_callback_sigid(const std::string& sig){return abi_digest128(sig).substr(0,16);}
 inline std::string abi_retained_callback_type_name(const std::string& module,const std::string& sig){
@@ -249,18 +264,33 @@ inline std::string abi_native_callback_inner(const std::string& name){
     if(name.rfind("native_callback<",0)!=0||name.back()!='>')return {};
     return name.substr(16,name.size()-17);
 }
-inline bool abi_native_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
-    args.clear();ret.clear();
+inline bool abi_native_callback_parse(const std::string& name,std::string& ret,std::vector<std::string>& args,std::vector<std::string>& errs){
+    args.clear();ret.clear();errs.clear();
     const std::string inner=abi_native_callback_inner(name);
-    if(inner.empty()||inner.find(" : ")!=std::string::npos||inner.find("future<")!=std::string::npos)return false;
-    const std::size_t arrow=inner.rfind(")->");
+    if(inner.empty()||inner.find("future<")!=std::string::npos)return false;
+    std::string core=inner;
+    const std::size_t colon=inner.rfind(" : ");
+    if(colon!=std::string::npos){core=inner.substr(0,colon);const std::string es=inner.substr(colon+3);std::string e=es;if(!e.empty()&&e.front()=='('&&e.back()==')')e=e.substr(1,e.size()-2);std::size_t p=0;if(!e.empty())while(true){std::size_t c=e.find(',',p);std::string x=(c==std::string::npos)?e.substr(p):e.substr(p,c-p);while(!x.empty()&&x.front()==' ')x=x.substr(1);while(!x.empty()&&x.back()==' ')x.pop_back();if(!x.empty())errs.push_back(x);if(c==std::string::npos)break;p=c+1;}}
+    const std::size_t arrow=core.rfind(")->");
     if(arrow==std::string::npos)return false;
-    const std::string argpart=inner.substr(1,arrow-1);
-    ret=inner.substr(arrow+3);
+    const std::string argpart=core.substr(1,arrow-1);
+    ret=core.substr(arrow+3);
     if(!argpart.empty()){
         std::size_t p=0;
         while(true){std::size_t c=argpart.find(',',p);std::string a=(c==std::string::npos)?argpart.substr(p):argpart.substr(p,c-p);args.push_back(a);if(c==std::string::npos)break;p=c+1;}
     }
+    return true;
+}
+inline bool abi_native_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
+    args.clear();ret.clear();std::vector<std::string> errs;
+    if(!abi_native_callback_parse(name,ret,args,errs)||!errs.empty())return false;
+    for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
+    if(ret!="void"&&!abi_type_info(ret).supported)return false;
+    return true;
+}
+inline bool abi_native_callback_fallible(const std::string& name,std::string& ret,std::vector<std::string>& args,std::vector<std::string>& errs){
+    args.clear();ret.clear();
+    if(!abi_native_callback_parse(name,ret,args,errs)||errs.empty())return false;
     for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
     if(ret!="void"&&!abi_type_info(ret).supported)return false;
     return true;
