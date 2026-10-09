@@ -123,7 +123,7 @@ int main(void) {
     strut_embed_context_destroy(ctxB);
 
     /* load_file: valid file, missing file, and stable logical identity */
-    const char* epath = "/tmp/opencode/embed_src.p";
+    const char* epath = "strut_embed_src.p";
     {
         FILE* f = fopen(epath, "wb");
         fwrite(srcb, 1, strlen(srcb), f); fclose(f);
@@ -135,13 +135,13 @@ int main(void) {
     CHECK(strut_embed_context_load_file(fctx, "/definitely/missing/no_such.p", &mfe) != 0);
     CHECK(mfe && mfe->category == STRUT_EMBED_ERR_LOAD);
     strut_embed_error_release(fctx, mfe);
-    { const char* badp = "/tmp/opencode/embed_bad.p";
+    { const char* badp = "strut_embed_bad.p";
       const char* badsrc = "function x( -> {";
       FILE* bf = fopen(badp, "wb"); fwrite(badsrc, 1, strlen(badsrc), bf); fclose(bf);
       strut_embed_error* be = 0;
       CHECK(strut_embed_context_load_file(fctx, badp, &be) != 0 && be && be->category == STRUT_EMBED_ERR_PARSE);
       strut_embed_error_release(fctx, be);
-      const char* semp = "/tmp/opencode/embed_sem.p";
+      const char* semp = "strut_embed_sem.p";
       const char* semsrc = "function x() -> int { return \"no\"; }";
       FILE* sf = fopen(semp, "wb"); fwrite(semsrc, 1, strlen(semsrc), sf); fclose(sf);
       strut_embed_error* se2 = 0;
@@ -149,7 +149,9 @@ int main(void) {
       strut_embed_error_release(fctx, se2);
       strut_embed_error* reok = 0;
       CHECK(strut_embed_context_load_file(fctx, epath, &reok) == 0);   /* recovery after failed loads */
+      remove(badp); remove(semp);
     }
+    remove(epath);
     strut_embed_context_destroy(fctx);
 
     /* bytes: empty, embedded NUL, arbitrary binary, repeated release */
