@@ -125,6 +125,26 @@ baseline for the campaign = BOTH worker (matches R8.5 methodology) and reactor (
 opt-in configuration). Optimization targets reactor first (intended fast direction, furthest ahead
 safely); worker stays a measured control.
 
+## Rust compute baseline (matched local callgrind, same machine/loadgen/duration, release+LTO)
+| binary | Ir / request | top families |
+|---|---|---|
+| **Rust (axum 0.7 + hyper + tokio)** | **~11 310** | header map hashing, h1 parser/read, route match, tokio task/wake, header name from_bytes — modest malloc (1.4%) |
+| Strut reactor | ~111 700 | std::string machinery dominates + parser + shared_ptr<reactor_connection>::get + mutex |
+| Strut worker | ~124 900 | same string-dominated |
+
+=> Strut (reactor) executes roughly **~10x the instructions/request** of Rust. This is the
+reviewer's Outcome A: a large, concrete Strut compute budget exists; string/materialization is
+the strongest measured Strut-side candidate (validated by an independently matched profile, not
+assumed).
+
+FRAMING caveat: the observed THROUGHPUT gap is only ~1.34x because the 1-vCPU benchmark is
+below CPU saturation (~50% Strut / ~30% Rust) -- it is concurrency/scheduling-limited there, not
+raw-compute-limited. The ~10x Ir gap means on realistic multi-core deployments Strut's compute/
+materialization tax would dominate; removing it is the correct structural direction. So
+"string materialization explains the Rust gap" is NOT yet proven to translate 1:1 to this
+benchmark's throughput; it is the strongest measured compute-candidate for the places where
+compute matters. Rust Ir/request is now an explicit budget anchor (~11k).
+
 ## PARITY ASSESSMENT v2 (after paired baseline): B - PARITY IS POSSIBLE BUT UNPROVEN
 With the best retained (reactor) configuration the gap to Rust is ~1.34x (15.5k vs 20.8k), not
 ~2x. The per-request profile (59.6k Ir/req; writer-state accessors = shared_ptr copy + uncontended
