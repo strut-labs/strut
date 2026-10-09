@@ -123,6 +123,24 @@ request object construction, route match, response construction) and allocations
 measured candidate. The bundled "trusted metadata + borrowed body" candidate is therefore NOT the
 first implementation.
 
+## REQUEST MATERIALIZATION - source-confirmed (the ignored `http_request`)
+strut_server_request (canon.cpp:1049) is fully materialized per request even when the handler
+ignores it (the route API REQUIRES the request arg: handler type is unary
+std::function<strut_server_response(strut_server_request)>; a zero-arg handler is rejected in
+lowering, verified by compile). Per /plaintext request the reactor:
+  - method + target: std::string substr from the line, then OWNED strut_string copies
+  - per header: lower std::string, duplicate-check key strut_string (headers.find), trim, then
+    headers.emplace(strut_string name, strut_string value) -- owned copies
+  - request.headers.reserve + container construction per request
+  - query/params unordered_maps + values/cookies containers (empty but constructed)
+  - request_scope: std::make_shared<cancellation_source>() + token + connection lock, per request
+    (unused: no cancellation fires)
+  - the whole strut_server_request passed BY VALUE into the std::function handler
+This is the strongest remaining measured-by-source multiplicity for the ~10x gap and matches the
+reviewer's "why are we materializing an object the handler never reads" (Campfire/PBKDF2-style
+embarrassment). Wording is source-supported (not yet semantic-counter-quantified); the semantic
+counter pass must size each slice (method/path/header/cancellation/request-object) / request.
+
 ## `strut_http_media_type` audit (the flagged boring-duplicate-work candidate)
 Source: a strict media-type VALIDATOR (tokenizes type/subtype + params, quoted-string handling).
 It is invoked per request when a response content type is set; for the canonical `http_text`
