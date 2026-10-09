@@ -47,6 +47,7 @@ std::string slug_of(const std::string& module_id) {
 }
 
 void* load_library(const std::filesystem::path& lib, std::string& error_text) {
+    (void)error_text;
 #if defined(_WIN32)
     HMODULE m = LoadLibraryW(lib.c_str());
     if (!m) return nullptr;
