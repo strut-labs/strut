@@ -84,6 +84,20 @@ connection and its buffers persist. Serialized head buffer and header container 
 rebuilt each response for the trivial endpoint. Candidate (later): clear-and-reuse capacity
 across keep-alive requests where semantically clean.
 
+RERUN note: reactor-mode callgrind on the 1-vCPU Linode was startup-dominated (ld.so strcmp /
+dl machinery) because valgrind slowness yielded very few requests -- NOT request-representative.
+The compile-time-gated instrumentation counters are therefore the authoritative per-request
+attribution (table above), and the instrumentation has been REMOVED from the committed runtime
+(production builds emit nothing; strut_codegen_tests snapshot stays intact at 30/30/regressions).
+
+RE-TARGETED CANDIDATE A (reactor primary): the writer/request-body accessor hypothesis does NOT
+transfer to the reactor path (0 require/req). Reactor per-request costs to attribute next via the
+same gated-counters method: cancellation source/token (alloc/register/lock per request),
+completion state, reactor_connection / run_state ownership, string materialization in the reactor
+parse+response path, and the eventfd_write = 1.0/req (one wake syscall per request) as a
+separate candidate. Only then implement HTTP-C-borrowed-owner-1 (or an eventfd-reduction
+candidate) on the measured dominant cost.
+
 ## Rule
 Only borrow where an enclosing owner provably spans the synchronous use; never at async
 boundaries; ASan/UBSan + lifecycle/shutdown/disconnect/cancel dogfood stay green.
