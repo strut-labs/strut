@@ -123,6 +123,27 @@ request object construction, route match, response construction) and allocations
 measured candidate. The bundled "trusted metadata + borrowed body" candidate is therefore NOT the
 first implementation.
 
+## UNUSED-REQUEST DISPATCH DIAGNOSTIC (measured, temporary, local) -- NOT parity-scale
+Temporary build: `response=conn->fn(strut_server_request{});` in place of
+`conn->fn(std::move(req))` (keeps ALL parsing/routing/validation; only the public request handed
+to the handler is empty). Matched reactor callgrind (9 810 req):
+  baseline reactor          111 664 Ir/req
+  no-materialization diag   110 127 Ir/req   => -1 537 Ir/req (-1.4%)
+That is far below the reviewer's own stop line (~108k / ~5%): the DISPATCH-side cost of a
+populated request (move into std::function + cancellation token) is ~1.4% and NOT parity-scale.
+The parser still materializes method/path/headers into conn->head.request because ROUTING and
+VALIDATION consume them; deferring that needs a span-parser + span-based routing with an unproven
+(and likely sub-10%) prize and much higher risk. => the "ignored http_request" candidate is CLOSED
+as a parity-scale lever (does not survive measurement). Diagnostic reverted; tree clean.
+
+## Accumulated measured landscape (why no single lever)
+writer/body requires 0; body SSO-free; metadata+head ~2-3% (media 838 Ir); syscalls lean
+(3 sock/1 eventfd/0.55 epoll per req); dispatch ~1.4%. NO single family is >~5%. The ~10x
+compute gap is a diffuse ACCUMULATION (Outcome E) across strings, containers, validation, and
+small ownership/alloc sites -- each individually <5%. Parity on the canonical benchmark would
+require either many bounded structural wins or the (large, risky, unproven) span-parser redesign;
+and the 1-vCPU run is not CPU-saturated, so Ir reduction -> throughput translation is unproven.
+
 ## REQUEST MATERIALIZATION - source-confirmed (the ignored `http_request`)
 strut_server_request (canon.cpp:1049) is fully materialized per request even when the handler
 ignores it (the route API REQUIRES the request arg: handler type is unary
