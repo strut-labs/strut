@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-retained-b-") as td:
         if os.environ.get("STRUT_TEST_SANITIZE"):
             strict += ["-fsanitize=address", "-g"]
         dest = td / "host_c"
-        subprocess.run([cc, *strict, "-I", str(td), str(root / "export_retained_b_host.c"),
+        subprocess.run([cc, *strict, "-pthread", "-I", str(td), str(root / "export_retained_b_host.c"),
                         "-L", str(td), "-lexport_retained_b", "-o", str(dest)], check=True)
         out = subprocess.check_output([str(dest)], text=True, env=env)
     if out != expected:

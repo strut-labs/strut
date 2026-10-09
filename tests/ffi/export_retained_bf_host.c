@@ -6,6 +6,7 @@
 #include "export_retained_bf.h"
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 
 typedef struct { int refs; int retain_count; int release_count; int invoke_count; int destroyed; int base; } ctx_t;
 
@@ -19,6 +20,9 @@ static void release_ctx(void* c) { ctx_t* k = (ctx_t*)c; k->release_count++; if 
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d\n", __LINE__); return 1; } } while (0)
 
+typedef struct { int result; } thread_out;
+static void* b_worker(void* a) { thread_out* o = (thread_out*)a; o->result = run_stored_nf(7); return 0; }   /* cross-thread Direction B */
+
 int main(void) {
     ctx_t ctx = {1, 0, 0, 0, 0, 100};
     CHECK(store_nfactory(nf_fn, &ctx, retain_ctx, release_ctx, 5) == 105);   /* success during origin */
@@ -29,6 +33,11 @@ int main(void) {
     CHECK(ctx.retain_count == 1 && ctx.invoke_count == 3);
     CHECK(run_stored_nf(-3) == -1);                       /* declared error propagated through Strut */
     CHECK(ctx.invoke_count == 4);   /* a(-3) errors; b(-3) never runs */
+    thread_out to; pthread_t th;
+    pthread_create(&th, 0, b_worker, &to);                       /* second thread invokes native-backed retained */
+    pthread_join(th, 0);
+    CHECK(to.result == 214);                                     /* (7 + 100) * 2 from a second thread */
+    CHECK(ctx.retain_count == 1 && ctx.invoke_count == 6);       /* cross-thread, no extra native retain */
     CHECK(ctx.release_count == 1 && ctx.destroyed == 0);
     clear_stored_nf();
     CHECK(ctx.refs == 0 && ctx.destroyed == 1 && ctx.release_count == 2);
