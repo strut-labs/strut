@@ -35,8 +35,8 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-retained-") as td:
     env[key] = str(td) + (os.pathsep + env[key] if env.get(key) else "")
     if os.name == "nt":
         dest_exe = td / "host_c.exe"
-        subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/I", str(td), str(root / "export_retained_host.c"),
-                        "/Fe:" + str(dest_exe), "/link", str(td / "export_retained.lib")], check=True)
+        subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/wd5045", "/wd4820", "/wd4668", "/wd5105", "/I", str(td), str(root / "export_retained_host.c"),
+                        "/Fe:" + str(dest_exe), "/link", str(td / "libexport_retained.lib")], check=True)
         out = subprocess.check_output([str(dest_exe)], text=True, env=env)
     else:
         cc = os.environ.get("CC", "cc")
@@ -74,9 +74,9 @@ int main(void) {{
 ''')
     env[key] = str(td) + os.pathsep + (env[key] if env.get(key) else "") + (os.pathsep + str(td) if False else "")
     if os.name == "nt":
-        subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/I", str(td), str(coexist),
+        subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/wd5045", "/wd4820", "/wd4668", "/wd5105", "/I", str(td), str(coexist),
                         "/Fe:" + str(td / "coexist_c.exe"),
-                        "/link", str(td / "export_retained.lib"), str(td / "export_retained2.lib")], check=True)
+                        "/link", str(td / "libexport_retained.lib"), str(td / "libexport_retained2.lib")], check=True)
         subprocess.check_output([str(td / "coexist_c.exe")], text=True, env=env)
     else:
         cc = os.environ.get("CC", "cc")

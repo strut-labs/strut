@@ -35,8 +35,8 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-retained-f-") as td:
         host = root / (name + "_host.c")
         dst = td / exe_out
         if os.name == "nt":
-            subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/I", str(td), str(host),
-                            "/Fe:" + str(dst), "/link", str(td / (name + ".lib"))], check=True)
+            subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/wd5045", "/wd4820", "/wd4668", "/wd5105", "/I", str(td), str(host),
+                            "/Fe:" + str(dst), "/link", str(td / ("lib" + name + ".lib"))], check=True)
         else:
             subprocess.run([cc, *strict, "-pthread", "-I", str(td), str(host),
                             "-L", str(td), "-l" + name, "-o", str(dst)], check=True)

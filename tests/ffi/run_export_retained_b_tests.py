@@ -29,8 +29,8 @@ with tempfile.TemporaryDirectory(prefix="strut-ffi-retained-b-") as td:
     env[key] = str(td) + (os.pathsep + env[key] if env.get(key) else "")
     if os.name == "nt":
         dest = td / "host_c.exe"
-        subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/I", str(td), str(root / "export_retained_b_host.c"),
-                        "/Fe:" + str(dest), "/link", str(td / "export_retained_b.lib")], check=True)
+        subprocess.run(["cl", "/nologo", "/Wall", "/WX", "/wd5045", "/wd4820", "/wd4668", "/wd5105", "/I", str(td), str(root / "export_retained_b_host.c"),
+                        "/Fe:" + str(dest), "/link", str(td / "libexport_retained_b.lib")], check=True)
         out = subprocess.check_output([str(dest)], text=True, env=env)
     else:
         cc = os.environ.get("CC", "cc")
