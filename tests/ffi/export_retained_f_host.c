@@ -6,7 +6,17 @@
 #include "export_retained_f.h"
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+typedef HANDLE strut_thr;
+static strut_thr thr_create(void* (*fn)(void*), void* a) { DWORD id; return CreateThread(0, 0, (LPTHREAD_START_ROUTINE)(void*)fn, a, 0, &id); }
+static void thr_join(strut_thr h) { WaitForSingleObject(h, INFINITE); CloseHandle(h); }
+#else
 #include <pthread.h>
+typedef pthread_t strut_thr;
+static strut_thr thr_create(void* (*fn)(void*), void* a) { pthread_t t; pthread_create(&t, 0, fn, a); return t; }
+static void thr_join(strut_thr t) { pthread_join(t, 0); }
+#endif
 
 #define RB EXPORT_RETAINED_F_RETAINED_CB_FC7D9C2C6D746598
 #define RR EXPORT_RETAINED_F_RETAINED_RETAIN_FC7D9C2C6D746598
@@ -68,10 +78,10 @@ int main(void) {
           inner_msg_len == 3 && memcmp(inner_msg, "neg", 3) == 0);       /* inner copy survived the TLS overwrite */
     RL(outer_handle); RL(inner_handle);
 
-    pthread_t th[8]; worker_ctx w[8];
-    for (int i = 0; i < 8; ++i) { w[i].handle = RR(r); w[i].bad = 0; pthread_create(&th[i], 0, worker, &w[i]); }
+    strut_thr th[8]; worker_ctx w[8];
+    for (int i = 0; i < 8; ++i) { w[i].handle = RR(r); w[i].bad = 0; th[i] = thr_create(worker, &w[i]); }
     RL(r);                            /* main releases its ref while workers hold their own */
-    for (int i = 0; i < 8; ++i) { pthread_join(th[i], 0); RL(w[i].handle); }
+    for (int i = 0; i < 8; ++i) { thr_join(th[i]); RL(w[i].handle); }
     for (int i = 0; i < 8; ++i) CHECK(w[i].bad == 0);
     printf("fallible A ok\n");
     return 0;

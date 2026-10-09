@@ -446,9 +446,10 @@ MSVC. Then FFI-7 COMPLETE -> FFI-8.
 ## FFI-5 baseline (borrowed callbacks) - unchanged
 Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
 - C ABI stays `ret (*)(void* context, args...)`; the callback TRAMPOLINE is unchanged.
-- Retention is a separate OPAQUE HANDLE: `<module>_ffi_callback####` wrapping a heap context that
-  owns the Strut callable (`std::function` internally, never across the ABI) + error strings +
-  a thread-safe refcount. No `std::function`, registry-global, or generic `free()` across the ABI.
+- Language first: `retained_callback<sig[:E]>` is a first-class Strut VALUE (shared control
+  block; Direction A additionally wraps it in an OPAQUE HANDLE, Direction B feeds it from a
+  `native_callback` transport; see the FFI-7 implemented section above). No `std::function`,
+  registry-global, or generic `free()` crosses the ABI.
 - Ownership: `handle = <module>_ffi_cb_retain(handle)` (inc) / `release(handle)` (dec->destruct,
   deterministic; `release(NULL)` invalid host behavior). Retained handles may outlive the
   originating call and be invoked from a foreign thread; borrowed callbacks (FFI-5) unchanged.

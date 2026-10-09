@@ -6,7 +6,17 @@
 #include "export_retained_bf.h"
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+typedef HANDLE strut_thr;
+static strut_thr thr_create(void* (*fn)(void*), void* a) { DWORD id; return CreateThread(0, 0, (LPTHREAD_START_ROUTINE)(void*)fn, a, 0, &id); }
+static void thr_join(strut_thr h) { WaitForSingleObject(h, INFINITE); CloseHandle(h); }
+#else
 #include <pthread.h>
+typedef pthread_t strut_thr;
+static strut_thr thr_create(void* (*fn)(void*), void* a) { pthread_t t; pthread_create(&t, 0, fn, a); return t; }
+static void thr_join(strut_thr t) { pthread_join(t, 0); }
+#endif
 
 typedef struct { int refs; int retain_count; int release_count; int invoke_count; int destroyed; int base; } ctx_t;
 
@@ -33,9 +43,9 @@ int main(void) {
     CHECK(ctx.retain_count == 1 && ctx.invoke_count == 3);
     CHECK(run_stored_nf(-3) == -1);                       /* declared error propagated through Strut */
     CHECK(ctx.invoke_count == 4);   /* a(-3) errors; b(-3) never runs */
-    thread_out to; pthread_t th;
-    pthread_create(&th, 0, b_worker, &to);                       /* second thread invokes native-backed retained */
-    pthread_join(th, 0);
+    thread_out to; strut_thr th;
+    th = thr_create(b_worker, &to);                              /* second thread invokes native-backed retained */
+    thr_join(th);
     CHECK(to.result == 214);                                     /* (7 + 100) * 2 from a second thread */
     CHECK(ctx.retain_count == 1 && ctx.invoke_count == 6);       /* cross-thread, no extra native retain */
     CHECK(ctx.release_count == 1 && ctx.destroyed == 0);
