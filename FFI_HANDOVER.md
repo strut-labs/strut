@@ -399,7 +399,51 @@ Strut at -O0; the benchmark harness now mandates --release and logs the effectiv
 ~14% parity chase is recorded as FUTURE work in investigation/http-campfire-transfer/. Full detail:
 `investigation/http-campfire-transfer/{README,PLAN,RESULTS,LEDGER}.md`.
 
-## FFI-7 design (retained / cross-thread callback lifetime) - implementation start
+## FFI-7 IMPLEMENTED + CERTIFIED LOCALLY (retained / cross-thread callback lifetime)
+Retained_callback is a first-class Strut VALUE with shared callback identity, structurally
+distinct from function<sig> (dedicated TypeNodeKind), explicitly constructed, checked-error
+signature preserved, ordinary function<...> unchanged. Strut has no source-level destructive
+move for these values: assignment/return/copy are value copies of the shared control-block
+pointer, so there is no moved-from source state; C++ moves are implementation mechanics only.
+
+Crossing the ABI in two directions, additive to FFI-5/6 (ABI version stays 1.0):
+
+- DIRECTION A (Strut -> C): an exported retained_callback<sig> is an OPAQUE digest-qualified
+  C handle owning an atomic C refcount + one internal retained_callback value. retain/release
+  manage the C refcount (never the shared_ptr count); invoke requires the caller to ALREADY
+  own a live C ref for the whole invocation (no acquire-from-unowned, no resurrection, no
+  registry, no lifetime lock across user code). A C handle passed back into Strut is BORROWED:
+  the wrapper copies the internal value (Strut shared-owner count may rise) and never consumes
+  the caller's C ref. Final release destroys the handle -> releases its internal value owner.
+- DIRECTION B (native -> Strut): native_callback<(args)->ret [: E]> carries fn + ctx +
+  retain_ctx + release_ctx (R(*)(void*,args...), or int32_t(*)(void*,args...,R*,err*) when
+  fallible) INTO an exported function; Strut constructs a retained_callback whose shared state
+  calls retain_ctx EXACTLY ONCE at construction and release_ctx EXACTLY ONCE at final state
+  death; ordinary Strut copies never re-trigger native retain/release (native origin drop 2->1,
+  Strut global sole owner, invoke later, replacement -> refs 0, destroyed 1).
+- FALLIBLE (FFI-6 status + out value + caller-owned callback error descriptor; no third ABI):
+  Direction A invoke catches a Strut checked error and backs the descriptor with PER-THREAD
+  module TLS strings valid AFTER invoke() returns until the next retained-callback failure that
+  reuses the backing on that thread (caller MUST copy immediately); undeclared -> abort.
+  Direction B wrapper copies the native descriptor IMMEDIATELY into strut_checked_error (valid
+  only through the copy), validates the declared set (undeclared -> abort), normal Strut
+  checked-error flow.
+- CONCURRENCY/REENTRANCY: 8 owned-ref workers + main owner release mid-run (Direction A, 4000
+  invokes); cross-thread native-backed invocation (Direction B); same-thread nested fallible
+  TLS reentrancy (C->Strut->C->Strut) proving the inner descriptor copy survives the outer TLS
+  overwrite; bounded general reentrancy. Exact-once at every ownership layer.
+- no hidden global handle registry.
+
+Local certification (ALL GREEN): GCC -Werror, Clang -Werror, ASan/UBSan CTest 33/33 each;
+regressions 307/307 default and reactor.
+Commit sequence: 8387094 (retained_callback value) -> ff36c0a (value certification/fix-forward)
+-> 9729ba3 (Direction A opaque handle) -> 2c8920d (Direction B native-owned) -> 4b7ac1b
+(fallible A+B) -> b6783c2 (concurrency/reentrancy closure).
+REMAINING BEFORE FFI-7 COMPLETE: the mandatory final five-platform gate (Linux x64 GCC/Clang,
+Linux ARM64, macOS ARM64 AppleClang, Windows x64 MSVC) with RAW-LOG proof that the retained
+CTA tests (strut_ffi_retained_tests / _b_tests / _f_tests) actually executed on AppleClang and
+MSVC. Then FFI-7 COMPLETE -> FFI-8.
+## FFI-5 baseline (borrowed callbacks) - unchanged
 Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
 - C ABI stays `ret (*)(void* context, args...)`; the callback TRAMPOLINE is unchanged.
 - Retention is a separate OPAQUE HANDLE: `<module>_ffi_callback####` wrapping a heap context that
