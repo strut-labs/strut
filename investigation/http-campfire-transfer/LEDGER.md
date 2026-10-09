@@ -55,6 +55,29 @@ every point where another thread can observe the object stays `shared_ptr`.
 
 Estimated effect: remove most of the ~300 locks/req and a large share of the ~390 releases/req.
 
+## EXACT COUNTS (compile-time-gated instrumentation, node A, frozen build; loadgen 50 conns ~14s from B)
+
+Per-request (count / requests served; REQUEST count from the loadgen):
+
+| counter | reactor | worker |
+|---|---|---|
+| response_writer require + lock | **0** | 6.0 |
+| request_body require + lock | **0** | 2.0 |
+| socket_state acquire / release | 3.0 / 3.0 | 6.0 / 6.0 |
+| epoll_wait | 0.55 | 0 (worker path) |
+| eventfd write (reactor wake) | **1.0** | 0 |
+
+CORRECTION (measure, don't infer): the response/request-body writer-state accessors are NOT the
+bulk of reactor cost -- they are ~8/req on the WORKER path and ZERO on the reactor path (the
+reactor uses a separate response/completion path). The earlier ~300 locks / ~390 shared_ptr
+releases/req came from the WORKER-path callgrind profile and do NOT transfer to the reactor.
+The reactor's own per-request syscall pattern is already lean (1 eventfd wake + 3 socket ops +
+~0.55 epoll_wait), so its ~locks/refcounts must live in cancellation, completion, and
+reactor_connection ownership/alloc -- NOT yet instrumented. Candidate A is therefore RE-TARGETED:
+measure reactor cancellation/completion/reactor_connection shared_ptr+alloc counts before any
+raw-pointer change. eventfd_write = 1.0/req is also a candidate to attack (one wake syscall per
+request) once ownership/alloc are attributed.
+
 ## Keep-alive reconstruction (C7)
 Response-writer + request-body states are created/destroyed per response even though the
 connection and its buffers persist. Serialized head buffer and header container capacity are
