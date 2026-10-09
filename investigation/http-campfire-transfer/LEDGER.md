@@ -98,6 +98,19 @@ parse+response path, and the eventfd_write = 1.0/req (one wake syscall per reque
 separate candidate. Only then implement HTTP-C-borrowed-owner-1 (or an eventfd-reduction
 candidate) on the measured dominant cost.
 
+## `strut_http_media_type` audit (the flagged boring-duplicate-work candidate)
+Source: a strict media-type VALIDATOR (tokenizes type/subtype + params, quoted-string handling).
+It is invoked per request when a response content type is set; for the canonical `http_text`
+(and `http_json`) the value is an invariant literal, yet it is re-tokenized/re-validated every
+request. Callgrind self-cost ~838 Ir/request (tier with the parser). A generic fast-path
+(short-circuit on known-valid literals like `text/plain`, `application/json`) would save ~700-800
+Ir/request, i.e. ~0.7% of reactor Ir -- correct and low-risk, but NOT parity-scale, and the
+1-vCPU throughput benchmark is not compute-saturated, so it would likely land within noise.
+Decision: document as a trivial future micro-optimization; do NOT burn an A/B round on it.
+The parity-scale candidate must cut a LARGE string family (dozens of k Ir), selected by the
+per-stage string-count pass (request-line / method / target / header names+values / routing /
+handler input / response serialization) -- next instrumentation step.
+
 ## Rule
 Only borrow where an enclosing owner provably spans the synchronous use; never at async
 boundaries; ASan/UBSan + lifecycle/shutdown/disconnect/cancel dogfood stay green.
