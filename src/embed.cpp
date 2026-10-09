@@ -32,6 +32,13 @@ struct embed_context {
     std::string slug;
     std::string module_id;
     int (*invoke_fn)(const char*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*) = nullptr;
+    void (*release_fn)(void*) = nullptr;
+private:
+    embed_context() = default;
+public:
+    static embed_context* create() { return new embed_context(); }
+    void* owner_token() const { return release_fn ? (void*)release_fn : nullptr; }
+    void release_buffer(void* p) { if (release_fn) release_fn(p); else std::free(p); }
 };
 
 std::string slug_of(const std::string& module_id) {
@@ -69,6 +76,7 @@ void close_library(void* library) {
 strut_embed_error* make_error(int category, std::string type, std::string message, int code) {
     auto* e = new strut_embed_error;
     e->category = category;
+    e->owner = nullptr;
     e->type = nullptr;
     e->message = nullptr;
     e->code = code;
@@ -113,7 +121,7 @@ std::string diagnostic_summary(const std::vector<strut::Diagnostic>& errors) {
 extern "C" {
 
 strut_embed_context* strut_embed_context_create(void) {
-    auto* ctx = new embed_context;
+    auto* ctx = embed_context::create();
     std::error_code ec;
     ctx->tmp = std::filesystem::temp_directory_path();
     for (int i = 0; i < 100000; ++i) {
@@ -166,6 +174,7 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
     ctx->slug = slug;
     ctx->invoke_fn = reinterpret_cast<int (*)(const char*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*)>(
         find_symbol(ctx->library, "strut_embed_invoke_" + slug));
+    ctx->release_fn = reinterpret_cast<void (*)(void*)>(find_symbol(ctx->library, "strut_embed_release_" + slug));
     if (!ctx->invoke_fn) {
         if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "build", "embedding dispatcher not emitted (no supported exported functions)", 0);
         return 1;
@@ -194,9 +203,13 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
     strut_embed_error local;
     int status = ctx->invoke_fn(name, args, nargs, out, &local);
     if (status == 1) {
-        if (out_err) *out_err = make_error(local.category, local.type ? local.type : "", local.message ? local.message : "", local.code);
-        if (local.type) std::free(local.type);
-        if (local.message) std::free(local.message);
+        if (out_err) {
+            auto* h = make_error(local.category, local.type ? local.type : "", local.message ? local.message : "", local.code);
+            h->owner = ctx->release_fn ? (void*)ctx->release_fn : nullptr;
+            *out_err = h;
+        }
+        ctx->release_buffer(local.type);
+        ctx->release_buffer(local.message);
         return 1;
     }
     if (status == 3) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", std::string("no such exported function '" + std::string(name) + "'").c_str(), 0); return 1; }
@@ -205,16 +218,24 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
 }
 
 void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
-    (void)c;
     if (!v) return;
-    if (v->kind == STRUT_EMBED_VALUE_STRING && v->s.data) std::free(const_cast<char*>(v->s.data));
+    if (v->kind == STRUT_EMBED_VALUE_STRING && v->s.data) {
+        if (c) reinterpret_cast<embed_context*>(c)->release_buffer(const_cast<char*>(v->s.data));
+        else std::free(const_cast<char*>(v->s.data));
+    }
     *v = strut_embed_value{};
 }
 
-void strut_embed_error_release(strut_embed_error* e) {
+void strut_embed_error_release(strut_embed_context* c, strut_embed_error* e) {
     if (!e) return;
-    if (e->type) std::free(e->type);
-    if (e->message) std::free(e->message);
+    if (c && e->owner) {
+        embed_context* ctx = reinterpret_cast<embed_context*>(c);
+        if (e->type) ctx->release_buffer(e->type);
+        if (e->message) ctx->release_buffer(e->message);
+    } else {
+        if (e->type) std::free(e->type);
+        if (e->message) std::free(e->message);
+    }
     delete e;
 }
 

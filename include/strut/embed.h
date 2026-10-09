@@ -35,6 +35,7 @@ enum {
 };
 typedef struct strut_embed_error {
     int category;
+    void* owner;   /* module token that allocated type/message; null = host-allocated */
     char* type;
     char* message;
     int code;
@@ -49,7 +50,7 @@ int strut_embed_context_load_file(strut_embed_context* ctx, const char* path, st
 int strut_embed_invoke(strut_embed_context* ctx, const char* name, const strut_embed_value* args, size_t nargs, strut_embed_value* out, strut_embed_error** out_err);
 
 void strut_embed_value_free(strut_embed_context* ctx, strut_embed_value* v);
-void strut_embed_error_release(strut_embed_error* e);
+void strut_embed_error_release(strut_embed_context* ctx, strut_embed_error* e);
 
 #ifdef __cplusplus
 }

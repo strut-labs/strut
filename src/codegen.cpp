@@ -1468,16 +1468,17 @@ static void emit_embed_support(std::ostringstream& o){
     if(strut_codegen_ffi_embed_exports.empty())return;
     const std::string mod=strut_codegen_ffi_module;
     o<<"struct strut_embed_value { int kind; std::int64_t i; double d; int b; struct { const char* data; std::size_t len; } s; };\n";
-    o<<"struct strut_embed_error { int category; char* type; char* message; int code; };\n";
+    o<<"struct strut_embed_error { int category; void* owner; char* type; char* message; int code; };\n";
     for(const auto& en:strut_codegen_ffi_embed_exports){
         o<<cpp_type(en[1])<<" "<<ffi_impl_name(en[0])<<"(";
         for(std::size_t q=2;q<en.size();++q){if(q>2)o<<",";o<<cpp_type(en[q])<<" strut_ep"<<(q-2);}
         o<<");\n";
     }
     
-    o<<"static bool strut_embed_kind(const struct strut_embed_value* v,int k){return v&&v->kind==k;}\n";
+    o<<"extern \"C\" STRUT_C_ABI_EXPORT void strut_embed_release_"<<mod<<"(void* p){ std::free(p); }\n";
+o<<"static bool strut_embed_kind(const struct strut_embed_value* v,int k){return v&&v->kind==k;}\n";
     o<<"extern \"C\" STRUT_C_ABI_EXPORT int strut_embed_invoke_"<<mod<<"(const char* strut_n,const struct strut_embed_value* strut_a,std::size_t strut_na,struct strut_embed_value* strut_o,struct strut_embed_error* strut_e){\n";
-    o<<"    strut_e->category=0;strut_e->type=nullptr;strut_e->message=nullptr;strut_e->code=0;\n";
+    o<<"    strut_e->category=0;strut_e->owner=nullptr;strut_e->type=nullptr;strut_e->message=nullptr;strut_e->code=0;\n";
     o<<"    try {\n";
     for(const auto& en:strut_codegen_ffi_embed_exports){
         const std::string& name=en[0];const std::string& ret=en[1];
