@@ -45,8 +45,8 @@ static int inner_type_len, inner_msg_len;
 static int32_t bridge_inner(void* c, int32_t x) { (void)x;
     RB* inner = (RB*)c; int32_t out; CE ei;
     if (RI(inner, -1, &out, &ei) != 0) {
-        inner_type_len = ei.type_len > 31 ? 31 : ei.type_len;
-        inner_msg_len = ei.message_len > 31 ? 31 : ei.message_len;
+        inner_type_len = ei.type_len > 31 ? 31 : (int)ei.type_len;
+        inner_msg_len = ei.message_len > 31 ? 31 : (int)ei.message_len;
         memcpy(inner_type, ei.type_data, inner_type_len); inner_type[inner_type_len] = 0;
         memcpy(inner_msg, ei.message_data, inner_msg_len); inner_msg[inner_msg_len] = 0;
         return 0;
