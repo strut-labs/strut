@@ -85,5 +85,31 @@ Budget categories to quantify next (C4/C7/C6):
   only after the ownership/string ledger.
 - build/LTO/allocator: after structural wins (C8).
 
+## Paired worker vs reactor vs Rust (same session, frozen nodes, `wrk -t2 -c50 -d15s`, 3 alternating samples)
+| mode | rps samples | median | p50 | CPU% | RSS MB |
+|---|---|---|---|---|---|
+| worker (default; the R8.5 canonical mode) | 9677 / 10048 / 10064 | **~10 050** | ~5.0 ms | ~55 | ~5.7 |
+| **reactor (STRUT_HTTP_REACTOR=1)** | 14900 / 15516 / 16252 | **~15 520** | ~3.1 ms | ~50 | ~4.6 |
+| Rust (axum+tokio) | 20757 / 20268 / 21802 | **~20 770** | - | ~31 | ~4.4 |
+
+Reactor is ~1.54x the worker path and ~1.34x behind Rust; worker is ~2.07x behind Rust.
+The historical R8.5 canonical used the WORKER path (harness launches with no STRUT_HTTP_REACTOR);
+its frozen Strut was ~17-18k and Rust >=35k (generator-limited) on these SAME Linodes. The current
+session's absolute numbers are ~1.7x lower (Linode 1-vCPU shared-CPU quota drift); within-session
+RELATIVE ratios are the trustworthy signal. Rust reference matches R8.5's axum+tokio source/LTO.
+
+RECONCILIATION: current-vs-historical absolute differences are session (CPU-quota) drift, not a
+code regression: both Strut and Rust dropped ~1.7x together in this session. Frozen canonical
+baseline for the campaign = BOTH worker (matches R8.5 methodology) and reactor (best safe retained
+opt-in configuration). Optimization targets reactor first (intended fast direction, furthest ahead
+safely); worker stays a measured control.
+
+## PARITY ASSESSMENT v2 (after paired baseline): B - PARITY IS POSSIBLE BUT UNPROVEN
+With the best retained (reactor) configuration the gap to Rust is ~1.34x (15.5k vs 20.8k), not
+~2x. The per-request profile (59.6k Ir/req; writer-state accessors = shared_ptr copy + uncontended
+lock per call; parser 1-2%) is unchanged and can plausibly cover ~1.34x. Reactor also lowers RSS
+(4.6 vs 5.7 MB) and p50. Parity more credible than the worker-only read suggested, still unproven
+until an end-to-end candidate A/B lands.
+
 ## Pending
 C3, C4, C5, C6, C7, C8, C9, C10 - each one hypothesis, isolated, benchmarked, retained/reverted.
