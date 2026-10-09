@@ -239,3 +239,19 @@ until an end-to-end candidate A/B lands.
 
 ## Pending
 C3, C4, C5, C6, C7, C8, C9, C10 - each one hypothesis, isolated, benchmarked, retained/reverted.
+
+
+## FINAL CAMPAIGN REPORT (banked; HTTP campaign CLOSED)
+RESULT:   fair release two-node: Strut reactor --release ~30.0k rps vs Rust release ~34.96k rps
+          (Strut/Rust ~0.86, ~14% behind). [Rust at its historical generator floor ~35k.]
+COMPUTE:  Strut reactor --release ~13 344 Ir/req vs Rust ~11 209 Ir/req -> ~19% gap.
+PARITY:   A - CLOSE/ACHIEVABLE, NOT D (outside the ~5% practical-parity band).
+MAIN DISCOVERY: the prior ~10x compute gap and ~15.5k-vs-20.8k throughput figures were artifacts
+          of benchmarking Strut-generated code at -O0 -g against release+LTO Rust.
+PROCESS FIX: Strut performance benchmark builds now MANDATE --release (-O2 -flto -ffunction-
+          sections -fdata-sections), logged by build-servers.sh and recorded by run_matrix.py
+          (strut-benchmarks origin/main f46e8df). Old -O0-based cost attributions, the 10x
+          compute-gap conclusion, and the 15.5k-vs-20.8k fair-gap wording are SUPERSEDED.
+FUTURE WORK (recorded, not now): closer parity chase (~14% left) via release-profile candidate
+          (request materialization, allocation counts, response iovec/representation, ownership/
+          refcount churn, -O3/tuning, reactor scheduling/output) in a later dedicated campaign.
