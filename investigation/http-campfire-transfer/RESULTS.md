@@ -171,6 +171,35 @@ INTERNAL TRUSTED response metadata + static/borrowed body emission:
 Public/untrusted construction paths keep full validation. Expected scale >~2-5% of Ir via
 several removed pieces; measured locally before a canonical A/B.
 
+## C8 BUILD-FLAG CORRECTION (decisive, measured)
+The Strut generated server is compiled by the host compiler with
+`-O2 -flto -ffunction-sections -fdata-sections` ONLY when built with `--release`
+(CMD: `-std=c++20 <release?-O2 -flto -ffunction-sections -fdata-sections:-O0 -g> STRUT_CXXFLAGS ...`).
+ALL campaign measurements so far (local callgrind + two-node Linode) used a NON-release build
+(`-O0 -g`): that is why Strut showed ~111.7k Ir/request while Rust (opt-level=3, LTO,
+codegen-units=1) showed ~11.2k -- a ~10x gap that is PRIMARILY A BUILD-FLAG ARTIFACT.
+
+RELEASE re-measure (matched local callgrind, reactor /plaintext, 61 506 req):
+  Strut reactor --release (-O2 -flto): ~13 344 Ir/request  (binary 281 KB vs 4.4 MB at -O0)
+  Rust release (opt3+LTO):             ~11 209 Ir/request
+  => FAIR-BUILD Strut reactor is ~1.19x Rust in Ir/request, NOT ~10x.
+
+The -1.4% unused-request dispatch result and the diffuse-overhead conclusion were measured at
+-O0 and do NOT transfer to the release build. The compute comparison must be re-done and the
+canonical two-node throughput MUST be re-measured for a `--release` Strut build.
+
+NOTE: the canonical method must therefore build Strut with `--release` (matching R8.5's release
+servers and Rust's opt3+LTO). New two-node release numbers pending (node B was generator-bound
+this session; re-run required).
+
+## PARITY ASSESSMENT v4 (after release-build correction): A - PARITY LOOKS ACHIEVABLE, MUCH STRONGER
+Fair-build Strut reactor is ~1.19x Rust in instructions/request (13 344 vs 11 209). The earlier
+10x gap was an -O0 artifact. Parity now rests on a ~1.2x compute gap plus a re-measured
+throughput gap. Remaining hypotheses (request materialization attribution, allocations, C4 iovec,
+span parser) still valuable but against the corrected (release) baseline; many prior
+measurements (writer locks 0, media ~0.7%, dispatch ~1.4%) were at -O0 and should be re-derived
+at -O2 -flto where optimizer effects change cost shapes.
+
 ## PARITY ASSESSMENT v3: A - PARITY LOOKS ACHIEVABLE (not D)
 Given only ~34% throughput improvement is needed on the current two-node reactor comparison and
 Strut holds ~10x the instruction budget, removing enough redundant materialization/ownership so
