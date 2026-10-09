@@ -390,6 +390,19 @@ exports, with a generated header for hosts; confirm before implementing.
 - **Deferred:** checked-error returns carrying string/bytes/aggregate; FFI-7 retained/
   cross-thread callbacks; FFI-8 embedding. **Next: FFI-7.**
 
+## HTTP performance detour (bounded, COMPLETE; campaign banked 0.0.5-dev)
+A bounded Campfire-Card transfer (HTTP-C*) was run and CLOSED before resuming FFI-7:
+fair release (--release) two-node Strut reactor ~30.0k rps vs Rust ~34.96k rps (~14% behind);
+~13.3k vs ~11.2k Ir/request (~19% compute gap). ~5% practical parity NOT reached (A, not D).
+Main discovery: earlier ~10x compute and ~15.5k-vs-20.8k figures were artifacts of benchmarking
+Strut at -O0; the benchmark harness now mandates --release and logs the effective flags. Remaining
+~14% parity chase is recorded as FUTURE work in investigation/http-campfire-transfer/. Full detail:
+`investigation/http-campfire-transfer/{README,PLAN,RESULTS,LEDGER}.md`.
+
+## Release sequence (after this dev line)
+FFI-7 -> FFI-8 -> FFI-9 consumers -> FFI-10 Nift dogfood -> final ABI audit -> full certification
+-> v0.0.5 release. v0.0.4 immutable; no v0.0.5 tag until the full FFI roadmap is complete.
+
 ## FFI-6 COMPLETE (final)
 - Normal checked functions: bidirectional. Multiple checked errors: bidirectional concrete
   identity. Unknown foreign error: explicit fatal contract violation. **Synchronous checked
