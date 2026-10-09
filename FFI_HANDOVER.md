@@ -399,7 +399,46 @@ Strut at -O0; the benchmark harness now mandates --release and logs the effectiv
 ~14% parity chase is recorded as FUTURE work in investigation/http-campfire-transfer/. Full detail:
 `investigation/http-campfire-transfer/{README,PLAN,RESULTS,LEDGER}.md`.
 
-## FFI-7 IMPLEMENTED + CERTIFIED LOCALLY (retained / cross-thread callback lifetime)
+## FFI-7 COMPLETE / CERTIFIED (retained / cross-thread callback lifetime)
+Closure contract (as implemented and certified):
+- Language: `retained_callback<sig[:E]>` is a first-class Strut value with SHARED callback
+  identity, structurally distinct from `function<sig>` (dedicated TypeNodeKind), explicit
+  `retained_callback(callable)` construction boundary, checked-error signature preserved,
+  ordinary `function<...>` unchanged. No source-level destructive move -> no moved-from state.
+- Direction A (Strut->C): OPAQUE digest-qualified C handle owning an atomic C refcount + one
+  internal retained value; C `retain`/`release`/`invoke`; INVOKE PRECONDITION = caller already
+  owns a live C ref (no acquire-from-unowned, no resurrection-from-zero, no registry, no
+  lifetime lock across user code); a handle passed back into Strut is BORROWED (wrapper copies
+  the internal value, never consumes the caller's C ref); final release destroys the handle
+  and its internal value owner.
+- Direction B (native->Strut): `native_callback<sig[:E]>` = fn + ctx + retain_ctx + release_ctx
+  (infallible `R(*)(void*,args...)`; fallible `int32_t(*)(void*,args...,R*out,error*)`).
+  retain_ctx EXACTLY once at shared-state construction; release_ctx EXACTLY once at final state
+  death; ordinary Strut copies/assignments never re-trigger native retain/release.
+- Fallible A: FFI-6 status + out value + caller-owned callback_error descriptor; invoke() backs
+  the descriptor with PER-THREAD module TLS valid AFTER invoke() returns, INVALIDATED by the
+  next retained-callback failure reusing the backing on that thread (caller MUST copy
+  immediately); declared errors only (undeclared -> abort). Same-thread nested reentrancy is
+  proven (inner copied before outer overwrite).
+- Fallible B: wrapper copies the native descriptor IMMEDIATELY into strut_checked_error, validates
+  the declared set (undeclared -> abort), normal Strut checked-error flow.
+- Concurrency/reentrancy: cross-thread A (8 owned-ref workers + main owner release mid-run,
+  4000 invokes), cross-thread B (second pthread, ownership counts exact), bounded reentrancy
+  C->Strut->C->Strut, exact-once destruction at every layer; 10k sequential invoke + 10k
+  retain/release stress; two-module header coexistence; no global registry.
+- Local walls: GCC -Werror, Clang -Werror, ASan/UBSan CTest 33/33 each; regressions 307/307
+  default and reactor. ABI stays 1.0; FFI-5/6 declarations unchanged (additive).
+- FIVE-PLATFORM GATE (raw-log verified): run 37963612906 on main (0392905) all five SUCCESS:
+  linux-x64-gcc, linux-x64-clang, linux-arm64-gcc, macos-arm64-appleclang, windows-x64-msvc.
+  Raw AppleClang log: `strut_ffi_retained_tests ... Passed`, `strut_ffi_retained_b_tests ...
+  Passed`, `strut_ffi_retained_f_tests ... Passed`, `strut_codegen_tests ... Passed`,
+  "100% tests passed out of 33".
+  Raw MSVC log: same retained B/A/F tests `Passed`, `strut_codegen_tests ... Passed`,
+  "100% tests passed, 0 tests failed out of 33" (MSVC /WX fixes: wd5045/4820/4668/5105 + lib
+  import names + C4267 casts).
+- Implemented commits: 8387094 (value) -> ff36c0a (value certification) -> 9729ba3 (Direction A)
+  -> 2c8920d (Direction B) -> 4b7ac1b (fallible A+B) -> b6783c2 (concurrency/reentrancy) ->
+  2766008/a8c4e9a/e93545c/347a825/0392905 (handover + cross-platform fixes).
 Retained_callback is a first-class Strut VALUE with shared callback identity, structurally
 distinct from function<sig> (dedicated TypeNodeKind), explicitly constructed, checked-error
 signature preserved, ordinary function<...> unchanged. Strut has no source-level destructive
