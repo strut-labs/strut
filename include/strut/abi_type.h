@@ -213,4 +213,36 @@ inline std::string abi_callback_error_type_name(const std::string& module){retur
 inline std::string abi_error_type_name(const std::string& module){return "strut_ffi_"+module+"_error";}
 inline std::string abi_error_release_symbol(const std::string& module){return module+"_ffi_error_release";}
 inline std::string abi_error_query_symbol(const std::string& module){return module+"_ffi_error_query";}
+
+// FFI-7 retained-callback ABI (Direction A, infallible first): an exported Strut
+// retained_callback<sig> is handed to native as an OPAQUE C handle that owns an atomic
+// C refcount and one internal retained_callback value. retain/release manage the C refcount
+// (never the internal shared_ptr count); invoke requires an already-live owned handle.
+inline std::string abi_retained_inner(const std::string& name){
+    if(name.rfind("retained_callback<",0)!=0||name.back()!='>')return {};
+    return name.substr(18,name.size()-19);
+}
+inline bool abi_retained_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
+    args.clear();ret.clear();
+    const std::string inner=abi_retained_inner(name);
+    if(inner.empty()||inner.find(" : ")!=std::string::npos||inner.find("future<")!=std::string::npos)return false;
+    const std::size_t arrow=inner.rfind(")->");
+    if(arrow==std::string::npos)return false;
+    const std::string argpart=inner.substr(1,arrow-1);
+    ret=inner.substr(arrow+3);
+    if(!argpart.empty()){
+        std::size_t p=0;
+        while(true){std::size_t c=argpart.find(',',p);std::string a=(c==std::string::npos)?argpart.substr(p):argpart.substr(p,c-p);args.push_back(a);if(c==std::string::npos)break;p=c+1;}
+    }
+    for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
+    if(ret!="void"&&!abi_type_info(ret).supported)return false;
+    return true;
+}
+inline std::string abi_retained_callback_sigid(const std::string& sig){return abi_digest128(sig).substr(0,16);}
+inline std::string abi_retained_callback_type_name(const std::string& module,const std::string& sig){
+    return "strut_ffi_"+module+"_retained_cb_"+abi_retained_callback_sigid(sig);
+}
+inline std::string abi_retained_retain_symbol(const std::string& module,const std::string& sig){return abi_retained_callback_type_name(module,sig)+"_retain";}
+inline std::string abi_retained_release_symbol(const std::string& module,const std::string& sig){return abi_retained_callback_type_name(module,sig)+"_release";}
+inline std::string abi_retained_invoke_symbol(const std::string& module,const std::string& sig){return abi_retained_callback_type_name(module,sig)+"_invoke";}
 } // namespace strut
