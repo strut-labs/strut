@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(strut VERSION 0.0.5 LANGUAGES CXX)
+project(strut VERSION 0.0.5 LANGUAGES CXX C)
 
 include(GNUInstallDirs)
 
@@ -36,6 +36,7 @@ add_library(strut_compiler STATIC
     src/project.cpp
     src/formatter.cpp
     src/lsp.cpp
+    src/embed.cpp
 )
 target_include_directories(strut_compiler
     PUBLIC
@@ -177,3 +178,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME strut_ffi_retained_f_tests COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/ffi/run_export_retained_f_tests.py $<TARGET_FILE:strut>)
     set_tests_properties(strut_ffi_retained_f_tests PROPERTIES TIMEOUT 300)
 endif()
+add_executable(strut_embed_host tests/embed/embed_host.c)
+set_target_properties(strut_embed_host PROPERTIES LINKER_LANGUAGE CXX)
+find_package(Threads REQUIRED)
+target_link_libraries(strut_embed_host PRIVATE strut_compiler ${CMAKE_DL_LIBS} Threads::Threads)
+add_test(NAME strut_embed_tests COMMAND strut_embed_host)
+set_tests_properties(strut_embed_tests PROPERTIES TIMEOUT 300)
