@@ -188,7 +188,7 @@ TypeSyntax Parser::parse_type(ParseResult& result) {
     const Token begin = peek();
     const bool binding_const = match("const");
     const Token type_begin = peek();
-    if (check("function") || check("retained_callback")) {
+    if (check("function") || check("retained_callback") || check("native_callback")) {
         std::string text;
         text += advance().lexeme;
         if (match("[")) {

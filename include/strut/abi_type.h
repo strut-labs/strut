@@ -243,6 +243,28 @@ inline std::string abi_retained_callback_type_name(const std::string& module,con
     return "strut_ffi_"+module+"_retained_cb_"+abi_retained_callback_sigid(sig);
 }
 inline std::string abi_retained_retain_symbol(const std::string& module,const std::string& sig){return abi_retained_callback_type_name(module,sig)+"_retain";}
+// FFI-7 Direction B: a native-owned callback transport (fn + ctx + retain_ctx + release_ctx)
+// passed INTO an exported Strut function to construct native-backed retained_callback state.
+inline std::string abi_native_callback_inner(const std::string& name){
+    if(name.rfind("native_callback<",0)!=0||name.back()!='>')return {};
+    return name.substr(16,name.size()-17);
+}
+inline bool abi_native_callback_supported(const std::string& name,std::string& ret,std::vector<std::string>& args){
+    args.clear();ret.clear();
+    const std::string inner=abi_native_callback_inner(name);
+    if(inner.empty()||inner.find(" : ")!=std::string::npos||inner.find("future<")!=std::string::npos)return false;
+    const std::size_t arrow=inner.rfind(")->");
+    if(arrow==std::string::npos)return false;
+    const std::string argpart=inner.substr(1,arrow-1);
+    ret=inner.substr(arrow+3);
+    if(!argpart.empty()){
+        std::size_t p=0;
+        while(true){std::size_t c=argpart.find(',',p);std::string a=(c==std::string::npos)?argpart.substr(p):argpart.substr(p,c-p);args.push_back(a);if(c==std::string::npos)break;p=c+1;}
+    }
+    for(const auto& a:args)if(a=="void"||!abi_type_info(a).supported)return false;
+    if(ret!="void"&&!abi_type_info(ret).supported)return false;
+    return true;
+}
 inline std::string abi_retained_release_symbol(const std::string& module,const std::string& sig){return abi_retained_callback_type_name(module,sig)+"_release";}
 inline std::string abi_retained_invoke_symbol(const std::string& module,const std::string& sig){return abi_retained_callback_type_name(module,sig)+"_invoke";}
 } // namespace strut

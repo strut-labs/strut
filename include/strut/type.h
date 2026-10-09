@@ -19,7 +19,7 @@ struct TypeId {
 
 enum class TypeNodeKind {
     invalid, primitive, named, const_type, reference, safe_pointer, raw_pointer,
-    weak_pointer, nullable, vector, fixed_array, tuple, generic, function, retained_callback
+    weak_pointer, nullable, vector, fixed_array, tuple, generic, function, retained_callback, native_callback
 };
 
 struct TypeNode {
