@@ -135,6 +135,21 @@ int main(void) {
     CHECK(strut_embed_context_load_file(fctx, "/definitely/missing/no_such.p", &mfe) != 0);
     CHECK(mfe && mfe->category == STRUT_EMBED_ERR_LOAD);
     strut_embed_error_release(fctx, mfe);
+    { const char* badp = "/tmp/opencode/embed_bad.p";
+      const char* badsrc = "function x( -> {";
+      FILE* bf = fopen(badp, "wb"); fwrite(badsrc, 1, strlen(badsrc), bf); fclose(bf);
+      strut_embed_error* be = 0;
+      CHECK(strut_embed_context_load_file(fctx, badp, &be) != 0 && be && be->category == STRUT_EMBED_ERR_PARSE);
+      strut_embed_error_release(fctx, be);
+      const char* semp = "/tmp/opencode/embed_sem.p";
+      const char* semsrc = "function x() -> int { return \"no\"; }";
+      FILE* sf = fopen(semp, "wb"); fwrite(semsrc, 1, strlen(semsrc), sf); fclose(sf);
+      strut_embed_error* se2 = 0;
+      CHECK(strut_embed_context_load_file(fctx, semp, &se2) != 0 && se2 && se2->category == STRUT_EMBED_ERR_SEMANTIC);
+      strut_embed_error_release(fctx, se2);
+      strut_embed_error* reok = 0;
+      CHECK(strut_embed_context_load_file(fctx, epath, &reok) == 0);   /* recovery after failed loads */
+    }
     strut_embed_context_destroy(fctx);
 
     /* bytes: empty, embedded NUL, arbitrary binary, repeated release */
@@ -160,6 +175,36 @@ int main(void) {
     /* value_free is a safe no-op for primitives/empty and after release (double-release safe) */
     { strut_embed_value pv; memset(&pv,0,sizeof pv); pv.kind = STRUT_EMBED_VALUE_INT; pv.i = 5;
       strut_embed_value_free(ctx, &pv); CHECK(pv.kind == STRUT_EMBED_VALUE_VOID); }
+
+    /* OUTSTANDING module-owned result across reload: payload is embedding-owned, so it
+       survives the module being reloaded away (twice) and released safely. */
+    { strut_embed_context* rc = strut_embed_context_create();
+      strut_embed_error* e2 = 0;
+      const char* sa = "export \"C\" function hi(string n) -> string { return \"A:\" + n; }\n";
+      CHECK(strut_embed_context_load_source(rc, sa, strlen(sa), &e2) == 0);
+      strut_embed_value so; so.kind = STRUT_EMBED_VALUE_STRING; so.s.data = "x"; so.s.len = 1;
+      strut_embed_value held;
+      CHECK(strut_embed_invoke(rc, "hi", &so, 1, &held, &e2) == 0 && held.s.len == 3 && memcmp(held.s.data, "A:x", 3) == 0);
+      const char* sb = "export \"C\" function bye(string n) -> string { return \"B:\" + n; }\n";
+      CHECK(strut_embed_context_load_source(rc, sb, strlen(sb), &e2) == 0);   /* A displaced */
+      CHECK(strut_embed_context_load_source(rc, sa, strlen(sa), &e2) == 0);   /* displaced again */
+      CHECK(held.kind == STRUT_EMBED_VALUE_STRING && held.s.len == 3 && memcmp(held.s.data, "A:x", 3) == 0);
+      strut_embed_value_free(rc, &held);                    /* safe: embedding-owned */
+      strut_embed_context_destroy(rc); }
+
+    /* OUTSTANDING module-owned error across context destruction: error payload is
+       embedding-owned, so it is safe to read and release AFTER destroy. */
+    { const char* se = "error E { string message; } export \"C\" function f(int_32 x) -> int_32 : E { throw E { message: \"boom\" }; }\n";
+      strut_embed_context* ec = strut_embed_context_create();
+      strut_embed_error* e3 = 0;
+      CHECK(strut_embed_context_load_source(ec, se, strlen(se), &e3) == 0);
+      strut_embed_value iv; iv.kind = STRUT_EMBED_VALUE_INT; iv.i = 1; strut_embed_value oo;
+      strut_embed_error* ee = 0;
+      CHECK(strut_embed_invoke(ec, "f", &iv, 1, &oo, &ee) != 0);
+      CHECK(ee && strcmp(ee->type, "E") == 0 && strcmp(ee->message, "boom") == 0);
+      strut_embed_context_destroy(ec);
+      CHECK(strcmp(ee->type, "E") == 0 && strcmp(ee->message, "boom") == 0);   /* still valid after destroy */
+      strut_embed_error_release(NULL, ee); }
 
     /* reload semantics: successful load replaces; failed load keeps the previous active */
     { strut_embed_value n; n.kind = STRUT_EMBED_VALUE_INT; n.i = 4; strut_embed_value oy;

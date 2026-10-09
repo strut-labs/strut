@@ -108,6 +108,16 @@ bool build_module(const std::string& module_id, const std::string& source,
     return true;
 }
 
+// Copy a module-owned buffer into EMBEDDING-library-owned storage so returned values/errors
+// have NO dependency on the module's code/heap once invoke() returns; the module's own copy is
+// released now, while the module is still guaranteed loaded.
+char* adopt_buffer(const char* data, std::size_t len, void (*release_fn)(void*)) {
+    char* copy = nullptr;
+    if (len) { copy = static_cast<char*>(std::malloc(len + (data ? 1 : 0))); if (data && len) std::memcpy(copy, data, len); if (data) copy[len] = 0; }
+    if (data) { if (release_fn) release_fn(const_cast<char*>(data)); else std::free(const_cast<char*>(data)); }
+    return copy;
+}
+
 std::string diagnostic_summary(const std::vector<strut::Diagnostic>& errors) {
     std::string out;
     for (const auto& d : errors) {
@@ -209,14 +219,24 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
     *out = strut_embed_value{};
     strut_embed_error local;
     int status = ctx->invoke_fn(name, args, nargs, out, &local);
+    if (status == 0 && (out->kind == STRUT_EMBED_VALUE_STRING || out->kind == STRUT_EMBED_VALUE_BYTES) && out->s.data) {
+        const std::size_t n = out->s.len;
+        char* copy = adopt_buffer(out->s.data, n, ctx->release_fn);
+        out->s.data = copy;
+        out->s.len = n;
+    }
     if (status == 1) {
         if (out_err) {
-            auto* h = make_error(local.category, local.type ? local.type : "", local.message ? local.message : "", local.code);
-            h->owner = ctx->release_fn ? (void*)ctx->release_fn : nullptr;
-            *out_err = h;
+            // copy type/message into embedding-owned storage; free the module copies now.
+            std::string ty = local.type ? local.type : "";
+            std::string msg = local.message ? local.message : "";
+            if (local.type) ctx->release_buffer(local.type);
+            if (local.message) ctx->release_buffer(local.message);
+            *out_err = make_error(local.category, ty, msg, local.code);
+        } else {
+            if (local.type) ctx->release_buffer(local.type);
+            if (local.message) ctx->release_buffer(local.message);
         }
-        ctx->release_buffer(local.type);
-        ctx->release_buffer(local.message);
         return 1;
     }
     if (status == 3) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", std::string("no such exported function '" + std::string(name) + "'").c_str(), 0); return 1; }
