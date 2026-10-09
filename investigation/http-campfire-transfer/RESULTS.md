@@ -145,7 +145,43 @@ materialization tax would dominate; removing it is the correct structural direct
 benchmark's throughput; it is the strongest measured compute-candidate for the places where
 compute matters. Rust Ir/request is now an explicit budget anchor (~11k).
 
-## PARITY ASSESSMENT v2 (after paired baseline): B - PARITY IS POSSIBLE BUT UNPROVEN
+## CONFIRMED compute ratio (repeated matched runs)
+run1/run2 (c=12, ~8-10k req, startup-negligible):
+Rust              11 310 / 11 209 Ir/req
+Strut reactor    111 731 / 111 664 Ir/req   => ~9.96x Rust
+Strut worker     _            124 900 Ir/req (single run)
+=> banked ~10x user-space instruction gap (stable across replication).
+
+## Stage budget (approximate, reactor 111.7k Ir/req; cost is spready, top single fn ~0.8%)
+- string machinery: the largest family, spread over construct/copy/assign/substr/append/destroy
+  (SSO-heavy; partially alloc-free but instruction-expensive)
+- parser/validation: parse_http_request_head, token_char, field_value, target, reg_name,
+  media_type (~838 Ir/req) -- single-digit % total
+- shared_ptr (reactor_connection::get, sp_counted) ~1-2%; mutex lock/unlock ~1%; memcpy/memmove
+  ~1-2%; malloc/free ~1-2%; reactor_pump/dispatch ~1-2%; route/hash containers, iostream tail
+There is NO single >5% hot function: the ~10x gap is an ACCUMULATION of bounded costs (strings x
+ownership x validation x containers), not one omnibus loop. => first candidate must be a
+CUMULATIVE structural reduction, not a micro-opt.
+
+## First parity-scale candidate (selected, to be implemented+measured next)
+INTERNAL TRUSTED response metadata + static/borrowed body emission:
+- runtime-known response content type (http_text: text/plain; charset=utf-8; json:
+  application/json) is PREVALIDATED; skip per-request media-type re-validation and reuse a
+  precomputed/known-safe head fragment (generic, not route-special-cased).
+- static/borrowed literal body ("Hello, World!") stays borrowed through serialization when the
+  runtime controls the response; no extra owned copies before emission (Campfire 'do not copy
+  bytes that already have sufficient lifetime').
+Public/untrusted construction paths keep full validation. Expected scale >~2-5% of Ir via
+several removed pieces; measured locally before a canonical A/B.
+
+## PARITY ASSESSMENT v3: A - PARITY LOOKS ACHIEVABLE (not D)
+Given only ~34% throughput improvement is needed on the current two-node reactor comparison and
+Strut holds ~10x the instruction budget, removing enough redundant materialization/ownership so
+scheduling/network limits dominate first is a credible engineering path. Not parity achieved;
+Irr reduction is not assumed to map 1:1 to rps (1-vCPU is not CPU-saturated), so the
+compute->throughput translation is an explicit before/after question.
+
+
 With the best retained (reactor) configuration the gap to Rust is ~1.34x (15.5k vs 20.8k), not
 ~2x. The per-request profile (59.6k Ir/req; writer-state accessors = shared_ptr copy + uncontended
 lock per call; parser 1-2%) is unchanged and can plausibly cover ~1.34x. Reactor also lowers RSS
