@@ -43,5 +43,47 @@ NEXT: canonical two-node baseline (Strut current vs Rust ref) to set the exact g
 bounded C4/C7 candidate targeting per-request std::string/shared_ptr churn, measured in
 isolation. Full syscall/malloc counts via the two-node harness profile.
 
+## Canonical two-node baseline (frozen, on-node build, 96.126.107.155 server / .181 loadgen, 1 vCPU each, c=50, 15s)
+
+Built ON NODE A (glibc 2.39 / gcc 13 / cmake Release) to avoid the local-glibc mismatch; exact
+pinned baseline commit 793bc48. `wrk -t2 -c50 -d15s http://<A>:8080/plaintext`, 3 samples.
+
+| impl | rps samples | median rps | p50 | server CPU% | RSS |
+|---|---|---|---|---|---|
+| Strut (baseline 793bc48) | 10203 / 10170 / 10160 | **~10 170** | ~4.96 ms | ~45% | ~5.8 MB |
+| Rust (axum 0.7+tokio, LTO, release) | 21418 / 22627 / 23150 | **~22 630** | - | ~28% | ~4.7 MB |
+
+Gap: Rust is ~2.22x Strut (absolute ~12.5k rps; Strut is ~55% behind). BOTH servers are
+below CPU saturation on the 1-vCPU node (Strut ~45%, Rust ~28%), so neither is raw-CPU-bound at
+c=50; Strut spends roughly 1.6x the CPU share to do ~half the rps => its per-request cost is
+materially higher, consistent with callgrind (~59.6k Ir/req, string/refcount/lock dominated).
+
+Toolchain (node A): Ubuntu 24.04, glibc 2.39, gcc 13.3, cmake build of strut@793bc48; Rust via
+apt rustc/cargo, axum 0.7.9, tokio multi-thread (available_parallelism=1).
+
+## PARITY ASSESSMENT (after baseline): B - PARITY IS POSSIBLE BUT UNPROVEN
+
+Evidence: (1) 2.2x gap, (2) Strut's per-request instruction count ~59.6k Ir dominated by
+std::string machinery + ~390 shared_ptr releases + ~300 mutex lock_guards + memcpy/free, with the
+parser only 1-2%, and (3) Strut uses more CPU% per request than Rust. These are exactly the
+classes of cost where safe removal may still exist (string materialization, borrowed-owner
+raw pointers instead of per-layer shared_ptr, keep-alive state reuse, mutex classification).
+No fundamental parser/kernel/architecture blocker was measured. If the ~390 releases and ~300
+locks are largely borrowable/removable, parity becomes realistic; if they are semantically
+required by the safe runtime model, they are the architectural tax.
+
+Budget categories to quantify next (C4/C7/C6):
+- string/materialization churn: measure copies + constructs/req at each stage (request, headers,
+  response ser) -> remove redundant materializations only.
+- shared_ptr/refcount: classify the ~390 releases/req by type (connection, run_state,
+  response_writer_state, request state, cancellation, reactor_connection, completion) and
+  identify which are borrowed-only within a bounded synchronous section -> HTTP-C-borrowed-owner
+  candidate.
+- mutex: classify the ~300 lock_guards/req (owning-safe only).
+- keep-alive reconstruction: what is destroyed/rebuilt per request on a persistent connection.
+- response representation: how many times the head/body are copied/allocated (C4 iovec lesson):
+  only after the ownership/string ledger.
+- build/LTO/allocator: after structural wins (C8).
+
 ## Pending
 C3, C4, C5, C6, C7, C8, C9, C10 - each one hypothesis, isolated, benchmarked, retained/reverted.
