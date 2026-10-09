@@ -411,7 +411,17 @@ Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
 - Cross-thread invocation: allowed; the trampoline runs the Strut callable on the calling thread
   with a documented execution-context rule (Strut cancellation/token binding + checked error
   containment: no unwinding into the foreign thread's C frame; fallible retained callbacks use the
-  FFI-6 status/descriptor). Runtime shutdown invalidates and releases outstanding handles.
+  FFI-6 status/descriptor). Callback lifetime is SELF-CONTAINED and independent of any embedding
+  runtime: a handle is valid from create/retain until the matching release(s) (deterministic
+  destruction). It is NOT bound to a runtime/context shutdown -- that relationship is deferred to
+  FFI-8 (embedding context lifecycle) and deliberately NOT invented here.
+  invoke-vs-release race: invocation takes a temporary live-reference on the handle BEFORE touching
+  callback state and holds it across the call, so a concurrent final release cannot destroy the
+  context mid-invocation; no raw lookup-then-invoke without that guard. Concurrent invocation of the
+  same handle is allowed where the captured Strut state semantics permit it (handle protects
+  LIFETIME only; it does not serialize or change language-level concurrency semantics). Error
+  backing for fallible retained callbacks is per-call (borrowed descriptor consumed before
+  trampoline return) -- never a single shared mutable buffer across threads.
 - Reentrancy: callback -> exported Strut -> same/native callback allowed for synchronous
   transient + retained handles; tested (native->Strut->native->Strut).
 - No hidden global registry: handles are per-module opaque pointers (no g_handles table).

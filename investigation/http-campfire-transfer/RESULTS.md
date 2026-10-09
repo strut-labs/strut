@@ -255,3 +255,6 @@ PROCESS FIX: Strut performance benchmark builds now MANDATE --release (-O2 -flto
 FUTURE WORK (recorded, not now): closer parity chase (~14% left) via release-profile candidate
           (request materialization, allocation counts, response iovec/representation, ownership/
           refcount churn, -O3/tuning, reactor scheduling/output) in a later dedicated campaign.
+
+INFRASTRUCTURE: strutbench-a (107498466) and strutbench-b (107498490) were deleted after
+campaign closure via the Linode API; only unrelated switchyard-cp0 remains.
