@@ -415,13 +415,27 @@ Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
   runtime: a handle is valid from create/retain until the matching release(s) (deterministic
   destruction). It is NOT bound to a runtime/context shutdown -- that relationship is deferred to
   FFI-8 (embedding context lifecycle) and deliberately NOT invented here.
-  invoke-vs-release race: invocation takes a temporary live-reference on the handle BEFORE touching
-  callback state and holds it across the call, so a concurrent final release cannot destroy the
-  context mid-invocation; no raw lookup-then-invoke without that guard. Concurrent invocation of the
-  same handle is allowed where the captured Strut state semantics permit it (handle protects
-  LIFETIME only; it does not serialize or change language-level concurrency semantics). Error
-  backing for fallible retained callbacks is per-call (borrowed descriptor consumed before
-  trampoline return) -- never a single shared mutable buffer across threads.
+  INVOKE OWNERSHIP CONTRACT (closed, not racy): EVERY THREAD THAT MAY INVOKE A RETAINED HANDLE
+  MUST ITSELF OWN A LIVE RETAINED REFERENCE FOR THE ENTIRE INVOCATION. Creation sets refcount=1;
+  retain() requires the handle already live and adds one owned ref; release() releases one owned
+  ref; invoke() may only be called while the caller owns a live ref (an internal RAII
+  liveness-guard may be used for nested implementation lifetime, but it does NOT make an
+  otherwise-unowned raw pointer safe against a concurrent final free -- acquisition from an
+  unowned pointer would be use-after-free and is NOT supported; there is no
+  resurrection-from-zero). Therefore a concurrent release by another owner cannot be the FINAL
+  release while an invocation is in flight, because the invoker still owns a ref; final release
+  thus destroys exactly when no invoke can be in progress. After final release the pointer is
+  host-contract UB. No hazard/epoch/registry machinery is introduced (keeps explicit ownership,
+  no hidden registry, deterministic lifetime). Concurrent invocation of the same handle is
+  allowed where captured Strut state semantics permit; the handle protects LIFETIME only, never
+  serializing user concurrency.
+  ERROR BACKING LIFETIME (closed): the borrowed type/message views pointed to in the fallible
+  callback descriptor must remain valid THROUGH the C callback return boundary and the immediate
+  foreign-side copy. Backing is per-invocation frame storage owned around the native call (the
+  trampoline writes into the frame, the callback returns a descriptor into it, the native wrapper
+  copies descriptor contents, then the frame is destroyed) -- NEVER a single shared mutable
+  buffer on the handle (concurrent-invocation race) and never stack-local std::string destroyed
+  at return.
 - Reentrancy: callback -> exported Strut -> same/native callback allowed for synchronous
   transient + retained handles; tested (native->Strut->native->Strut).
 - No hidden global registry: handles are per-module opaque pointers (no g_handles table).
