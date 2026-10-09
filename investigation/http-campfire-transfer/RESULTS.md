@@ -192,6 +192,29 @@ NOTE: the canonical method must therefore build Strut with `--release` (matching
 servers and Rust's opt3+LTO). New two-node release numbers pending (node B was generator-bound
 this session; re-run required).
 
+## FAIR RELEASE TWO-NODE MATRIX (healthy generator; alternating rounds; wrk -t2 -c50 -d15s /plaintext)
+After killing external `/tmp/sse.py` + `python3 -` processes that had pinned node B at load ~2.0
+(they capped BOTH impls at ~740 rps; that run is discarded). Healthy-session alternating matrix:
+
+| round | Strut reactor --release | Rust release |
+|---|---|---|
+| 1 | 27 723 | 34 962 |
+| 2 | 30 008 | 33 914 |
+| 3 | 30 285 | 35 445 |
+| median | **~30 000** | **~34 960** |
+
+Strut/Rust ratio ~0.86 -> Strut ~14% behind. NOT within ~5% practical parity (not D). Rust is at
+its historical Generator-limited floor (~35k), so Strut ~30k vs Rust >=~35k. Fair release Strut
+is ~2x its old -O0 number and the gap is ~14% (close to its ~19% Ir gap), i.e. compute and
+throughput now move together at release.
+
+## PARITY ASSESSMENT v5: A - PARITY LOOKS ACHIEVABLE (close, not yet achieved)
+Fair release throughput: Strut ~30.0k vs Rust ~34.96k (>= ~35k floor) -> ~14% behind, outside the
+~5% practical-parity band (so not D). One bounded structural candidate (cut roughly ~14-19% of
+release Ir) could plausibly close it; candidates must be re-derived at --release (old -O0
+attributions do not transfer). Benchmark harness fixed to always build Strut with --release and
+to log the build mode (strut-benchmarks build-servers.sh; run_matrix.py record).
+
 ## PARITY ASSESSMENT v4 (after release-build correction): A - PARITY LOOKS ACHIEVABLE, MUCH STRONGER
 Fair-build Strut reactor is ~1.19x Rust in instructions/request (13 344 vs 11 209). The earlier
 10x gap was an -O0 artifact. Parity now rests on a ~1.2x compute gap plus a re-measured
