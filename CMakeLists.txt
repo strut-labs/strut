@@ -47,6 +47,21 @@ target_include_directories(strut_compiler
 target_compile_definitions(strut_compiler PRIVATE
     STRUT_HOST_CXX="${CMAKE_CXX_COMPILER}"
 )
+add_library(strut_embed SHARED
+    src/cli.cpp src/source.cpp src/token.cpp src/lexer.cpp src/parser.cpp src/diagnostic.cpp
+    src/sema.cpp src/type.cpp src/operator.cpp src/ir.cpp src/codegen.cpp
+    src/generated_runtime.cpp src/runtime_components.cpp src/api_registry.cpp
+    src/package.cpp src/project.cpp src/formatter.cpp src/lsp.cpp src/embed.cpp
+)
+target_include_directories(strut_embed
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include
+)
+target_compile_definitions(strut_embed PRIVATE STRUT_HOST_CXX="${CMAKE_CXX_COMPILER}")
+set_target_properties(strut_embed PROPERTIES OUTPUT_NAME strut_embed)
+
 
 # Keep generated-program support beside the build-tree compiler using the same
 # relative layout as an installed compiler. This avoids embedding checkout paths.
@@ -184,3 +199,16 @@ find_package(Threads REQUIRED)
 target_link_libraries(strut_embed_host PRIVATE strut_compiler ${CMAKE_DL_LIBS} Threads::Threads)
 add_test(NAME strut_embed_tests COMMAND strut_embed_host)
 set_tests_properties(strut_embed_tests PROPERTIES TIMEOUT 300)
+if(Python3_EXECUTABLE AND NOT STRUT_SANITIZERS)
+    # The Python consumer loads the shared embedding library with ctypes; when that library is
+    # ASan-instrumented and dlopened by a non-ASan interpreter the cross-DSO allocator order is
+    # not guaranteed. The Python consumer therefore runs in the ordinary GCC/Clang builds and
+    # in CI; C-harness embedding coverage remains fully ASan/UBSan-clean.
+    add_test(NAME strut_ffi_embed_python COMMAND ${CMAKE_COMMAND} -E env
+        "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:strut_embed>"
+        "STRUT_EMBED_LIB=$<TARGET_FILE:strut_embed>"
+        "STRUT_JSONIC_INCLUDE_DIR=${CMAKE_BINARY_DIR}/share/strut/jsonic"
+        "ASAN_OPTIONS=verify_asan_link_order=0"
+        ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/embed/python/strut_consumer.py)
+    set_tests_properties(strut_ffi_embed_python PROPERTIES TIMEOUT 300)
+endif()
