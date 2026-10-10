@@ -4,6 +4,8 @@
 #include <nift/c_abi.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 
 // Strut supplies "seed" through Nift's engine binding API (no expression string concatenation);
 // Nift computes seed + 25. Returned value is validated against the expectation so a hardcoded
@@ -21,10 +23,31 @@ static int parse_i32(const char* data, size_t len, int32_t* out) {
     memcpy(buffer, data, len);
     buffer[len] = '\0';
     char* end = nullptr;
+    errno = 0;
     long value = strtol(buffer, &end, 10);
-    if (end == buffer || *end != '\0') return 0;
-    if (value != static_cast<int32_t>(value)) return 0;
+    if (errno == ERANGE || end == buffer || *end != '\0') return 0;
+    if (value < INT32_MIN || value > INT32_MAX) return 0;
     *out = static_cast<int32_t>(value);
+    return 1;
+}
+
+// Direct regression over the real helper: success rows must convert and failure rows must leave
+// the output untouched (pre-seeded sentinel). Returns 0 when every row matches intent.
+extern "C" int strut_nift_parse_i32_check(void) {
+    struct Row { const char* text; int expect_success; int32_t expect_value; };
+    static const Row rows[] = {
+        {"42", 1, 42}, {"-103", 1, -103}, {"0", 1, 0},
+        {"2147483647", 1, INT32_MAX}, {"-2147483648", 1, INT32_MIN},
+        {"2147483648", 0, 0}, {"-2147483649", 0, 0},
+        {"", 0, 0}, {"12x", 0, 0}, {"1.5", 0, 0}, {"null", 0, 0}, {"true", 0, 0},
+    };
+    for (const auto& row : rows) {
+        int32_t value = 0x51354E53;
+        int ok = parse_i32(row.text, strlen(row.text), &value);
+        int passes = (ok == row.expect_success) &&
+                     (ok ? value == row.expect_value : value == (int32_t)0x51354E53);
+        if (!passes) return 0;
+    }
     return 1;
 }
 
@@ -39,10 +62,42 @@ extern "C" int strut_nift_add25_bad(void) {
         nift_engine_free(engine);
         return 3;
     }
-    int status = nift_script_result_ok(result) ? 4 : 4;
+    int okv = nift_script_result_ok(result);
     nift_script_result_free(result);
     nift_engine_free(engine);
-    return status;
+    // 4 = expected semantic failure; 0 = UNEXPECTED success (must not be reported as a failure).
+    return okv ? 0 : 4;
+}
+
+
+// Same-engine recovery: a single engine must survive an expected semantic failure and still
+// evaluate successfully afterwards. Returns 0 only if ok -> fail(with nonempty diagnostic) -> ok is
+// observed on one engine.
+extern "C" int strut_nift_same_engine_recovery(void) {
+    nift_engine* engine = nift_engine_new();
+    if (!engine) return 1;
+    nift_engine_set_int(engine, "seed", 4, 17);
+    const char* good = "seed + 25";
+    const char* bad = "seed +";
+    nift_script_result* r = nullptr;
+    bool first_ok = false, failed_with_diag = false, third_ok = false;
+    if (nift_engine_evaluate(engine, good, strlen(good), &r) == NIFT_OK && r) {
+        first_ok = nift_script_result_ok(r) == 1;
+        nift_script_result_free(r); r = nullptr;
+    }
+    if (nift_engine_evaluate(engine, bad, strlen(bad), &r) == NIFT_OK && r) {
+        bool semantic_fail = nift_script_result_ok(r) == 0;
+        nift_string msg = {0};
+        bool has_diag = nift_script_result_error_message(r, &msg) == NIFT_OK && msg.data && msg.length;
+        failed_with_diag = semantic_fail && has_diag;
+        nift_script_result_free(r); r = nullptr;
+    }
+    if (nift_engine_evaluate(engine, good, strlen(good), &r) == NIFT_OK && r) {
+        third_ok = nift_script_result_ok(r) == 1;
+        nift_script_result_free(r); r = nullptr;
+    }
+    nift_engine_free(engine);
+    return (first_ok && failed_with_diag && third_ok) ? 0 : 2;
 }
 
 extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
