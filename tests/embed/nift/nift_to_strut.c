@@ -42,6 +42,40 @@ int main(int argc, char** argv) {
                          nift_script_result_free(result); nift_engine_free(engine); return 1; }
         nift_script_result_free(result);
     }
+    // Nift-origin binary into a Strut-exported function: the payload bytes are constructed in
+    // the Nift script (ffi_buffer) and cross into the Strut export nift_verify_bytes which checks
+    // .length()==5 and every byte (embedded NUL + high bit). Empty payload must return -1.
+    {
+        char script[320];
+        int n = snprintf(script, sizeof script,
+            "ffi_call(ffi_open(\"%s\"), \"nift_verify_bytes\", \"i32(buffer,u64)\", ffi_buffer([97, 0, 98, 255, 128]), 5)",
+            libbase);
+        nift_script_result* result = NULL;
+        if (nift_engine_evaluate(engine, script, (size_t)n, &result) != NIFT_OK || !result || !nift_script_result_ok(result)) {
+            fprintf(stderr, "nift->strut bytes evaluate failed\n");
+            nift_engine_free(engine); return 1;
+        }
+        nift_string json = {0};
+        int okb = (nift_script_result_value_json(result, &json) == NIFT_OK && json.length == 2 &&
+                   memcmp(json.data, "42", 2) == 0);
+        nift_script_result_free(result);
+        n = snprintf(script, sizeof script,
+            "ffi_call(ffi_open(\"%s\"), \"nift_verify_bytes\", \"i32(buffer,u64)\", ffi_buffer([]), 0)",
+            libbase);
+        nift_script_result* r2 = NULL;
+        if (nift_engine_evaluate(engine, script, (size_t)n, &r2) != NIFT_OK || !r2 || !nift_script_result_ok(r2)) {
+            fprintf(stderr, "nift->strut empty bytes evaluate failed\n");
+            nift_engine_free(engine); return 1;
+        }
+        nift_string j2 = {0};
+        int okv = (nift_script_result_value_json(r2, &j2) == NIFT_OK && j2.length == 2 &&
+                   memcmp(j2.data, "-1", 2) == 0);
+        nift_script_result_free(r2);
+        if (!okb || !okv) {
+            fprintf(stderr, "nift->strut bytes verify mismatch okb=%d okv=%d\n", okb, okv);
+            nift_engine_free(engine); return 1;
+        }
+    }
     nift_engine_free(engine);
     printf("nift strut ok\n");
     return 0;
