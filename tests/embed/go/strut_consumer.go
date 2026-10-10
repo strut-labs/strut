@@ -21,6 +21,11 @@ static void strut_embed_set_int(strut_embed_value* v, int64_t i) { v->kind = 2; 
 static void strut_embed_set_blob(strut_embed_value* v, int kind, const void* p, size_t n) { v->kind = kind; v->s.data = (const char*)p; v->s.len = n; }
 static const void* strut_embed_get_data(const strut_embed_value* v) { return v ? v->s.data : NULL; }
 static size_t strut_embed_get_len(const strut_embed_value* v) { return v ? v->s.len : 0; }
+// Borrowed-callback bridge: C trampoline forwards into an exported Go function.
+static int32_t strut_go_tramp(void* ctx, int32_t x);
+static int32_t (*strut_cb_ptr(void))(void*, int32_t) { return strut_go_tramp; }
+extern int32_t goCbImpl(int32_t);
+static int32_t strut_go_tramp(void* ctx, int32_t x) { (void)ctx; return goCbImpl(x); }
 */
 import "C"
 
@@ -54,8 +59,17 @@ func errDetail(e *C.strut_embed_error) (int, string, string) {
 	return cat, ty, msg
 }
 
+//export goCbImpl
+func goCbImpl(x C.int32_t) C.int32_t { return x + 100 }
+
 func main() {
 	ctx := C.strut_embed_context_create()
+	destroyed := false
+	defer func() {
+		if !destroyed && ctx != nil {
+			C.strut_embed_context_destroy(ctx)
+		}
+	}()
 	if ctx == nil {
 		fail("create")
 	}
@@ -75,6 +89,7 @@ export "C" function greet(string name) -> string { return "hi " + name; }
 export "C" function echo_bytes(bytes b) -> bytes { return b; }
 error EmbedErr { string message; }
 export "C" function risky(int_32 x) -> int_32 : EmbedErr { if (x < 0) { throw EmbedErr { message: "boom" }; } return x; }
+export "C" function apply_cb(function<(int_32)->int_32> f, int_32 v) -> int_32 { return f(v) + f(v + 1); }
 export "C" function make_rc(int_32 base) -> retained_callback<(int_32)->int_32> { return retained_callback((int_32 x) => x + base); }`)
 
 	// integer invocation
@@ -128,6 +143,22 @@ export "C" function make_rc(int_32 base) -> retained_callback<(int_32)->int_32> 
 	C.strut_embed_value_free(ctx, &out)
 	C.free(unsafe.Pointer(buf))
 
+	// borrowed callback: C trampoline -> exported Go function (base 100), state stays live
+	cv := C.strut_embed_value{}
+	cv.kind = 7
+	cv.cb_fn = C.strut_embed_callback_i32_fn(unsafe.Pointer(C.strut_cb_ptr()))
+	cv.cb_ctx = nil
+	nv := C.strut_embed_value{}
+	C.strut_embed_set_int(&nv, 5)
+	bargs := [2]C.strut_embed_value{cv, nv}
+	if C.strut_embed_invoke(ctx, C.CString("apply_cb"), &bargs[0], 2, &out, &e) != 0 {
+		_, _, m := errDetail(e)
+		fail("apply_cb: " + m)
+	}
+	if out.i != (5+100)+(6+100) {
+		fail("apply_cb result")
+	}
+
 	// structured checked error (type via accessor; message; code)
 	rv := C.strut_embed_value{}
 	rv.kind, rv.i = 2, -1
@@ -165,6 +196,7 @@ export "C" function make_rc(int_32 base) -> retained_callback<(int_32)->int_32> 
 	if C.strut_embed_context_destroy(ctx) != 0 {
 		fail("destroy after release")
 	}
+	destroyed = true
 
 	fmt.Println("go consumer ok")
 }

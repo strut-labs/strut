@@ -221,7 +221,7 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
         find_symbol(new_library, "strut_embed_invoke_" + slug));
     if (!new_invoke) {
         close_library(new_library);
-        if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "build", "embedding dispatcher not emitted (no supported exported functions)", 0);
+        if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "build", "embedding dispatcher '" + slug + "' was not found in the loaded module; the module built and loaded, but it produced no embedding table. Confirm the source exports embedding-callable functions, the native compiler emitted the module, and (if JSON is used) STRUT_JSONIC_INCLUDE_DIR points at the runtime support headers", 0);
         return 1;
     }
     auto* m = new embed_module();
