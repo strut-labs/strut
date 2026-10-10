@@ -22,10 +22,11 @@ with tempfile.TemporaryDirectory(prefix="strut-embed-go-") as td:
                        env=env, capture_output=True, text=True, cwd=str(srcdir))
     if b.returncode != 0:
         print("go build FAILED:", b.stderr[:2000]); sys.exit(1)
-    r = subprocess.run([str(exe)], env=dict(os.environ,
-                        LD_LIBRARY_PATH=str(libdir),
-                        STRUT_JSONIC_INCLUDE_DIR=str(jsonic)),
-                       capture_output=True, text=True)
+    run_env = dict(os.environ, LD_LIBRARY_PATH=str(libdir),
+                   STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
+    sep = ";" if os.name == "nt" else ":"
+    run_env["PATH"] = str(libdir) + sep + run_env.get("PATH", "")
+    r = subprocess.run([str(exe)], env=run_env, capture_output=True, text=True)
     out = r.stdout.strip()
     if r.returncode != 0 or out != "go consumer ok":
         print("go consumer FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
