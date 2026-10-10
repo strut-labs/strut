@@ -49,9 +49,13 @@ env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 
 args = [x for x in ([nodegyp, "rebuild"] if not use_npx else [nodegyp, "-y", "node-gyp", "rebuild"])]
 b = subprocess.run(args, env=env, capture_output=True, text=True, cwd=str(srcdir),
-                   shell=(os.name == "nt" and use_npx))
+                   shell=(os.name == "nt"))
 if b.returncode != 0:
-    print("node addon build FAILED:", b.stderr[-2000:]); sys.exit(1)
+    err = b.stderr or ""
+    detail = "\n".join(ln for ln in err.splitlines()
+                       if any(k in ln.lower() for k in ("error", "gyp err", "msb", "fatal", "ld", "lnk")))
+    print("node addon build FAILED (%s):\n%s" % (b.returncode, (detail or err)[-4000:]))
+    sys.exit(1)
 r = subprocess.run([node, "index.js"], env=env, capture_output=True, text=True, cwd=str(srcdir))
 out = r.stdout.strip()
 if r.returncode != 0 or "node consumer ok" not in out:
