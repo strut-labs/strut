@@ -233,3 +233,14 @@ if(NODE_EXECUTABLE AND NOT STRUT_SANITIZERS)
         ${CMAKE_BINARY_DIR}/share/strut/jsonic)
     set_tests_properties(strut_ffi_embed_node PROPERTIES TIMEOUT 600 SKIP_RETURN_CODE 77)
 endif()
+find_program(DOTNET_EXECUTABLE NAMES dotnet)
+if(DOTNET_EXECUTABLE AND NOT STRUT_SANITIZERS)
+    # 9-CSHARP: build with dotnet, then execute the P/Invoke consumer against the real shared
+    # embedding library (build and run must both pass). The ABI-safe float type is double_64;
+    # bool is not an ABI-exportable type in Strut, so the BOOL kind is not exercised here.
+    add_test(NAME strut_ffi_embed_csharp COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tests/embed/csharp/run_csharp_consumer.py
+        $<TARGET_FILE_DIR:strut_embed>
+        ${CMAKE_BINARY_DIR}/share/strut/jsonic)
+    set_tests_properties(strut_ffi_embed_csharp PROPERTIES TIMEOUT 600 SKIP_RETURN_CODE 77)
+endif()

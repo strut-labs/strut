@@ -2,5 +2,7 @@
 /build-*/
 tests/embed/node/build/
 tests/embed/node/node_modules/
+tests/embed/csharp/bin/
+tests/embed/csharp/obj/
 *.user
 .DS_Store
