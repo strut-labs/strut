@@ -639,6 +639,10 @@ DIRECTIONS (permanent CTests, gated on STRUT_NIFT_LIBDIR, SKIP 77 when Nift abse
   raw_ptr<uint_8> extern; negative-branch probe (NULL/negative capacity/length) with sentinel
   preservation (b87033f); same-engine payload->empty->payload with copied-output
   re-verification AFTER each result free (SAME-OK, c160d64); BYTES-OK (d45dce6).
+  NOTE: the same-engine helper builds its payload inside the adapter; actual Strut-origin byte
+  provenance is the separate nift_bytes_rt.p fixture. FFI-10 status: functional implementation
+  COMPLETE, Linux-local tests 4/4, FIVE-PLATFORM FFI-10 certification NOT established (FFI-9's
+  25/25 consumer matrix does not certify the Nift integration per-platform).
 - Nift -> Strut integers: nift_to_strut.c evaluates Nift ffi_call(ffi_open,"add",...) for four
   pairs on a reused engine (42/15/-2/0) against a Strut --shared export (e87debf).
 - Nift -> Strut strings: ffi_call("i32(cstr,u64)") into nift_verify_string export; "hello"
