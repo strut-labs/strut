@@ -92,7 +92,6 @@ def run():
     # bytes with embedded NUL
     bv = EmbedValue(); bv.kind = BYTES; buf = ctypes.create_string_buffer(b"a\x00b\xff", 4)
     bv.data = ctypes.addressof(buf); bv.len = 4
-    print("bytein hex=", string_at(bv.data, 4).hex(), "addr=", bv.data, file=sys.stderr)
     check(lib.strut_embed_invoke(ctx, b"echo_bytes", ctypes.byref(bv), 1, ctypes.byref(out), ctypes.byref(errp)) == 0, "bytes")
     gotbytes = string_at(out.data, out.len) if out.data else b""
     check(out.len == 4 and gotbytes == b"a\x00b\xff", "bytes exact len="+str(out.len)+" hex="+gotbytes.hex())
