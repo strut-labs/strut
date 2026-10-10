@@ -13,6 +13,38 @@
 // legitimate negative result (e.g. seed=-128 -> -103) is not confused with an error.
 // Status codes: 1 engine creation, 2 binding, 3 mechanical evaluate, 4 semantic failure,
 // 5 result conversion.
+// Checked int32 parse: empty input, trailing characters, overflow, or an out-of-range value
+// must fail; *out is only written on complete success.
+static int parse_i32(const char* data, size_t len, int32_t* out) {
+    if (!data || len == 0 || len >= 16) return 0;
+    char buffer[16];
+    memcpy(buffer, data, len);
+    buffer[len] = '\0';
+    char* end = nullptr;
+    long value = strtol(buffer, &end, 10);
+    if (end == buffer || *end != '\0') return 0;
+    if (value != static_cast<int32_t>(value)) return 0;
+    *out = static_cast<int32_t>(value);
+    return 1;
+}
+
+// Scoped failure probe: evaluates an invalid Nift expression to route a semantic failure through
+// the status channel (returns 3 mechanical / 4 semantic); never enters the conversion path.
+extern "C" int strut_nift_add25_bad(void) {
+    nift_engine* engine = nift_engine_new();
+    if (!engine) return 1;
+    static const char* expression = "seed +";
+    nift_script_result* result = nullptr;
+    if (nift_engine_evaluate(engine, expression, strlen(expression), &result) != NIFT_OK || !result) {
+        nift_engine_free(engine);
+        return 3;
+    }
+    int status = nift_script_result_ok(result) ? 4 : 4;
+    nift_script_result_free(result);
+    nift_engine_free(engine);
+    return status;
+}
+
 extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
     if (!out) return 5;
     nift_engine* engine = nift_engine_new();
@@ -35,11 +67,7 @@ extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
     nift_string json{};
     int status = 5;
     if (nift_script_result_value_json(result, &json) == NIFT_OK && json.data && json.length) {
-        char buffer[64] = {0};
-        size_t n = json.length < sizeof(buffer) - 1 ? json.length : sizeof(buffer) - 1;
-        memcpy(buffer, json.data, n);
-        *out = static_cast<int32_t>(strtoll(buffer, nullptr, 10));
-        status = 0;
+        if (parse_i32(json.data, json.length, out)) status = 0;
     }
     nift_script_result_free(result);
     nift_engine_free(engine);

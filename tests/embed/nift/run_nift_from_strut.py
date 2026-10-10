@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix="strut-nift-from-strut-") as td:
         print("strut compile FAILED:", (c.stdout + c.stderr)[-1500:]); sys.exit(1)
     r = subprocess.run([str(exe)], env=env, capture_output=True, text=True)
     out = r.stdout.strip()
-    expected = "42\n25\n0\n125\n-103"
+    expected = "42\n25\n0\n125\n-103\n42\nFAILED\n42"
     if r.returncode != 0 or out != expected:
         print("nift_from_strut FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
 print("nift from strut ok")
