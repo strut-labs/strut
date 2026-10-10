@@ -35,9 +35,12 @@ import (
 	"unsafe"
 )
 
+var consumerFailed bool
+
+// fail panics so the guarded deferred cleanup always runs before the process exits.
 func fail(what string) {
-	fmt.Println("GO CONSUMER FAIL:", what)
-	os.Exit(1)
+	consumerFailed = true
+	panic("GO CONSUMER FAIL: " + what)
 }
 
 func errDetail(e *C.strut_embed_error) (int, string, string) {
@@ -66,8 +69,21 @@ func main() {
 	ctx := C.strut_embed_context_create()
 	destroyed := false
 	defer func() {
+		// Deferred cleanup runs on both the normal and the panic (failure) path; process exits
+		// only after cleanup. A nonzero (BUSY) cleanup result is reported explicitly.
+		r := recover()
+		if r != nil {
+			fmt.Fprintln(os.Stderr, r)
+			consumerFailed = true
+		}
 		if !destroyed && ctx != nil {
-			C.strut_embed_context_destroy(ctx)
+			if C.strut_embed_context_destroy(ctx) != 0 {
+				fmt.Fprintln(os.Stderr, "cleanup destroy returned BUSY")
+				consumerFailed = true
+			}
+		}
+		if consumerFailed {
+			os.Exit(1)
 		}
 	}()
 	if ctx == nil {
