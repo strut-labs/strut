@@ -5,6 +5,16 @@
 #define STRUT_FFI_EMBED_H
 #include <stdint.h>
 #include <stddef.h>
+#ifndef STRUT_EMBED_API
+#if defined(_WIN32) && defined(STRUT_EMBED_BUILD_SHARED)
+#define STRUT_EMBED_API __declspec(dllexport)
+#elif defined(_WIN32)
+#define STRUT_EMBED_API __declspec(dllimport)
+#else
+#define STRUT_EMBED_API
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,17 +78,17 @@ typedef struct strut_embed_error {
  * and produce an unsupported-signature diagnostic. */
 typedef int32_t (*strut_embed_callback_i32_fn)(void* ctx, int32_t arg);
 
-strut_embed_context* strut_embed_context_create(void);
+STRUT_EMBED_API strut_embed_context* strut_embed_context_create(void);
 /* Returns 0 on success; nonzero (BUSY) if outstanding RETAINED values still hold module
  * leases -- release them first. BUSY leaves the context fully intact and usable. A module with
  * outstanding leases stays loaded (module lease) so retained callbacks remain safely invokable
  * after successful module replacement, and is unloaded exactly once after the last release. */
-int strut_embed_context_destroy(strut_embed_context* ctx);
+STRUT_EMBED_API int strut_embed_context_destroy(strut_embed_context* ctx);
 
-int strut_embed_context_load_source(strut_embed_context* ctx, const char* source, size_t len, strut_embed_error** out_err);
-int strut_embed_context_load_file(strut_embed_context* ctx, const char* path, strut_embed_error** out_err);
+STRUT_EMBED_API int strut_embed_context_load_source(strut_embed_context* ctx, const char* source, size_t len, strut_embed_error** out_err);
+STRUT_EMBED_API int strut_embed_context_load_file(strut_embed_context* ctx, const char* path, strut_embed_error** out_err);
 
-int strut_embed_invoke(strut_embed_context* ctx, const char* name, const strut_embed_value* args, size_t nargs, strut_embed_value* out, strut_embed_error** out_err);
+STRUT_EMBED_API int strut_embed_invoke(strut_embed_context* ctx, const char* name, const strut_embed_value* args, size_t nargs, strut_embed_value* out, strut_embed_error** out_err);
 
 /* Release a value returned by strut_embed_invoke. Module-owned string/bytes payloads are
  * freed through the module token captured at load; primitives/empty/void are no-ops. The value
@@ -86,14 +96,14 @@ int strut_embed_invoke(strut_embed_context* ctx, const char* name, const strut_e
  * Release a host- or module-owned error: routing is internal via the error's ownership tag, so
  * callers need not know which allocation domain produced it. ctx may be NULL for host-owned
  * errors; module-owned error payloads MUST be released before strut_embed_context_destroy. */
-void strut_embed_value_free(strut_embed_context* ctx, strut_embed_value* v);
-void strut_embed_error_release(strut_embed_context* ctx, strut_embed_error* e);
+STRUT_EMBED_API void strut_embed_value_free(strut_embed_context* ctx, strut_embed_value* v);
+STRUT_EMBED_API void strut_embed_error_release(strut_embed_context* ctx, strut_embed_error* e);
 
 /* Retained callback interop (FFI-7 contract preserved: the caller owns a live reference; in
  * this layer that means a non-NULL RETAINED value from invoke, released exactly once through
  * strut_embed_value_free. RETAINED values are single-owner: copying them is prohibited. Invoke
  * routes to the callback's OWNING module, so it stays correct after that module was replaced. */
-int strut_embed_retained_invoke(strut_embed_context* ctx, const strut_embed_value* self,
+STRUT_EMBED_API int strut_embed_retained_invoke(strut_embed_context* ctx, const strut_embed_value* self,
                                 const strut_embed_value* args, size_t nargs,
                                 strut_embed_value* out, strut_embed_error** out_err);
 

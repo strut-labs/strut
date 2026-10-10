@@ -157,12 +157,6 @@ char* adopt_buffer(const char* data, std::size_t len, void (*release_fn)(void*))
 
 } // namespace
 
-#if defined(_WIN32)
-#define STRUT_EMBED_API __declspec(dllexport)
-#else
-#define STRUT_EMBED_API __attribute__((visibility("default")))
-#endif
-
 extern "C" {
 
 STRUT_EMBED_API strut_embed_context* strut_embed_context_create(void) {

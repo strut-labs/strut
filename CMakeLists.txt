@@ -59,7 +59,7 @@ target_include_directories(strut_embed
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonic/include
 )
-target_compile_definitions(strut_embed PRIVATE STRUT_HOST_CXX="${CMAKE_CXX_COMPILER}")
+target_compile_definitions(strut_embed PRIVATE STRUT_HOST_CXX="${CMAKE_CXX_COMPILER}" STRUT_EMBED_BUILD_SHARED=true)
 set_target_properties(strut_embed PROPERTIES OUTPUT_NAME strut_embed)
 
 
