@@ -31,6 +31,17 @@ static void* conc_worker(void* a) {
     return 0;
 }
 
+struct ret_work { strut_embed_context* c; strut_embed_value r; int bad; int result; };
+static void* ret_worker(void* a) {
+    struct ret_work* w = (struct ret_work*)a;
+    strut_embed_error* e = 0;
+    strut_embed_value x; memset(&x, 0, sizeof x); x.kind = STRUT_EMBED_VALUE_INT; x.i = 5;
+    strut_embed_value o;
+    if (strut_embed_retained_invoke(w->c, &w->r, &x, 1, &o, &e) != 0 || o.i != 15) w->bad = 1;
+    else w->result = (int)o.i;
+    return 0;
+}
+
 int main(void) {
     strut_embed_context* ctx = strut_embed_context_create();
     CHECK(ctx != 0);
@@ -249,6 +260,48 @@ int main(void) {
         CHECK(wa.bad == 0 && wb.bad == 0);
         strut_embed_context_destroy(ca);
         strut_embed_context_destroy(cb);
+    }
+    /* RETAINED callback + module lease lifecycle */
+    {
+        const char* srcA = "export \"C\" function make_rc(int_32 base) -> retained_callback<(int_32)->int_32> { return retained_callback((int_32 x) => x + base); }\n";
+        strut_embed_context* lc = strut_embed_context_create();
+        strut_embed_error* le = 0;
+        CHECK(strut_embed_context_load_source(lc, srcA, strlen(srcA), &le) == 0);
+        strut_embed_value base; memset(&base, 0, sizeof base); base.kind = STRUT_EMBED_VALUE_INT; base.i = 10;
+        strut_embed_value rc;
+        CHECK(strut_embed_invoke(lc, "make_rc", &base, 1, &rc, &le) == 0 && rc.kind == STRUT_EMBED_VALUE_RETAINED && rc.retained);
+        strut_embed_value base2; memset(&base2, 0, sizeof base2); base2.kind = STRUT_EMBED_VALUE_INT; base2.i = 20;
+        strut_embed_value rc2;
+        CHECK(strut_embed_invoke(lc, "make_rc", &base2, 1, &rc2, &le) == 0 && rc2.kind == STRUT_EMBED_VALUE_RETAINED);
+        strut_embed_value x; memset(&x, 0, sizeof x); x.kind = STRUT_EMBED_VALUE_INT; x.i = 5;
+        strut_embed_value o;
+        CHECK(strut_embed_retained_invoke(lc, &rc, &x, 1, &o, &le) == 0 && o.i == 15);
+        CHECK(strut_embed_retained_invoke(lc, &rc2, &x, 1, &o, &le) == 0 && o.i == 25);
+        /* A -> B -> C: A stays loaded via leases; retained callbacks keep invoking its code */
+        const char* srcB = "export \"C\" function twice(int_32 v) -> int_32 { return v * 2; }\n";
+        const char* srcC = "export \"C\" function thrice(int_32 v) -> int_32 { return v * 3; }\n";
+        CHECK(strut_embed_context_load_source(lc, srcB, strlen(srcB), &le) == 0);
+        CHECK(strut_embed_retained_invoke(lc, &rc, &x, 1, &o, &le) == 0 && o.i == 15);
+        CHECK(strut_embed_context_load_source(lc, srcC, strlen(srcC), &le) == 0);
+        CHECK(strut_embed_retained_invoke(lc, &rc2, &x, 1, &o, &le) == 0 && o.i == 25);
+        /* failed reload: active module and retained callbacks preserved */
+        strut_embed_error* fe = 0;
+        CHECK(strut_embed_context_load_source(lc, "function bad( -> {", 17, &fe) != 0);
+        strut_embed_error_release(lc, fe);
+        CHECK(strut_embed_retained_invoke(lc, &rc, &x, 1, &o, &le) == 0 && o.i == 15);
+        /* BUSY destroy: context intact, retained callbacks still invoke */
+        CHECK(strut_embed_context_destroy(lc) != 0);
+        CHECK(strut_embed_retained_invoke(lc, &rc, &x, 1, &o, &le) == 0 && o.i == 15);
+        /* secondary-thread invoke with an owned reference */
+        { struct ret_work w; w.c = lc; w.r = rc; w.bad = 0; w.result = 0;
+          embed_thr th = e_thr(ret_worker, &w); e_join(th);
+          CHECK(w.bad == 0 && w.result == 15); }
+        /* release one: module A still leased by rc2 */
+        strut_embed_value_free(lc, &rc);
+        CHECK(strut_embed_retained_invoke(lc, &rc2, &x, 1, &o, &le) == 0 && o.i == 25);
+        /* release the last lease: A unloads; destroy now succeeds */
+        strut_embed_value_free(lc, &rc2);
+        CHECK(strut_embed_context_destroy(lc) == 0);
     }
     strut_embed_context_destroy(ctx);
     if (failures == 0) printf("embed ok\n");

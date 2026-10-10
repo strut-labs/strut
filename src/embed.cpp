@@ -1,6 +1,12 @@
 // Strut C embedding API (FFI-8): in-process compile + native-host invocation with no CLI
 // spawn and no C++ types across the boundary. Logical module identity (never an absolute
 // checkout path) drives the digest-qualified ABI names, consistent with FFI-1..7.
+//
+// Module lifetime: every loaded module is a `module_ref`. The context's ACTIVE module is the
+// one dispatched to by invoke(). Ordinary results/errors are copied into embedding-owned
+// storage, so they never depend on a module. RETAINED values hold a lease on their owning
+// module: a replaced (inactive) module is NOT unloaded while leases remain, and is unloaded
+// exactly once after the last lease is released. context_destroy is BUSY while leases exist.
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "strut/embed.h"
@@ -26,20 +33,38 @@
 
 namespace {
 
-struct embed_context {
+void close_library(void*);
+
+struct embed_module {
     void* library = nullptr;
-    std::filesystem::path tmp;
-    std::string slug;
-    std::string module_id;
-    unsigned long load_seq = 0;
-    int (*invoke_fn)(const char*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*) = nullptr;
     void (*release_fn)(void*) = nullptr;
-private:
+    int (*retained_invoke_fn)(void*, const strut_embed_value*, std::size_t, strut_embed_value*, strut_embed_error*) = nullptr;
+    void (*retained_release_fn)(void*) = nullptr;
+    int leases = 0;    // outstanding retained handles from this module
+    bool active = false;
+};
+
+struct embed_context {
+    embed_module* current = nullptr;
+    std::vector<embed_module*> modules;                            // all loaded (active + leased inactive)
+    std::unordered_map<const void*, embed_module*> retained_owner; // retained handle -> owning module
+    std::filesystem::path tmp;
+    std::string module_id;
+    int (*invoke_fn)(const char*, const strut_embed_value*, std::size_t, strut_embed_value*, strut_embed_error*) = nullptr;
+    unsigned long load_seq = 0;
+
     embed_context() = default;
-public:
-    static embed_context* create() { return new embed_context(); }
-    void* owner_token() const { return release_fn ? (void*)release_fn : nullptr; }
-    void release_buffer(void* p) { if (release_fn) release_fn(p); else std::free(p); }
+    embed_context(const embed_context&) = delete;
+    embed_context& operator=(const embed_context&) = delete;
+    ~embed_context() = default;
+
+    void unload(embed_module* m) {
+        close_library(m->library);
+        for (auto it = modules.begin(); it != modules.end(); ++it) {
+            if (*it == m) { modules.erase(it); break; }
+        }
+        delete m;
+    }
 };
 
 std::string slug_of(const std::string& module_id) {
@@ -63,7 +88,7 @@ void* find_symbol(void* library, const std::string& name) {
 #if defined(_WIN32)
     return (void*)GetProcAddress((HMODULE)library, name.c_str());
 #else
-    return dlsym(library, name.c_str());
+    return library ? dlsym(library, name.c_str()) : nullptr;
 #endif
 }
 
@@ -109,16 +134,6 @@ bool build_module(const std::string& module_id, const std::string& source,
     return true;
 }
 
-// Copy a module-owned buffer into EMBEDDING-library-owned storage so returned values/errors
-// have NO dependency on the module's code/heap once invoke() returns; the module's own copy is
-// released now, while the module is still guaranteed loaded.
-char* adopt_buffer(const char* data, std::size_t len, void (*release_fn)(void*)) {
-    char* copy = nullptr;
-    if (len) { copy = static_cast<char*>(std::malloc(len + (data ? 1 : 0))); if (data && len) std::memcpy(copy, data, len); if (data) copy[len] = 0; }
-    if (data) { if (release_fn) release_fn(const_cast<char*>(data)); else std::free(const_cast<char*>(data)); }
-    return copy;
-}
-
 std::string diagnostic_summary(const std::vector<strut::Diagnostic>& errors) {
     std::string out;
     for (const auto& d : errors) {
@@ -128,12 +143,21 @@ std::string diagnostic_summary(const std::vector<strut::Diagnostic>& errors) {
     return out;
 }
 
+// Copy a module-owned buffer into EMBEDDING-library-owned storage; release the module copy
+// NOW while the module is guaranteed loaded.
+char* adopt_buffer(const char* data, std::size_t len, void (*release_fn)(void*)) {
+    char* copy = nullptr;
+    if (len) { copy = static_cast<char*>(std::malloc(len + 1)); if (data && len) std::memcpy(copy, data, len); copy[len] = 0; }
+    if (data) { if (release_fn) release_fn(const_cast<char*>(data)); else std::free(const_cast<char*>(data)); }
+    return copy;
+}
+
 } // namespace
 
 extern "C" {
 
 strut_embed_context* strut_embed_context_create(void) {
-    auto* ctx = embed_context::create();
+    auto* ctx = new embed_context;
     std::error_code ec;
     ctx->tmp = std::filesystem::temp_directory_path();
     for (int i = 0; i < 100000; ++i) {
@@ -144,13 +168,18 @@ strut_embed_context* strut_embed_context_create(void) {
     return reinterpret_cast<strut_embed_context*>(ctx);
 }
 
-void strut_embed_context_destroy(strut_embed_context* c) {
-    if (!c) return;
+int strut_embed_context_destroy(strut_embed_context* c) {
+    if (!c) return 1;
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
-    close_library(ctx->library);
+    if (!ctx->retained_owner.empty()) return 1;   // BUSY: outstanding retained leases; context intact
+    for (auto* m : ctx->modules) close_library(m->library);   // active + lease-free inactive
+    for (auto* m : ctx->modules) delete m;
+    ctx->modules.clear();
+    ctx->retained_owner.clear();
     std::error_code ec;
     std::filesystem::remove_all(ctx->tmp, ec);
     delete ctx;
+    return 0;
 }
 
 int strut_embed_context_load_source(strut_embed_context* c, const char* source, std::size_t len, strut_embed_error** out_err) {
@@ -190,19 +219,28 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
         if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "build", "embedding dispatcher not emitted (no supported exported functions)", 0);
         return 1;
     }
-    auto new_release = reinterpret_cast<void (*)(void*)>(find_symbol(new_library, "strut_embed_release_" + slug));
-    // Successful load atomically replaces the current module: unload the previous exactly once.
-    close_library(ctx->library);
-    ctx->library = new_library;
-    ctx->slug = slug;
+    auto* m = new embed_module();
+    m->library = new_library;
+    m->release_fn = reinterpret_cast<void (*)(void*)>(find_symbol(new_library, "strut_embed_release_" + slug));
+    m->retained_invoke_fn = reinterpret_cast<int (*)(void*, const struct strut_embed_value*, std::size_t, struct strut_embed_value*, struct strut_embed_error*)>(
+        find_symbol(new_library, "strut_embed_retained_invoke_" + slug));
+    m->retained_release_fn = reinterpret_cast<void (*)(void*)>(find_symbol(new_library, "strut_embed_retained_release_" + slug));
+    m->active = true;
+    ctx->modules.push_back(m);
+    // Successful load atomically replaces the active module. The previous active module is
+    // unloaded NOW only if it has no outstanding retained leases; otherwise it stays loaded
+    // (retained callbacks keep invoking its code) and unloads with its final lease.
+    if (ctx->current) {
+        ctx->current->active = false;
+        if (ctx->current->leases == 0) ctx->unload(ctx->current);
+    }
+    ctx->current = m;
     ctx->invoke_fn = new_invoke;
-    ctx->release_fn = new_release;
     return 0;
 }
 
 int strut_embed_context_load_file(strut_embed_context* c, const char* path, strut_embed_error** out_err) {
     if (!path) return 1;
-    std::error_code ec;
     std::ifstream in(path, std::ios::binary);
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     if (in.bad()) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "load", "cannot read file", 0); return 1; }
@@ -220,23 +258,29 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
     *out = strut_embed_value{};
     strut_embed_error local;
     int status = ctx->invoke_fn(name, args, nargs, out, &local);
-    if (status == 0 && (out->kind == STRUT_EMBED_VALUE_STRING || out->kind == STRUT_EMBED_VALUE_BYTES) && out->s.data) {
-        const std::size_t n = out->s.len;
-        char* copy = adopt_buffer(out->s.data, n, ctx->release_fn);
-        out->s.data = copy;
-        out->s.len = n;
+    if (status == 0) {
+        if (out->kind == STRUT_EMBED_VALUE_STRING || out->kind == STRUT_EMBED_VALUE_BYTES) {
+            const std::size_t n = out->s.len;
+            char* copy = adopt_buffer(out->s.data, n, ctx->current ? ctx->current->release_fn : nullptr);
+            out->s.data = copy;
+            out->s.len = n;
+        } else if (out->kind == STRUT_EMBED_VALUE_RETAINED && out->retained) {
+            // The host now owns one FFI-7 reference (refcount 1) PLUS one module lease.
+            if (ctx->current) ctx->current->leases++;
+            ctx->retained_owner[out->retained] = ctx->current;
+        }
+        return 0;
     }
     if (status == 1) {
         if (out_err) {
-            // copy type/message into embedding-owned storage; free the module copies now.
             std::string ty = local.type ? local.type : "";
             std::string msg = local.message ? local.message : "";
-            if (local.type) ctx->release_buffer(local.type);
-            if (local.message) ctx->release_buffer(local.message);
+            if (local.type && ctx->current) ctx->current->release_fn(local.type); else if (local.type) std::free(local.type);
+            if (local.message && ctx->current) ctx->current->release_fn(local.message); else if (local.message) std::free(local.message);
             *out_err = make_error(local.category, ty, msg, local.code);
         } else {
-            if (local.type) ctx->release_buffer(local.type);
-            if (local.message) ctx->release_buffer(local.message);
+            if (local.type && ctx->current) ctx->current->release_fn(local.type); else if (local.type) std::free(local.type);
+            if (local.message && ctx->current) ctx->current->release_fn(local.message); else if (local.message) std::free(local.message);
         }
         return 1;
     }
@@ -245,29 +289,66 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
     return 0;
 }
 
+int strut_embed_retained_invoke(strut_embed_context* c, const strut_embed_value* self, const strut_embed_value* args, std::size_t nargs, strut_embed_value* out, strut_embed_error** out_err) {
+    if (out_err) *out_err = nullptr;
+    if (!c || !self || self->kind != STRUT_EMBED_VALUE_RETAINED || !self->retained) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "invalid retained callback reference", 0); return 1; }
+    embed_context* ctx = reinterpret_cast<embed_context*>(c);
+    auto it = ctx->retained_owner.find(self->retained);
+    if (it == ctx->retained_owner.end() || !it->second->retained_invoke_fn) {
+        if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "live retained callback reference required", 0);
+        return 1;
+    }
+    embed_module* m = it->second;
+    *out = strut_embed_value{};
+    strut_embed_error local;
+    int status = m->retained_invoke_fn(self->retained, args, nargs, out, &local);
+    if (status == 1) {
+        if (out_err) {
+            std::string ty = local.type ? local.type : "";
+            std::string msg = local.message ? local.message : "";
+            if (local.type && m->release_fn) m->release_fn(local.type); else if (local.type) std::free(local.type);
+            if (local.message && m->release_fn) m->release_fn(local.message); else if (local.message) std::free(local.message);
+            *out_err = make_error(local.category, ty, msg, local.code);
+        } else {
+            if (local.type && m->release_fn) m->release_fn(local.type); else if (local.type) std::free(local.type);
+            if (local.message && m->release_fn) m->release_fn(local.message); else if (local.message) std::free(local.message);
+        }
+        return 1;
+    }
+    if (status == 2) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "argument count/kind mismatch", 0); return 1; }
+    return 0;
+}
+
 void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
     if (!v) return;
+    if (v->kind == STRUT_EMBED_VALUE_RETAINED && v->retained) {
+        if (c) {
+            embed_context* ctx = reinterpret_cast<embed_context*>(c);
+            auto it = ctx->retained_owner.find(v->retained);
+            if (it != ctx->retained_owner.end()) {
+                embed_module* m = it->second;
+                // Destruction order: resolve module -> FFI-7 release (module still loaded due to
+                // its lease) -> drop record -> drop lease -> unload inactive module if final.
+                if (m->retained_release_fn) m->retained_release_fn(v->retained);
+                else if (m->release_fn) m->release_fn(nullptr);
+                ctx->retained_owner.erase(it);
+                if (--m->leases == 0 && !m->active) ctx->unload(m);
+            }
+        }
+        *v = strut_embed_value{};
+        return;
+    }
     if ((v->kind == STRUT_EMBED_VALUE_STRING || v->kind == STRUT_EMBED_VALUE_BYTES) && v->s.data) {
-        if (c) reinterpret_cast<embed_context*>(c)->release_buffer(const_cast<char*>(v->s.data));
-        else std::free(const_cast<char*>(v->s.data));
+        std::free(const_cast<char*>(v->s.data));   /* embedding-owned copy */
     }
     *v = strut_embed_value{};
 }
 
 void strut_embed_error_release(strut_embed_context* c, strut_embed_error* e) {
+    (void)c;
     if (!e) return;
-    if (e->owner) {
-        auto fn = reinterpret_cast<void (*)(void*)>(e->owner);
-        if (e->type) fn(e->type);
-        if (e->message) fn(e->message);
-    } else if (c) {
-        embed_context* ctx = reinterpret_cast<embed_context*>(c);
-        if (e->type) ctx->release_buffer(e->type);
-        if (e->message) ctx->release_buffer(e->message);
-    } else {
-        if (e->type) std::free(e->type);
-        if (e->message) std::free(e->message);
-    }
+    if (e->type) std::free(e->type);      /* embedding-owned copy */
+    if (e->message) std::free(e->message);
     delete e;
 }
 

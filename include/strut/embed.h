@@ -17,7 +17,8 @@ enum {
     STRUT_EMBED_VALUE_INT = 2,
     STRUT_EMBED_VALUE_FLOAT = 3,
     STRUT_EMBED_VALUE_STRING = 4,
-    STRUT_EMBED_VALUE_BYTES = 5
+    STRUT_EMBED_VALUE_BYTES = 5,
+    STRUT_EMBED_VALUE_RETAINED = 6
 };
 typedef struct strut_embed_value {
     int kind;
@@ -25,6 +26,7 @@ typedef struct strut_embed_value {
     double d;
     int b;
     struct { const char* data; size_t len; } s;
+    void* retained;   /* RETAINED: module-owned opaque retained-callback handle (refcount 1) */
 } strut_embed_value;
 
 enum {
@@ -43,7 +45,11 @@ typedef struct strut_embed_error {
 } strut_embed_error;
 
 strut_embed_context* strut_embed_context_create(void);
-void strut_embed_context_destroy(strut_embed_context* ctx);
+/* Returns 0 on success; nonzero (BUSY) if outstanding RETAINED values still hold module
+ * leases -- release them first. BUSY leaves the context fully intact and usable. A module with
+ * outstanding leases stays loaded (module lease) so retained callbacks remain safely invokable
+ * after successful module replacement, and is unloaded exactly once after the last release. */
+int strut_embed_context_destroy(strut_embed_context* ctx);
 
 int strut_embed_context_load_source(strut_embed_context* ctx, const char* source, size_t len, strut_embed_error** out_err);
 int strut_embed_context_load_file(strut_embed_context* ctx, const char* path, strut_embed_error** out_err);
@@ -58,6 +64,14 @@ int strut_embed_invoke(strut_embed_context* ctx, const char* name, const strut_e
  * errors; module-owned error payloads MUST be released before strut_embed_context_destroy. */
 void strut_embed_value_free(strut_embed_context* ctx, strut_embed_value* v);
 void strut_embed_error_release(strut_embed_context* ctx, strut_embed_error* e);
+
+/* Retained callback interop (FFI-7 contract preserved: the caller owns a live reference; in
+ * this layer that means a non-NULL RETAINED value from invoke, released exactly once through
+ * strut_embed_value_free. RETAINED values are single-owner: copying them is prohibited. Invoke
+ * routes to the callback's OWNING module, so it stays correct after that module was replaced. */
+int strut_embed_retained_invoke(strut_embed_context* ctx, const strut_embed_value* self,
+                                const strut_embed_value* args, size_t nargs,
+                                strut_embed_value* out, strut_embed_error** out_err);
 
 #ifdef __cplusplus
 }
