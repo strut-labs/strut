@@ -34,13 +34,24 @@ static void* conc_worker(void* a) {
 static int32_t my_cb(void* c, int32_t x) { int32_t base = *(int32_t*)c; return x + base; }
 struct rb_work { strut_embed_context* c; strut_embed_value r; int bad; int result; };
 struct same_work { strut_embed_context* c; int depth; int bad; };
+struct life_work { strut_embed_context* c; int busy_destroy; int busy_reload; };
+static int32_t life_cb(void* c, int32_t x) {
+    struct life_work* w = (struct life_work*)c;
+    if (strut_embed_context_destroy(w->c) != 0) w->busy_destroy = 1;         /* BUSY while in flight */
+    strut_embed_error* le = 0;
+    const char* ns = "export \"C\" function g() -> int_32 { return 1; }\n";
+    if (strut_embed_context_load_source(w->c, ns, strlen(ns), &le) != 0) w->busy_reload = 1;
+    if (le) strut_embed_error_release(w->c, le);
+    return x;
+}
+
 static int32_t same_cb(void* c, int32_t x) {
     struct same_work* w = (struct same_work*)c;
     strut_embed_value o; strut_embed_error* e = 0;
     if (w->depth > 0) {
         --w->depth;
         strut_embed_value a; memset(&a, 0, sizeof a); a.kind = STRUT_EMBED_VALUE_INT; a.i = x;
-        strut_embed_value cbv; memset(&cbv, 0, sizeof cbv); cbv.kind = STRUT_EMBED_VALUE_CALLBACK; cbv.cb_fn = (void*)same_cb; cbv.cb_ctx = w;
+        strut_embed_value cbv; memset(&cbv, 0, sizeof cbv); cbv.kind = STRUT_EMBED_VALUE_CALLBACK; cbv.cb_fn = same_cb; cbv.cb_ctx = w;
         strut_embed_value args2[2] = { cbv, a };
         if (strut_embed_invoke(w->c, "nest", args2, 2, &o, &e) != 0) { w->bad = 1; return -777; }
         return (int32_t)o.i;
@@ -363,7 +374,7 @@ int main(void) {
         strut_embed_error* bl = 0;
         CHECK(strut_embed_context_load_source(bc, src, strlen(src), &bl) == 0);
         int32_t base = 10;
-        strut_embed_value cb; memset(&cb, 0, sizeof cb); cb.kind = STRUT_EMBED_VALUE_CALLBACK; cb.cb_fn = (void*)my_cb; cb.cb_ctx = &base;
+        strut_embed_value cb; memset(&cb, 0, sizeof cb); cb.kind = STRUT_EMBED_VALUE_CALLBACK; cb.cb_fn = my_cb; cb.cb_ctx = &base;
         strut_embed_value va; memset(&va, 0, sizeof va); va.kind = STRUT_EMBED_VALUE_INT; va.i = 5;
         strut_embed_value cargs[2] = { cb, va };
         strut_embed_value co;
@@ -386,7 +397,7 @@ int main(void) {
         const char* twice_src = "export \"C\" function twice(int_32 v) -> int_32 { return v * 2; }\n";
         CHECK(strut_embed_context_load_source(cb_other, twice_src, strlen(twice_src), &bl) == 0);
         struct rb_work rw; rw.c = cb_other; rw.r.kind = 0; rw.bad = 0; rw.result = 0;
-        strut_embed_value rcb; memset(&rcb, 0, sizeof rcb); rcb.kind = STRUT_EMBED_VALUE_CALLBACK; rcb.cb_fn = (void*)re_cb; rcb.cb_ctx = &rw;
+        strut_embed_value rcb; memset(&rcb, 0, sizeof rcb); rcb.kind = STRUT_EMBED_VALUE_CALLBACK; rcb.cb_fn = re_cb; rcb.cb_ctx = &rw;
         strut_embed_value rr[2] = { rcb, va };
         CHECK(strut_embed_invoke(bc, "apply_cb", rr, 2, &co, &bl) == 0 && co.i == (2*5) + (2*6));   /* 10 + 12 = 22 */
         CHECK(strut_embed_context_destroy(cb_other) == 0);
@@ -398,7 +409,7 @@ int main(void) {
         strut_embed_error* sl = 0;
         CHECK(strut_embed_context_load_source(sc, src, strlen(src), &sl) == 0);
         struct same_work sw; sw.c = sc; sw.depth = 3; sw.bad = 0;
-        strut_embed_value scb; memset(&scb, 0, sizeof scb); scb.kind = STRUT_EMBED_VALUE_CALLBACK; scb.cb_fn = (void*)same_cb; scb.cb_ctx = &sw;
+        strut_embed_value scb; memset(&scb, 0, sizeof scb); scb.kind = STRUT_EMBED_VALUE_CALLBACK; scb.cb_fn = same_cb; scb.cb_ctx = &sw;
         strut_embed_value sv; memset(&sv, 0, sizeof sv); sv.kind = STRUT_EMBED_VALUE_INT; sv.i = 5;
         strut_embed_value sa2[2] = { scb, sv };
         strut_embed_value so;
@@ -407,6 +418,23 @@ int main(void) {
         strut_embed_value nv; nv.kind = STRUT_EMBED_VALUE_INT; nv.i = 9;
         CHECK(strut_embed_invoke(sc, "neg", &nv, 1, &so, &sl) == 0 && so.i == -9);    /* context still usable after recursion */
         CHECK(strut_embed_context_destroy(sc) == 0);
+    }
+    /* same-context lifecycle from within a callback: reload/destroy are deterministically BUSY,
+       the invocation completes, and the context is usable + destroyable afterwards */
+    {
+        strut_embed_context* lc2 = strut_embed_context_create();
+        strut_embed_error* l2 = 0;
+        CHECK(strut_embed_context_load_source(lc2, src, strlen(src), &l2) == 0);
+        struct life_work lw; lw.c = lc2; lw.busy_destroy = 0; lw.busy_reload = 0;
+        strut_embed_value lcb; memset(&lcb, 0, sizeof lcb); lcb.kind = STRUT_EMBED_VALUE_CALLBACK; lcb.cb_fn = life_cb; lcb.cb_ctx = &lw;
+        strut_embed_value lv; memset(&lv, 0, sizeof lv); lv.kind = STRUT_EMBED_VALUE_INT; lv.i = 7;
+        strut_embed_value lags[2] = { lcb, lv };
+        strut_embed_value lo;
+        CHECK(strut_embed_invoke(lc2, "nest", lags, 2, &lo, &l2) == 0 && lo.i == 7);
+        CHECK(lw.busy_destroy == 1 && lw.busy_reload == 1);
+        strut_embed_value nn; nn.kind = STRUT_EMBED_VALUE_INT; nn.i = 3;
+        CHECK(strut_embed_invoke(lc2, "neg", &nn, 1, &lo, &l2) == 0 && lo.i == -3);   /* still usable */
+        CHECK(strut_embed_context_destroy(lc2) == 0);
     }
     strut_embed_context_destroy(ctx);
     if (failures == 0) printf("embed ok\n");

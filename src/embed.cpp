@@ -52,6 +52,7 @@ struct embed_context {
     std::string module_id;
     int (*invoke_fn)(const char*, const strut_embed_value*, std::size_t, strut_embed_value*, strut_embed_error*) = nullptr;
     unsigned long load_seq = 0;
+    int in_flight_ = 0;
 
     embed_context() = default;
     embed_context(const embed_context&) = delete;
@@ -143,6 +144,8 @@ std::string diagnostic_summary(const std::vector<strut::Diagnostic>& errors) {
     return out;
 }
 
+struct inflight_guard { int* p; inflight_guard(int* q):p(q){++*p;} ~inflight_guard(){--*p;} };
+
 // Copy a module-owned buffer into EMBEDDING-library-owned storage; release the module copy
 // NOW while the module is guaranteed loaded.
 char* adopt_buffer(const char* data, std::size_t len, void (*release_fn)(void*)) {
@@ -171,6 +174,7 @@ strut_embed_context* strut_embed_context_create(void) {
 int strut_embed_context_destroy(strut_embed_context* c) {
     if (!c) return 1;
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
+    if (ctx->in_flight_ > 0) return 1;           // BUSY: an invocation is in flight on this context
     if (!ctx->retained_owner.empty()) return 1;   // BUSY: outstanding retained leases; context intact
     for (auto* m : ctx->modules) close_library(m->library);   // active + lease-free inactive
     for (auto* m : ctx->modules) delete m;
@@ -186,6 +190,7 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
     if (out_err) *out_err = nullptr;
     if (!c || !source) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "embed", "null context or source", 0); return 1; }
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
+    if (ctx->in_flight_ > 0) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "embed", "cannot reload this context while an invocation is in flight on it", 0); return 1; }
     if (ctx->module_id.empty()) ctx->module_id = "embed";
     const std::string text(source, len);
     strut::IRResult lowered;
@@ -255,6 +260,7 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
     if (!c) return 1;
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
     if (!ctx->invoke_fn) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "no loaded module", 0); return 1; }
+    inflight_guard strut_ig(&ctx->in_flight_);
     *out = strut_embed_value{};
     strut_embed_error local;
     int status = ctx->invoke_fn(name, args, nargs, out, &local);
@@ -300,6 +306,7 @@ int strut_embed_retained_invoke(strut_embed_context* c, const strut_embed_value*
     if (out_err) *out_err = nullptr;
     if (!c || !self || self->kind != STRUT_EMBED_VALUE_RETAINED || !self->retained) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "invalid retained callback reference", 0); return 1; }
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
+    inflight_guard strut_ig(&ctx->in_flight_);
     auto it = ctx->retained_owner.find(self->retained);
     if (it == ctx->retained_owner.end() || !it->second->retained_invoke_fn) {
         if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "live retained callback reference required", 0);

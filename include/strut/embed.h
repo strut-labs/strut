@@ -21,6 +21,12 @@ enum {
     STRUT_EMBED_VALUE_RETAINED = 6,
     STRUT_EMBED_VALUE_CALLBACK = 7
 };
+/* Typed borrowed-callback function pointer for the SUPPORTED embedding callback signature
+ * (int_32 -> int_32). No function pointer is converted through an object pointer; the native
+ * context is the separate cb_ctx member. Other callback signatures are not embedding-callable
+ * and produce an unsupported-signature diagnostic. */
+typedef int32_t (*strut_embed_callback_i32_fn)(void* ctx, int32_t arg);
+
 typedef struct strut_embed_value {
     int kind;
     int64_t i;
@@ -28,8 +34,8 @@ typedef struct strut_embed_value {
     int b;
     struct { const char* data; size_t len; } s;
     void* retained;   /* RETAINED: module-owned opaque retained-callback handle (refcount 1) */
-    void* cb_fn;       /* CALLBACK: borrowed native callback function pointer, R(*)(void* ctx, ...)
-                          stored as an address; valid only for the enclosing embedding invocation */
+    strut_embed_callback_i32_fn cb_fn;   /* CALLBACK: borrowed native callback function (int_32 -> int_32), valid
+                                   only for the enclosing embedding invocation */
     void* cb_ctx;      /* CALLBACK: borrowed opaque native context (first callback argument) */
 } strut_embed_value;
 
@@ -56,6 +62,11 @@ typedef struct strut_embed_error {
     char* message;
     int code;
 } strut_embed_error;
+/* Typed borrowed-callback function pointer for the SUPPORTED embedding callback signature
+ * (int_32 -> int_32). No function pointer is converted through an object pointer; the native
+ * context is the separate cb_ctx member. Other callback signatures are not embedding-callable
+ * and produce an unsupported-signature diagnostic. */
+typedef int32_t (*strut_embed_callback_i32_fn)(void* ctx, int32_t arg);
 
 strut_embed_context* strut_embed_context_create(void);
 /* Returns 0 on success; nonzero (BUSY) if outstanding RETAINED values still hold module
