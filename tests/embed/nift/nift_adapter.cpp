@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <limits.h>
+#include <string>
 
 // Strut supplies "seed" through Nift's engine binding API (no expression string concatenation);
 // Nift computes seed + 25. Returned value is validated against the expectation so a hardcoded
@@ -19,6 +20,16 @@
 // must fail; *out is only written on complete success.
 static int parse_i32(const char* data, size_t len, int32_t* out) {
     if (!data || len == 0 || len >= 16) return 0;
+    // Strict JSON integer contract (input is Nift's JSON serialization): no surrounding
+    // whitespace, no leading '+' or '-0' forms, no leading zeros; a lone "0" is valid.
+    if (len > 0 && (data[len - 1] == '\n' || data[0] == ' ' || data[0] == '\t')) return 0;
+    if (data[0] == '+' || data[0] == '-') {
+        if (len == 1) return 0;
+        if (data[0] == '-' && (data[1] == '0' || data[1] == '-')) return 0;
+        if (data[0] == '+') return 0;
+    } else if (len > 1 && data[0] == '0') {
+        return 0;
+    }
     char buffer[16];
     memcpy(buffer, data, len);
     buffer[len] = '\0';
@@ -40,6 +51,7 @@ extern "C" int strut_nift_parse_i32_check(void) {
         {"2147483647", 1, INT32_MAX}, {"-2147483648", 1, INT32_MIN},
         {"2147483648", 0, 0}, {"-2147483649", 0, 0},
         {"", 0, 0}, {"12x", 0, 0}, {"1.5", 0, 0}, {"null", 0, 0}, {"true", 0, 0},
+        {"+42", 0, 0}, {" 42", 0, 0}, {"042", 0, 0}, {"--42", 0, 0}, {"42\n", 0, 0}, {"-042", 0, 0},
     };
     for (const auto& row : rows) {
         int32_t value = 0x51354E53;
@@ -73,6 +85,50 @@ extern "C" int strut_nift_add25_bad(void) {
 // Same-engine recovery: a single engine must survive an expected semantic failure and still
 // evaluate successfully afterwards. Returns 0 only if ok -> fail(with nonempty diagnostic) -> ok is
 // observed on one engine.
+
+// Read the JSON integer of a successful script result (used to assert actual values).
+static int result_int(nift_script_result* r) {
+    nift_string json = {0};
+    if (nift_script_result_value_json(r, &json) != NIFT_OK || !json.data || !json.length) return -1;
+    int32_t v = 0;
+    return parse_i32(json.data, json.length, &v) ? (int)v : -1;
+}
+
+struct strut_string {
+    std::string v;
+    strut_string() {}
+    explicit strut_string(std::string s) : v(std::move(s)) {}
+};
+
+// UTF-8 string round-trip: Strut passes a string into a Nift engine binding; Nift evaluates
+// s + "!"; the JSON-encoded result is decoded and returned to Strut as a fresh string.
+extern "C" strut_string strut_nift_string_op(strut_string value) {
+    nift_engine* engine = nift_engine_new();
+    std::string empty;
+    if (!engine) return strut_string();
+    if (nift_engine_set_string(engine, "s", 1, value.v.data(), value.v.size()) != NIFT_OK) {
+        nift_engine_free(engine);
+        return strut_string();
+    }
+    static const char* expression = "s + '!'";
+    nift_script_result* r = nullptr;
+    if (nift_engine_evaluate(engine, expression, strlen(expression), &r) != NIFT_OK || !r) {
+        nift_engine_free(engine);
+        return strut_string();
+    }
+    std::string out_value;
+    if (nift_script_result_ok(r)) {
+        nift_string json = {0};
+        if (nift_script_result_value_json(r, &json) == NIFT_OK && json.data && json.length) {
+            size_t start = 0, end = json.length;
+            if (end >= 2 && json.data[0] == '"' && json.data[end - 1] == '"') { start = 1; end -= 1; }
+            out_value.assign(json.data + start, end - start);
+        }
+    }
+    nift_script_result_free(r);
+    nift_engine_free(engine);
+    return strut_string(std::move(out_value));
+}
 extern "C" int strut_nift_same_engine_recovery(void) {
     nift_engine* engine = nift_engine_new();
     if (!engine) return 1;
@@ -82,7 +138,7 @@ extern "C" int strut_nift_same_engine_recovery(void) {
     nift_script_result* r = nullptr;
     bool first_ok = false, failed_with_diag = false, third_ok = false;
     if (nift_engine_evaluate(engine, good, strlen(good), &r) == NIFT_OK && r) {
-        first_ok = nift_script_result_ok(r) == 1;
+        first_ok = nift_script_result_ok(r) == 1 && result_int(r) == 42;
         nift_script_result_free(r); r = nullptr;
     }
     if (nift_engine_evaluate(engine, bad, strlen(bad), &r) == NIFT_OK && r) {
@@ -93,7 +149,7 @@ extern "C" int strut_nift_same_engine_recovery(void) {
         nift_script_result_free(r); r = nullptr;
     }
     if (nift_engine_evaluate(engine, good, strlen(good), &r) == NIFT_OK && r) {
-        third_ok = nift_script_result_ok(r) == 1;
+        third_ok = nift_script_result_ok(r) == 1 && result_int(r) == 42;
         nift_script_result_free(r); r = nullptr;
     }
     nift_engine_free(engine);

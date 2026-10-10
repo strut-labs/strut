@@ -2,6 +2,7 @@ extern "C" function strut_nift_add25_i32(int_32 seed, ptr<int> out) -> int_32;
 extern "C" function strut_nift_add25_bad() -> int_32;
 extern "C" function strut_nift_same_engine_recovery() -> int_32;
 extern "C" function strut_nift_parse_i32_check() -> int_32;
+extern "C" function strut_nift_string_op(string value) -> string;
 
 function main() -> void {
     unsafe {
@@ -28,6 +29,9 @@ function main() -> void {
         if (rc == 0) { print("RECOVERED"); } else { print("BADREC"); }
         rc = strut_nift_parse_i32_check();
         if (rc != 0) { print("PARSE-OK"); } else { print("PARSE-BAD"); }
+        print(strut_nift_string_op("hi"));
+        print(strut_nift_string_op(""));
+        print(strut_nift_string_op("héllo"));
     }
     return;
 }
