@@ -286,6 +286,50 @@ extern "C" int strut_nift_decode_check(void) {
     return 1;
 }
 
+
+// FFI-10 binary increment: C-compatible byte boundary internal to the adapter. A Strut-origin
+// call drives Nift's byte engine: nift_engine_set_bytes -> evaluate "b" -> value_bytes, verified
+// byte-for-byte (explicit lengths; embedded NUL and high-bit bytes are handled, never via
+// C-string functions). Status: 1 engine, 2 binding, 3 mechanical, 4 semantic, 5 conversion.
+// The full (ptr,len) aggregate across the extern boundary is the next scoped step; this fixture
+// keeps the C-compatible view inside the adapter translation unit.
+extern "C" int strut_nift_bytes_check(void) {
+    static const unsigned char payload[] = {0x61, 0x00, 0x62, 0xFF, 0x80};
+    for (int pass = 0; pass < 3; ++pass) {          // repeated calls
+        const unsigned char* data = payload;
+        size_t len = 5;
+        if (pass == 1) { data = nullptr; len = 0; } // empty buffer
+        nift_engine* engine = nift_engine_new();
+        if (!engine) return 1;
+        if (nift_engine_set_bytes(engine, "b", 1, data, len) != NIFT_OK) {
+            nift_engine_free(engine);
+            return 2;
+        }
+        nift_script_result* r = nullptr;
+        static const char* expression = "b";
+        if (nift_engine_evaluate(engine, expression, strlen(expression), &r) != NIFT_OK || !r) {
+            nift_engine_free(engine);
+            return 3;
+        }
+        if (!nift_script_result_ok(r)) {
+            nift_script_result_free(r);
+            nift_engine_free(engine);
+            return 4;
+        }
+        nift_bytes out = {0};
+        if (nift_script_result_value_bytes(r, &out) != NIFT_OK) {
+            nift_script_result_free(r);
+            nift_engine_free(engine);
+            return 5;
+        }
+        bool exact = out.length == len && (len == 0 || memcmp(out.data, data, len) == 0);
+        nift_script_result_free(r);
+        nift_engine_free(engine);
+        if (!exact) return 6;
+    }
+    return 0;
+}
+
 extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
     if (!out) return 5;
     nift_engine* engine = nift_engine_new();

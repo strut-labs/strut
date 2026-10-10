@@ -4,6 +4,7 @@ extern "C" function strut_nift_same_engine_recovery() -> int_32;
 extern "C" function strut_nift_parse_i32_check() -> int_32;
 extern "C" function strut_nift_string_op(string value, ptr<string> out) -> int_32;
 extern "C" function strut_nift_decode_check() -> int_32;
+extern "C" function strut_nift_bytes_check() -> int_32;
 
 function main() -> void {
     unsafe {
@@ -40,6 +41,8 @@ function main() -> void {
         if (rc != 0) { print("SERR"); } else { print(*ps); }
         rc = strut_nift_decode_check();
         if (rc != 0) { print("DECODE-OK"); } else { print("DECODE-BAD"); }
+        rc = strut_nift_bytes_check();
+        if (rc != 0) { print("BYTES-BAD"); } else { print("BYTES-OK"); }
     }
     return;
 }
