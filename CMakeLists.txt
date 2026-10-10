@@ -88,6 +88,10 @@ add_executable(strut src/main.cpp)
 target_link_libraries(strut PRIVATE strut_compiler)
 
 install(TARGETS strut RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS strut_embed
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/strut DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES third_party/jsonic/include/json.h
     DESTINATION ${CMAKE_INSTALL_DATADIR}/strut/jsonic)
 install(FILES LICENSE BUILDING.md COMPATIBILITY.md
