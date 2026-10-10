@@ -41,9 +41,12 @@ env = dict(os.environ,
            LD_LIBRARY_PATH=str(libdir),
            DYLD_LIBRARY_PATH=str(libdir),
            STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
+# Generator-independent include/link discovery: gcc/clang honor CPATH for angle includes and
+# MSVC honors INCLUDE/LIB, so node-gyp's MSBuild path (which ignores the CXXFLAGS/LDFLAGS env)
+# still finds the Strut embedding header and import library.
+env["CPATH"] = str(inc)
 if os.name == "nt":
-    # node-gyp's MSBuild path ignores the LDFLAGS environment variable; MSVC resolves the
-    # embedding import library through the LIB search path instead.
+    env["INCLUDE"] = str(inc) + ";" + env.get("INCLUDE", "")
     env["LIB"] = str(libdir) + ";" + env.get("LIB", "")
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 

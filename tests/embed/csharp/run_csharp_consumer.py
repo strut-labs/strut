@@ -23,20 +23,20 @@ env = dict(os.environ, LD_LIBRARY_PATH=str(libdir), DYLD_LIBRARY_PATH=str(libdir
 sep = ";" if os.name == "nt" else ":"
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 
-b = subprocess.run([dotnet, "build", "-c", "Release", "-v", "q"], env=env, capture_output=True,
-                   text=True, cwd=str(srcdir))
+build_out = srcdir / "bin" / "Release"
+b = subprocess.run([dotnet, "build", "-c", "Release", "-v", "q", "-o", str(build_out)],
+                   env=env, capture_output=True, text=True, cwd=str(srcdir))
 if b.returncode != 0:
-    print("dotnet build FAILED:", b.stderr[-2000:]); sys.exit(1)
+    print("dotnet build FAILED rc=%d:\n%s" % (b.returncode, (b.stdout + "\n" + b.stderr)[-2000:]))
+    sys.exit(1)
 
-bin_dir = srcdir / "bin" / "Release"
-dll = None
-tfm_dirs = sorted(bin_dir.glob("net*"), key=lambda p: str(p)) if bin_dir.exists() else []
-if tfm_dirs:
-    cand = tfm_dirs[-1] / "strut_consumer.dll"
-    if cand.exists():
-        dll = cand
-if dll is None:
-    print("dotnet output dll not found; build tree:", list(bin_dir.rglob("*.dll")) if bin_dir.exists() else "bin/Release missing")
+dll = build_out / "strut_consumer.dll"
+if not dll.exists():
+    print("dotnet output dll not found at", dll)
+    tree = [str(p) for p in build_out.rglob("*.dll")] if build_out.exists() else []
+    print("dlls found:", tree)
+    sdk = subprocess.run([dotnet, "--list-sdks"], env=env, capture_output=True, text=True)
+    print("dotnet --list-sdks:", (sdk.stdout or sdk.stderr).strip()[-500:])
     sys.exit(1)
 
 r = subprocess.run([dotnet, str(dll)], env=env, capture_output=True, text=True, cwd=str(srcdir))
