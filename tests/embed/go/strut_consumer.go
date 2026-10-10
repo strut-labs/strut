@@ -10,7 +10,7 @@
 package main
 
 /*
-#cgo LDFLAGS: -lstrut_embed -ldl
+#cgo LDFLAGS: -lstrut_embed
 #include <stdint.h>
 #include <stdlib.h>
 #include "strut/embed.h"

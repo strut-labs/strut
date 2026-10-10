@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix="strut-embed-go-") as td:
     exe = td / "go_consumer"
     env = dict(os.environ, CGO_ENABLED="1",
                CGO_CFLAGS="-I" + str(inc),
-               CGO_LDFLAGS="-L" + str(libdir) + " -lstrut_embed -ldl")
+               CGO_LDFLAGS="-L" + str(libdir) + " -lstrut_embed")
     b = subprocess.run([go, "build", "-buildvcs=false", "-o", str(exe), str(srcdir)],
                        env=env, capture_output=True, text=True, cwd=str(srcdir))
     if b.returncode != 0:
