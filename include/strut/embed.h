@@ -18,7 +18,8 @@ enum {
     STRUT_EMBED_VALUE_FLOAT = 3,
     STRUT_EMBED_VALUE_STRING = 4,
     STRUT_EMBED_VALUE_BYTES = 5,
-    STRUT_EMBED_VALUE_RETAINED = 6
+    STRUT_EMBED_VALUE_RETAINED = 6,
+    STRUT_EMBED_VALUE_CALLBACK = 7
 };
 typedef struct strut_embed_value {
     int kind;
@@ -27,6 +28,9 @@ typedef struct strut_embed_value {
     int b;
     struct { const char* data; size_t len; } s;
     void* retained;   /* RETAINED: module-owned opaque retained-callback handle (refcount 1) */
+    void* cb_fn;       /* CALLBACK: borrowed native callback function pointer, R(*)(void* ctx, ...)
+                          stored as an address; valid only for the enclosing embedding invocation */
+    void* cb_ctx;      /* CALLBACK: borrowed opaque native context (first callback argument) */
 } strut_embed_value;
 
 enum {

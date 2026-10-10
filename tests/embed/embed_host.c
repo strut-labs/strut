@@ -31,9 +31,18 @@ static void* conc_worker(void* a) {
     return 0;
 }
 
-struct ret_work { strut_embed_context* c; strut_embed_value r; int bad; int result; };
+static int32_t my_cb(void* c, int32_t x) { int32_t base = *(int32_t*)c; return x + base; }
+struct rb_work { strut_embed_context* c; strut_embed_value r; int bad; int result; };
+static int32_t re_cb(void* c, int32_t x) {
+    struct rb_work* w = (struct rb_work*)c;
+    strut_embed_value a; memset(&a, 0, sizeof a); a.kind = STRUT_EMBED_VALUE_INT; a.i = x;
+    strut_embed_value o; strut_embed_error* e = 0;
+    if (strut_embed_invoke(w->c, "twice", &a, 1, &o, &e) != 0) return -1000;   /* reentrant into another context */
+    return (int32_t)o.i;
+}
+
 static void* ret_worker(void* a) {
-    struct ret_work* w = (struct ret_work*)a;
+    struct rb_work* w = (struct rb_work*)a;
     strut_embed_error* e = 0;
     strut_embed_value x; memset(&x, 0, sizeof x); x.kind = STRUT_EMBED_VALUE_INT; x.i = 5;
     strut_embed_value o;
@@ -52,6 +61,8 @@ int main(void) {
         "export \"C\" function neg(int_32 x) -> int_32 { return -x; }\n"
         "export \"C\" function echo_bytes(bytes b) -> bytes { return b; }\n"
         "export \"C\" function takes_f32(double_32 x) -> double_32 { return x; }\n"
+        "export \"C\" function apply_cb(function<(int_32)->int_32> f, int_32 v) -> int_32 { return f(v) + f(v + 1); }\n"
+
         "error EmbedErr { string message; }\n"
         "export \"C\" function risky(int_32 x) -> int_32 : EmbedErr { if (x < 0) { throw EmbedErr { message: \"bad\" }; } return x; }\n";
     strut_embed_error* err = 0;
@@ -294,7 +305,7 @@ int main(void) {
         CHECK(strut_embed_context_destroy(lc) != 0);
         CHECK(strut_embed_retained_invoke(lc, &rc, &x, 1, &o, &le) == 0 && o.i == 15);
         /* secondary-thread invoke with an owned reference */
-        { struct ret_work w; w.c = lc; w.r = rc; w.bad = 0; w.result = 0;
+        { struct rb_work w; w.c = lc; w.r = rc; w.bad = 0; w.result = 0;
           embed_thr th = e_thr(ret_worker, &w); e_join(th);
           CHECK(w.bad == 0 && w.result == 15); }
         /* release one: module A still leased by rc2 */
@@ -326,6 +337,42 @@ int main(void) {
         CHECK(de && de->category == STRUT_EMBED_ERR_INVOKE && de->code == STRUT_EMBED_INVOKE_UNSUPPORTED);
         strut_embed_error_release(dctx, de);
         CHECK(strut_embed_context_destroy(dctx) == 0);
+    }
+    /* borrowed callbacks: sync, repeat, wrong-kind, unsupported signature, escape rejection,
+       different-context reentrancy */
+    {
+        strut_embed_context* bc = strut_embed_context_create();
+        strut_embed_error* bl = 0;
+        CHECK(strut_embed_context_load_source(bc, src, strlen(src), &bl) == 0);
+        int32_t base = 10;
+        strut_embed_value cb; memset(&cb, 0, sizeof cb); cb.kind = STRUT_EMBED_VALUE_CALLBACK; cb.cb_fn = (void*)my_cb; cb.cb_ctx = &base;
+        strut_embed_value va; memset(&va, 0, sizeof va); va.kind = STRUT_EMBED_VALUE_INT; va.i = 5;
+        strut_embed_value cargs[2] = { cb, va };
+        strut_embed_value co;
+        CHECK(strut_embed_invoke(bc, "apply_cb", cargs, 2, &co, &bl) == 0 && co.i == (5 + base) + (6 + base));   /* 15 + 16 = 31 */
+        /* wrong kind: pass an int where a borrowed callback is expected */
+        strut_embed_value wk[2]; wk[0].kind = STRUT_EMBED_VALUE_INT; wk[0].i = 1; wk[1] = va;
+        strut_embed_error* we = 0;
+        CHECK(strut_embed_invoke(bc, "apply_cb", wk, 2, &co, &we) != 0);
+        CHECK(we && we->code == STRUT_EMBED_INVOKE_KIND);
+        strut_embed_error_release(bc, we);
+        /* escape: retaining a borrowed function parameter is rejected at load (structured SEMANTIC) */
+        const char* escsrc = "export \"C\" function bad(function<(int_32)->int_32> f, int_32 v) -> int_32 { g := retained_callback(f); return g(v); }\n";
+        strut_embed_error* ee = 0;
+        CHECK(strut_embed_context_load_source(bc, escsrc, strlen(escsrc), &ee) != 0);
+        CHECK(ee && ee->category == STRUT_EMBED_ERR_SEMANTIC);
+        strut_embed_error_release(bc, ee);
+        CHECK(strut_embed_invoke(bc, "apply_cb", cargs, 2, &co, &bl) == 0 && co.i == 31);   /* context still usable */
+        /* different-context reentrancy: callback re-enters ctx_other */
+        strut_embed_context* cb_other = strut_embed_context_create();
+        const char* twice_src = "export \"C\" function twice(int_32 v) -> int_32 { return v * 2; }\n";
+        CHECK(strut_embed_context_load_source(cb_other, twice_src, strlen(twice_src), &bl) == 0);
+        struct rb_work rw; rw.c = cb_other; rw.r.kind = 0; rw.bad = 0; rw.result = 0;
+        strut_embed_value rcb; memset(&rcb, 0, sizeof rcb); rcb.kind = STRUT_EMBED_VALUE_CALLBACK; rcb.cb_fn = (void*)re_cb; rcb.cb_ctx = &rw;
+        strut_embed_value rr[2] = { rcb, va };
+        CHECK(strut_embed_invoke(bc, "apply_cb", rr, 2, &co, &bl) == 0 && co.i == (2*5) + (2*6));   /* 10 + 12 = 22 */
+        CHECK(strut_embed_context_destroy(cb_other) == 0);
+        CHECK(strut_embed_context_destroy(bc) == 0);
     }
     strut_embed_context_destroy(ctx);
     if (failures == 0) printf("embed ok\n");

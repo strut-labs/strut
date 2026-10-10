@@ -442,6 +442,7 @@ TypeInfo SemanticAnalyzer::infer_expression(SemanticResult& result, const Expr& 
                 }
                 if (name == "set_env" || name == "unset_env" || name == "sleep_ms") return {TypeKind::void_type,0,"void"};
                 if(name=="retained_callback"){
+                    if(expr.arguments.size()==1&&expr.arguments[0]->kind==Expr::Kind::identifier){bool strut_borrowed=false;for(const auto& strut_bn:borrowed_fn_params_)if(strut_bn==expr.arguments[0]->text)strut_borrowed=true;if(strut_borrowed){result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"borrowed function parameter '"+expr.arguments[0]->text+"' cannot be retained: a callback received as a parameter may reference host state valid only during this call\nhelp: create a retained_callback from a Strut-owned callable instead"});return {};}}
                     if(expr.arguments.size()!=1){result.diagnostics.push_back(Diagnostic{expr.span,"retained_callback(...) requires exactly one callable argument"});return {};}
                     auto retained_arg=infer_expression(result,*expr.arguments[0]);
                     if(retained_arg.name.rfind("function<",0)!=0&&retained_arg.name.rfind("retained_callback<",0)!=0&&retained_arg.name.rfind("native_callback<",0)!=0){result.diagnostics.push_back(Diagnostic{expr.arguments[0]->span,"retained_callback(...) expects a callable; found '"+retained_arg.name+"'"});return {};}
@@ -632,11 +633,12 @@ void SemanticAnalyzer::analyze_statement(SemanticResult& result, const Stmt& st)
                 if(!st.owner.empty()&&st.is_private)private_methods_[st.owner].insert(st.name);
                 const auto previous_return=current_function_return_type_; const auto previous_errors=current_function_errors_; current_function_return_type_=st.return_type?st.return_type->name:"void"; current_function_errors_.clear();for(const auto& e:st.error_types)current_function_errors_.insert(resolved_type_name(e.name));
                 const auto previous_owner=current_struct_owner_; if(!st.owner.empty())current_struct_owner_=st.owner;
+                const auto strut_prev_borrowed=borrowed_fn_params_;borrowed_fn_params_.clear();for(const auto& strut_p:st.parameters){const std::string strut_ptn=resolved_type_name(strut_p.type.name);if(strut_ptn.rfind("function<(",0)==0)borrowed_fn_params_.push_back(strut_p.name);}
                 push_scope();
                 if(!st.owner.empty()){declare(result,Symbol{"this",SymbolNamespace::value,st.span,true,st.owner});auto fit=struct_fields_.find(st.owner);if(fit!=struct_fields_.end())for(const auto& f:fit->second)declare(result,Symbol{f.first,SymbolNamespace::value,st.span,false,f.second});}
                 for (const auto& p : st.parameters) declare(result, Symbol{p.name, SymbolNamespace::value, p.span, p.type.is_const, resolved_type_name(p.type.name)});
                 analyze_statements(result, st.body, false);
-                pop_scope(); current_function_return_type_=previous_return; current_function_errors_=previous_errors; current_struct_owner_=previous_owner;
+                pop_scope(); current_function_return_type_=previous_return; current_function_errors_=previous_errors; current_struct_owner_=previous_owner; borrowed_fn_params_=strut_prev_borrowed;
             }
             break;
         }

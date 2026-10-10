@@ -45,6 +45,7 @@ private:
         std::unordered_map<std::string, Symbol> types;
     };
 
+    std::vector<std::string> borrowed_fn_params_;   // function-typed params of the function under analysis
     void push_scope();
     void pop_scope();
     bool declare(SemanticResult& result, Symbol symbol);
