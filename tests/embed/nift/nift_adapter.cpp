@@ -330,6 +330,52 @@ extern "C" int strut_nift_bytes_check(void) {
     return 0;
 }
 
+
+// Genuine Strut-source byte marshalling: Strut supplies a pointer+length (raw_ptr<uint_8> from a
+// bytes value's .data()) and an output buffer+capacity; the adapter routes the exact bytes
+// through Nift's byte engine (set_bytes -> evaluate "b" -> value_bytes) and copies the result
+// back into caller-owned storage. Statuses: 1..5 as above, 7 insufficient output capacity
+// (no writes, *out_len untouched). No C-string conversion; every byte compared by the caller.
+extern "C" int strut_nift_bytes_roundtrip(const uint8_t* input, int32_t input_length,
+                                          uint8_t* output, int32_t output_capacity,
+                                          int32_t* output_length) {
+    if (!output_length) return 7;
+    nift_engine* engine = nift_engine_new();
+    if (!engine) return 1;
+    if (nift_engine_set_bytes(engine, "b", 1, input, input_length < 0 ? 0 : (size_t)input_length) != NIFT_OK) {
+        nift_engine_free(engine);
+        return 2;
+    }
+    nift_script_result* r = nullptr;
+    static const char* expression = "b";
+    if (nift_engine_evaluate(engine, expression, strlen(expression), &r) != NIFT_OK || !r) {
+        nift_engine_free(engine);
+        return 3;
+    }
+    if (!nift_script_result_ok(r)) {
+        nift_script_result_free(r);
+        nift_engine_free(engine);
+        return 4;
+    }
+    nift_bytes out = {0};
+    if (nift_script_result_value_bytes(r, &out) != NIFT_OK) {
+        nift_script_result_free(r);
+        nift_engine_free(engine);
+        return 5;
+    }
+    int status = 5;
+    if (out.length <= (size_t)output_capacity) {
+        if (out.length && output) memcpy(output, out.data, out.length);
+        *output_length = (int32_t)out.length;
+        status = 0;
+    } else {
+        status = 7;
+    }
+    nift_script_result_free(r);
+    nift_engine_free(engine);
+    return status;
+}
+
 extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
     if (!out) return 5;
     nift_engine* engine = nift_engine_new();
