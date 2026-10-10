@@ -5,7 +5,8 @@ Strut constructs bytes [97, 0, 98, 255, 128], passes payload.data() (raw_ptr<uin
 explicit length over the extern "C" boundary, the adapter routes the exact bytes through
 nift_engine_set_bytes -> evaluate "b" -> nift_script_result_value_bytes, copies the result into
 Strut-owned storage, and Strut verifies every byte plus output length (plus the empty-buffer
-case). Build and execution exit codes and the exact 2-line output are enforced."""
+case). Build and execution exit codes and the exact 4-line output are enforced; any failure marker
+(RT-ERR/RT-LEN/BYTES-RT-BAD/EMPTY-BAD/NEG-IN-BAD/CAP-BAD) therefore fails the exact-match check."""
 import os, subprocess, sys, tempfile
 from pathlib import Path
 
@@ -36,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix="strut-nift-brt-") as td:
         print("strut compile FAILED:", (c.stdout + c.stderr)[-1500:]); sys.exit(1)
     r = subprocess.run([str(exe)], env=env, capture_output=True, text=True)
     out = r.stdout.strip()
-    expected = "BYTES-RT-OK\nEMPTY-OK"
+    expected = "BYTES-RT-OK\nEMPTY-OK\nNEG-IN-OK\nCAP-OK"
     if r.returncode != 0 or out != expected:
         print("nift_bytes_rt FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
 print("nift bytes rt ok")

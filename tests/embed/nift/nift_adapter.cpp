@@ -339,10 +339,15 @@ extern "C" int strut_nift_bytes_check(void) {
 extern "C" int strut_nift_bytes_roundtrip(const uint8_t* input, int32_t input_length,
                                           uint8_t* output, int32_t output_capacity,
                                           int32_t* output_length) {
-    if (!output_length) return 7;
+    // Strict native-boundary validation BEFORE any signed-to-unsigned conversion. All failures
+    // leave *output_length (when non-null) and caller-owned storage untouched.
+    if (!output_length) return 8;
+    if (input_length < 0) return 9;
+    if (output_capacity < 0) return 10;
+    if (input_length > 0 && !input) return 11;
     nift_engine* engine = nift_engine_new();
     if (!engine) return 1;
-    if (nift_engine_set_bytes(engine, "b", 1, input, input_length < 0 ? 0 : (size_t)input_length) != NIFT_OK) {
+    if (nift_engine_set_bytes(engine, "b", 1, input, (size_t)input_length) != NIFT_OK) {
         nift_engine_free(engine);
         return 2;
     }
@@ -364,12 +369,14 @@ extern "C" int strut_nift_bytes_roundtrip(const uint8_t* input, int32_t input_le
         return 5;
     }
     int status = 5;
-    if (out.length <= (size_t)output_capacity) {
-        if (out.length && output) memcpy(output, out.data, out.length);
-        *output_length = (int32_t)out.length;
-        status = 0;
+    if (out.length > (size_t)output_capacity) {
+        status = 7;                                       // insufficient capacity: no writes
+    } else if (out.length > 0 && !output) {
+        status = 11;                                      // NULL output with positive length
     } else {
-        status = 7;
+        if (out.length) memcpy(output, out.data, out.length);
+        *output_length = (int32_t)out.length;             // success only updates the contract
+        status = 0;
     }
     nift_script_result_free(r);
     nift_engine_free(engine);
