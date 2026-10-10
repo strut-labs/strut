@@ -383,6 +383,36 @@ extern "C" int strut_nift_bytes_roundtrip(const uint8_t* input, int32_t input_le
     return status;
 }
 
+
+// Same-engine byte reuse + borrowed-lifetime: ONE engine binds the five-byte payload, then an
+// empty payload, then the payload again; after every evaluation the result is freed and the
+// independently COPIED bytes are re-verified (the copy must outlive the borrowed view). Returns 0
+// only if every step holds.
+extern "C" int strut_nift_bytes_same_engine(void) {
+    static const unsigned char payload[5] = {0x61, 0x00, 0x62, 0xFF, 0x80};
+    nift_engine* engine = nift_engine_new();
+    if (!engine) return 1;
+    for (int pass = 0; pass < 3; ++pass) {
+        if (nift_engine_set_bytes(engine, "b", 1, pass == 1 ? nullptr : payload,
+                                  pass == 1 ? 0 : 5) != NIFT_OK) { nift_engine_free(engine); return 2; }
+        nift_script_result* r = nullptr;
+        static const char* expression = "b";
+        if (nift_engine_evaluate(engine, expression, strlen(expression), &r) != NIFT_OK || !r) {
+            nift_engine_free(engine); return 3;
+        }
+        if (!nift_script_result_ok(r)) { nift_script_result_free(r); nift_engine_free(engine); return 4; }
+        nift_bytes out = {0};
+        if (nift_script_result_value_bytes(r, &out) != NIFT_OK) { nift_script_result_free(r); nift_engine_free(engine); return 5; }
+        std::string copy(out.data ? (const char*)out.data : "", out.length);
+        nift_script_result_free(r);                 // borrowed view released
+        bool good = (pass == 1) ? copy.empty()
+                                : (copy.size() == 5 && memcmp(copy.data(), payload, 5) == 0);
+        if (!good) { nift_engine_free(engine); return 6; }
+    }
+    nift_engine_free(engine);
+    return 0;
+}
+
 extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
     if (!out) return 5;
     nift_engine* engine = nift_engine_new();
