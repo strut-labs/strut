@@ -6,10 +6,11 @@
 #include <stdint.h>
 #include <stddef.h>
 #ifndef STRUT_EMBED_API
+/* Export the public embedding symbols only when a Windows DLL is being built; definitions in
+ * src/embed.cpp inherit this linkage from the declaration. Static builds and non-Windows
+ * toolchains keep STRUT_EMBED_API empty; consumers may override it to __declspec(dllimport). */
 #if defined(_WIN32) && defined(STRUT_EMBED_BUILD_SHARED)
 #define STRUT_EMBED_API __declspec(dllexport)
-#elif defined(_WIN32)
-#define STRUT_EMBED_API __declspec(dllimport)
 #else
 #define STRUT_EMBED_API
 #endif
