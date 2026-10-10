@@ -525,6 +525,37 @@ Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
 - No hidden global registry: handles are per-module opaque pointers (no g_handles table).
 Semantics recorded; implementation + tests + five-platform gate as the immediate FFI-7 work.
 
+## FFI-8 COMPLETE / CERTIFIED (C embedding API)
+Opaque C embedding-surface: `stru_embed_context` create/destroy (destroy returns int;
+BUSy whenever an invocation is in flight OR retained leases exist; context stays intact and
+usable; succeeds after releases), load_source/load_file with STABLE logical module identity,
+dynamic by-name invocation, and per-context native compile/dlopen lifecycle (no CLI spawn; no
+C++ types across the boundary; no global last-error; errors returned with owner handles).
+VALUES: bool/int/float/string/bytes + RETAINED (single-owner; module lease held while live;
+survives successful reload; must be released before destroy) + CALLBACK (typed
+int32_t(*)(void*, int32_t) -- the SUPPORTED borrowed signature; no fn-through-object-pointer
+at the public ABI). Module ownership: ordinary results/errors copied into embedding-owned
+storage (no module dependency); inactive modules with outstanding retained leases stay loaded
+and unload exactly once after the last release; A->B->C reload keeps A's callbacks callable;
+failed reload preserves the active module. BORROWED callbacks are direct-synchronous-callee
+only (sema rejects alias/store/return/retain/forward/parenthesized-callee for export-C
+function params; ordinary Strut callables unrestricted); retained conversion of a borrowed
+param is structurally rejected; escape negatives load as structured SEMANTIC failures with
+recovery. REENTRANCY: different-context and same-context bounded (depth 3) certified; reload
+and destroy during an in-flight invocation are deterministically BUSY and the invocation
+completes. DIAGNOSTICS: STRUT_EMBED_INVOKE_{ARITY,KIND,NOTFOUND,UNSUPPORTED} on category
+INVOKE; checked Strut errors keep type/message/code; parse/semantic/load categories distinct.
+FIVE-PLATFORM (run 38023309245 on cd7bdfc): linux-x64-gcc, linux-x64-clang, linux-arm64-gcc,
+macos-arm64-appleclang (stru_embed_tests Passed 52.86s, "100% tests passed out of 34"),
+windows-x64-msvc (stru_embed_tests Passed 93.26s). Local walls GCC/Clang/ASan-UBSan 34/34
+each; regressions 307/307 default and reactor. Commits: 609dd9e/9e4ea70 (first layer),
+fe13a0f (provenance+multictx+file), e4fed3b (bytes/unified-release/reload/threads),
+5926c3c (outstanding values survive reload/destroy), c213b0f/bd8044c (CI fixes),
+70ba97c (retained+lease), 95f0cea (diagnostics), 9e879ea (borrowed+reentrancy),
+886d661 (indirect-escape audit + same-context), cd7bdfc (typed cb ABI + in-flight BUSY).
+REMAINING: FFI-9 real consumers (Go/Python/Node/C#), THEN FFI-10, final ABI audit,
+release certification, v0.0.5.
+
 ## Release sequence (after this dev line)
 FFI-7 -> FFI-8 -> FFI-9 consumers -> FFI-10 Nift dogfood -> final ABI audit -> full certification
 -> v0.0.5 release. v0.0.4 immutable; no v0.0.5 tag until the full FFI roadmap is complete.
