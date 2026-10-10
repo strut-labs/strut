@@ -45,6 +45,7 @@ env = dict(os.environ,
 # MSVC honors INCLUDE/LIB, so node-gyp's MSBuild path (which ignores the CXXFLAGS/LDFLAGS env)
 # still finds the Strut embedding header and import library.
 env["CPATH"] = str(inc)
+env["npm_config_strut_include_dir"] = str(inc)
 if os.name == "nt":
     env["INCLUDE"] = str(inc) + ";" + env.get("INCLUDE", "")
     env["LIB"] = str(libdir) + ";" + env.get("LIB", "")
