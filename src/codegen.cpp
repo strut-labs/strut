@@ -2331,7 +2331,7 @@ std::filesystem::path embed_library_dir() {
         if (n > 0 && n < buffer.size()) {
             buffer.resize(n);
             auto path = std::filesystem::path(buffer).parent_path();
-            return path.is_absolute() ? path : std::filesystem::strongly_canonical(path);
+            return path.is_absolute() ? path : std::filesystem::weakly_canonical(path);
         }
     }
 #else
