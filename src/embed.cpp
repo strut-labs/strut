@@ -284,8 +284,15 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
         }
         return 1;
     }
-    if (status == 3) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", std::string("no such exported function '" + std::string(name) + "'").c_str(), 0); return 1; }
-    if (status == 2) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "argument count/kind mismatch", 0); return 1; }
+    int err_code = 0; std::string err_msg;
+    switch (status) {
+        case 2: err_code = STRUT_EMBED_INVOKE_ARITY; err_msg = "wrong argument count"; break;
+        case 5: err_code = STRUT_EMBED_INVOKE_KIND; err_msg = "wrong argument kind for '" + std::string(name) + "'"; break;
+        case 3: err_code = STRUT_EMBED_INVOKE_NOTFOUND; err_msg = "no such exported function '" + std::string(name) + "'"; break;
+        case 4: err_code = STRUT_EMBED_INVOKE_UNSUPPORTED; err_msg = "function '" + std::string(name) + "' exists but its signature is not embedding-callable"; break;
+        default: break;
+    }
+    if (err_code != 0) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", err_msg, err_code); return 1; }
     return 0;
 }
 
@@ -315,7 +322,13 @@ int strut_embed_retained_invoke(strut_embed_context* c, const strut_embed_value*
         }
         return 1;
     }
-    if (status == 2) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "argument count/kind mismatch", 0); return 1; }
+    int err_code = 0; std::string err_msg;
+    switch (status) {
+        case 2: err_code = STRUT_EMBED_INVOKE_ARITY; err_msg = "wrong argument count"; break;
+        case 5: err_code = STRUT_EMBED_INVOKE_KIND; err_msg = "wrong argument kind"; break;
+        default: break;
+    }
+    if (err_code != 0) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", err_msg, err_code); return 1; }
     return 0;
 }
 

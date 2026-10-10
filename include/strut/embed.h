@@ -30,6 +30,15 @@ typedef struct strut_embed_value {
 } strut_embed_value;
 
 enum {
+    /* For category STRUT_EMBED_ERR_INVOKE, `code` distinguishes the failure subclass so
+     * bindings can branch on stable values, not messages. Checked Strut errors keep code = the
+     * Strut error code and set type/message. */
+    STRUT_EMBED_INVOKE_ARITY = 1,
+    STRUT_EMBED_INVOKE_KIND = 2,
+    STRUT_EMBED_INVOKE_NOTFOUND = 3,
+    STRUT_EMBED_INVOKE_UNSUPPORTED = 4
+};
+enum {
     STRUT_EMBED_ERR_PARSE = 1,
     STRUT_EMBED_ERR_SEMANTIC = 2,
     STRUT_EMBED_ERR_LOAD = 3,

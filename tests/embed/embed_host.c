@@ -51,6 +51,7 @@ int main(void) {
         "export \"C\" function greet(string name) -> string { return \"hi \" + name; }\n"
         "export \"C\" function neg(int_32 x) -> int_32 { return -x; }\n"
         "export \"C\" function echo_bytes(bytes b) -> bytes { return b; }\n"
+        "export \"C\" function takes_f32(double_32 x) -> double_32 { return x; }\n"
         "error EmbedErr { string message; }\n"
         "export \"C\" function risky(int_32 x) -> int_32 : EmbedErr { if (x < 0) { throw EmbedErr { message: \"bad\" }; } return x; }\n";
     strut_embed_error* err = 0;
@@ -302,6 +303,29 @@ int main(void) {
         /* release the last lease: A unloads; destroy now succeeds */
         strut_embed_value_free(lc, &rc2);
         CHECK(strut_embed_context_destroy(lc) == 0);
+    }
+    /* structured invocation diagnostics: not-found vs unsupported vs arity vs kind */
+    {
+        strut_embed_context* dctx = strut_embed_context_create();
+        strut_embed_error* dle = 0;
+        CHECK(strut_embed_context_load_source(dctx, src, strlen(src), &dle) == 0);
+        strut_embed_error* de = 0;
+        CHECK(strut_embed_invoke(dctx, "does_not_exist", 0, 0, &out, &de) != 0);
+        CHECK(de && de->category == STRUT_EMBED_ERR_INVOKE && de->code == STRUT_EMBED_INVOKE_NOTFOUND);
+        strut_embed_error_release(dctx, de);
+        strut_embed_value three[3]; three[0].kind = STRUT_EMBED_VALUE_INT; three[0].i=1; three[1].kind = STRUT_EMBED_VALUE_INT; three[1].i=2; three[2].kind = STRUT_EMBED_VALUE_INT; three[2].i=3;
+        CHECK(strut_embed_invoke(dctx, "add", three, 3, &out, &de) != 0);
+        CHECK(de && de->category == STRUT_EMBED_ERR_INVOKE && de->code == STRUT_EMBED_INVOKE_ARITY);
+        strut_embed_error_release(dctx, de);
+        strut_embed_value sbad; sbad.kind = STRUT_EMBED_VALUE_STRING; sbad.s.data = "x"; sbad.s.len = 1;
+        CHECK(strut_embed_invoke(dctx, "neg", &sbad, 1, &out, &de) != 0);
+        CHECK(de && de->category == STRUT_EMBED_ERR_INVOKE && de->code == STRUT_EMBED_INVOKE_KIND);
+        strut_embed_error_release(dctx, de);
+        strut_embed_value d; d.kind = STRUT_EMBED_VALUE_FLOAT; d.d = 1.5;
+        CHECK(strut_embed_invoke(dctx, "takes_f32", &d, 1, &out, &de) != 0);
+        CHECK(de && de->category == STRUT_EMBED_ERR_INVOKE && de->code == STRUT_EMBED_INVOKE_UNSUPPORTED);
+        strut_embed_error_release(dctx, de);
+        CHECK(strut_embed_context_destroy(dctx) == 0);
     }
     strut_embed_context_destroy(ctx);
     if (failures == 0) printf("embed ok\n");
