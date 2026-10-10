@@ -248,3 +248,26 @@ if(DOTNET_EXECUTABLE AND NOT STRUT_SANITIZERS)
         ${CMAKE_BINARY_DIR}/share/strut/jsonic)
     set_tests_properties(strut_ffi_embed_csharp PROPERTIES TIMEOUT 600 SKIP_RETURN_CODE 77)
 endif()
+find_library(NIFT_C_LIBRARY NAMES nift_c HINTS ${STRUT_NIFT_LIBDIR} $ENV{STRUT_NIFT_LIBDIR})
+if(NIFT_C_LIBRARY AND NOT STRUT_SANITIZERS)
+    # FFI-10 Nift <-> Strut vertical slice: one host links libnift_c (Nift C ABI 1.3) and
+    # libstrut_embed, evaluating real Nift expressions against values from a real Strut
+    # module invocation and feeding Nift results back into Strut. Skipped where Nift's C ABI
+    # distribution is absent.
+    get_filename_component(NIFT_C_LIB_DIR ${NIFT_C_LIBRARY} DIRECTORY)
+    find_path(NIFT_C_INCLUDE_DIR nift/c_abi.h HINTS ${NIFT_C_LIB_DIR}/../include
+        ${STRUT_NIFT_INCLUDEDIR} $ENV{STRUT_NIFT_INCLUDEDIR})
+    if(NIFT_C_INCLUDE_DIR)
+        add_executable(strut_ffi_nift_strut tests/embed/nift/nift_strut_test.c)
+        target_include_directories(strut_ffi_nift_strut PRIVATE ${NIFT_C_INCLUDE_DIR})
+        set_target_properties(strut_ffi_nift_strut PROPERTIES LINKER_LANGUAGE CXX)
+        target_link_libraries(strut_ffi_nift_strut PRIVATE strut_embed ${NIFT_C_LIBRARY}
+            ${CMAKE_DL_LIBS})
+        add_test(NAME strut_ffi_nift_strut COMMAND ${CMAKE_COMMAND} -E env
+            "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:strut_embed>:${NIFT_C_LIB_DIR}"
+            "DYLD_LIBRARY_PATH=$<TARGET_FILE_DIR:strut_embed>:${NIFT_C_LIB_DIR}"
+            "STRUT_JSONIC_INCLUDE_DIR=${CMAKE_BINARY_DIR}/share/strut/jsonic"
+            $<TARGET_FILE:strut_ffi_nift_strut>)
+        set_tests_properties(strut_ffi_nift_strut PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+    endif()
+endif()
