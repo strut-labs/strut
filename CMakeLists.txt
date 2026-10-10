@@ -280,4 +280,14 @@ if(NIFT_C_LIBRARY AND NOT STRUT_SANITIZERS)
             ${CMAKE_SOURCE_DIR}/tests/embed/nift)
         set_tests_properties(strut_ffi_nift_from_strut PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
     endif()
+    # FFI-10A: Nift source origins a call into a Strut-exported C function (ffi_open/ffi_call
+    # inside the evaluated Nift script targeting the Strut shared library's exported add).
+    if(NIFT_C_INCLUDE_DIR)
+        add_test(NAME strut_ffi_nift_to_strut COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/embed/nift/run_nift_to_strut.py
+            ${CMAKE_BINARY_DIR}
+            ${NIFT_C_LIB_DIR}
+            ${CMAKE_SOURCE_DIR}/tests/embed/nift)
+        set_tests_properties(strut_ffi_nift_to_strut PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+    endif()
 endif()
