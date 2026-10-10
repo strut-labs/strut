@@ -1,12 +1,19 @@
-extern "C" function strut_nift_add25_seventeen() -> int_64;
-extern "C" function strut_nift_eval(int_64 seed) -> int_64;
+extern "C" function strut_nift_add25_i32(int_32 seed, ptr<int> out) -> int_32;
 
 function main() -> void {
     unsafe {
-        print(strut_nift_add25_seventeen());
-        print(strut_nift_eval(0));
-        print(strut_nift_eval(-25));
-        print(strut_nift_eval(100));
+        owner := new(9);
+        ptr<int> p := ptr(owner);
+        rc := strut_nift_add25_i32(17, p);
+        if (rc != 0) { print("ERR"); } else { print(*owner); }
+        rc = strut_nift_add25_i32(0, p);
+        if (rc != 0) { print("ERR"); } else { print(*owner); }
+        rc = strut_nift_add25_i32(-25, p);
+        if (rc != 0) { print("ERR"); } else { print(*owner); }
+        rc = strut_nift_add25_i32(100, p);
+        if (rc != 0) { print("ERR"); } else { print(*owner); }
+        rc = strut_nift_add25_i32(-128, p);
+        if (rc != 0) { print("ERR"); } else { print(*owner); }
     }
     return;
 }
