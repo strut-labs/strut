@@ -157,9 +157,15 @@ char* adopt_buffer(const char* data, std::size_t len, void (*release_fn)(void*))
 
 } // namespace
 
+#if defined(_WIN32)
+#define STRUT_EMBED_API __declspec(dllexport)
+#else
+#define STRUT_EMBED_API __attribute__((visibility("default")))
+#endif
+
 extern "C" {
 
-strut_embed_context* strut_embed_context_create(void) {
+STRUT_EMBED_API strut_embed_context* strut_embed_context_create(void) {
     auto* ctx = new embed_context;
     std::error_code ec;
     ctx->tmp = std::filesystem::temp_directory_path();
@@ -171,7 +177,7 @@ strut_embed_context* strut_embed_context_create(void) {
     return reinterpret_cast<strut_embed_context*>(ctx);
 }
 
-int strut_embed_context_destroy(strut_embed_context* c) {
+STRUT_EMBED_API int strut_embed_context_destroy(strut_embed_context* c) {
     if (!c) return 1;
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
     if (ctx->in_flight_ > 0) return 1;           // BUSY: an invocation is in flight on this context
@@ -186,7 +192,7 @@ int strut_embed_context_destroy(strut_embed_context* c) {
     return 0;
 }
 
-int strut_embed_context_load_source(strut_embed_context* c, const char* source, std::size_t len, strut_embed_error** out_err) {
+STRUT_EMBED_API int strut_embed_context_load_source(strut_embed_context* c, const char* source, std::size_t len, strut_embed_error** out_err) {
     if (out_err) *out_err = nullptr;
     if (!c || !source) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_LOAD, "embed", "null context or source", 0); return 1; }
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
@@ -244,7 +250,7 @@ int strut_embed_context_load_source(strut_embed_context* c, const char* source, 
     return 0;
 }
 
-int strut_embed_context_load_file(strut_embed_context* c, const char* path, strut_embed_error** out_err) {
+STRUT_EMBED_API int strut_embed_context_load_file(strut_embed_context* c, const char* path, strut_embed_error** out_err) {
     if (!path) return 1;
     std::ifstream in(path, std::ios::binary);
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -255,7 +261,7 @@ int strut_embed_context_load_file(strut_embed_context* c, const char* path, stru
     return strut_embed_context_load_source(c, text.data(), text.size(), out_err);
 }
 
-int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_embed_value* args, std::size_t nargs, strut_embed_value* out, strut_embed_error** out_err) {
+STRUT_EMBED_API int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_embed_value* args, std::size_t nargs, strut_embed_value* out, strut_embed_error** out_err) {
     if (out_err) *out_err = nullptr;
     if (!c) return 1;
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
@@ -302,7 +308,7 @@ int strut_embed_invoke(strut_embed_context* c, const char* name, const strut_emb
     return 0;
 }
 
-int strut_embed_retained_invoke(strut_embed_context* c, const strut_embed_value* self, const strut_embed_value* args, std::size_t nargs, strut_embed_value* out, strut_embed_error** out_err) {
+STRUT_EMBED_API int strut_embed_retained_invoke(strut_embed_context* c, const strut_embed_value* self, const strut_embed_value* args, std::size_t nargs, strut_embed_value* out, strut_embed_error** out_err) {
     if (out_err) *out_err = nullptr;
     if (!c || !self || self->kind != STRUT_EMBED_VALUE_RETAINED || !self->retained) { if (out_err) *out_err = make_error(STRUT_EMBED_ERR_INVOKE, "embed", "invalid retained callback reference", 0); return 1; }
     embed_context* ctx = reinterpret_cast<embed_context*>(c);
@@ -339,7 +345,7 @@ int strut_embed_retained_invoke(strut_embed_context* c, const strut_embed_value*
     return 0;
 }
 
-void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
+STRUT_EMBED_API void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
     if (!v) return;
     if (v->kind == STRUT_EMBED_VALUE_RETAINED && v->retained) {
         if (c) {
@@ -364,7 +370,7 @@ void strut_embed_value_free(strut_embed_context* c, strut_embed_value* v) {
     *v = strut_embed_value{};
 }
 
-void strut_embed_error_release(strut_embed_context* c, strut_embed_error* e) {
+STRUT_EMBED_API void strut_embed_error_release(strut_embed_context* c, strut_embed_error* e) {
     (void)c;
     if (!e) return;
     if (e->type) std::free(e->type);      /* embedding-owned copy */
