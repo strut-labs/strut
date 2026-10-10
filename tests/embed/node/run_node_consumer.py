@@ -41,6 +41,10 @@ env = dict(os.environ,
            LD_LIBRARY_PATH=str(libdir),
            DYLD_LIBRARY_PATH=str(libdir),
            STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
+if os.name == "nt":
+    # node-gyp's MSBuild path ignores the LDFLAGS environment variable; MSVC resolves the
+    # embedding import library through the LIB search path instead.
+    env["LIB"] = str(libdir) + ";" + env.get("LIB", "")
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 
 args = [x for x in ([nodegyp, "rebuild"] if not use_npx else [nodegyp, "-y", "node-gyp", "rebuild"])]

@@ -49,5 +49,10 @@ if r.returncode != 0 or "csharp consumer ok" not in out:
     print("csharp consumer FAILED rc=%d out=%r" % (r.returncode, out))
     if r.stderr.strip():
         print("csharp consumer stderr:\n" + r.stderr.strip()[-2000:])
+    info = subprocess.run([dotnet, "--info"], env=env, capture_output=True, text=True)
+    runtime_line = [ln for ln in info.stdout.splitlines() if "RID:" in ln or "Architecture:" in ln or "Version:" in ln or "RID" in ln]
+    print("dotnet info:\n" + "\n".join(runtime_line[:4]))
+    if info.stderr.strip():
+        print("dotnet --info stderr: " + info.stderr.strip()[-500:])
     sys.exit(1)
 print("csharp consumer ok")
