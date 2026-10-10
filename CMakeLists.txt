@@ -222,3 +222,14 @@ if(GO_EXECUTABLE AND NOT STRUT_SANITIZERS)
         ${CMAKE_SOURCE_DIR}/tests/embed/go)
     set_tests_properties(strut_ffi_embed_go PROPERTIES TIMEOUT 300)
 endif()
+find_program(NODE_EXECUTABLE NAMES node nodejs)
+if(NODE_EXECUTABLE AND NOT STRUT_SANITIZERS)
+    # 9-NODE: build the dependency-free N-API addon with node-gyp, then execute the JS consumer
+    # against the real shared embedding library (build and run must both pass).
+    add_test(NAME strut_ffi_embed_node COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tests/embed/node/run_node_consumer.py
+        $<TARGET_FILE_DIR:strut_embed>
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/share/strut/jsonic)
+    set_tests_properties(strut_ffi_embed_node PROPERTIES TIMEOUT 600 SKIP_RETURN_CODE 77)
+endif()

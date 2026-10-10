@@ -1,4 +1,6 @@
 /build/
 /build-*/
+tests/embed/node/build/
+tests/embed/node/node_modules/
 *.user
 .DS_Store
