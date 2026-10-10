@@ -556,6 +556,76 @@ fe13a0f (provenance+multictx+file), e4fed3b (bytes/unified-release/reload/thread
 REMAINING: FFI-9 real consumers (Go/Python/Node/C#), THEN FFI-10, final ABI audit,
 release certification, v0.0.5.
 
+## FFI-9 COMPLETE / CERTIFIED (independent language consumers + installation)
+Shared `libstrut_embed` (STRUT_EMBED_API; Windows dllexport when STRUT_EMBED_BUILD_SHARED)
+plus four genuinely independent, executable consumers over the FFI-8 public C ABI, each with a
+permanent CTest that BUILDS and EXECUTES (build and run must both pass; rc==0 AND ok marker;
+SKIP_RETURN_CODE 77 only when its toolchain is absent).
+
+CONSUMERS AND RUNNERS (tests/embed/):
+- python/strut_consumer.py (ctypes; STRUT_EMBED_LIB absolute library), 9-PYTHON.
+- go/strut_consumer.go + run_go_consumer.py (cgo; borrowed callback via a C trampoline to an
+  //export goCbImpl fixed function; fail() panics so the guarded deferred context destroy always
+  runs; no POSIX-only -ldl; libdir on PATH), 9-GO. Commits c4e840c, 7c624d8, 38f6abd, 1eda89b,
+  08bc5d0.
+- node/ (dependency-free N-API addon: addon.cc number/string/Buffer/Function inference
+  marshalling, copy-before-release into JS-owned Buffers, structured thrown Errors,
+  synchronous-rooted borrowed JS callback trampoline, explicit StrutFree single-owner release;
+  binding.gyp declares include_dirs <(strut_include_dir) and (Windows) libraries
+  <(strut_embed_lib) fed through node-gyp's documented npm_config_*->gyp-variable promotion;
+  MSVC needs the declarative build config, not env CXXFLAGS/LDFLAGS/INCLUDE/LIB), 9-NODE.
+  Commits 81d006c, 28f6a15? not needed).
+- csharp/ (P/Invoke; NativeLibrary.SetDllImportResolver resolves libstrut_embed by absolute
+  STRUT_EMBED_LIB; NativeError/value layouts mirror embed.h; cdecl borrowed delegate rooted via
+  Marshal.GetFunctionPointerForDelegate; --smoke isolation path prints startup/native-load/
+  create/destroy markers; runner pins `dotnet build -o` and executes the exact dll), 9-CSHARP.
+  Commits 336a47a, 8eed13b, 30f6f90, 41d67b9.
+- Common corpus across all four: add(20,22)=42, double_64 float addf=5.75 (float/bool are NOT
+  ABI-exportable in Strut; STRUT_EMBED_VALUE_BOOL exists only as a dynamic value kind), greet
+  string round-trip, echo_bytes Buffer equality [0x61,0,0x62,0xff], risky(-1) -> structured
+  EmbedErr{type:'EmbedErr',message:'boom'}, borrowed callback apply_cb=211, retained make_rc(100)
+  ->105 before AND after module reload (module lease), BUSY destroy rejected, explicit retained
+  release then destroy==0.
+
+FIVE-PLATFORM CONSUMER MATRIX —  25/25 PASS (run 38069818109 on 37dd55a; Windows MSVC raw:
+  strut_embed_tests Passed 93.45s, python 3.62s, go 36.14s, node 49.99s, csharp 25.49s;
+  linux-x64-gcc/linux-x64-clang/linux-arm64-gcc/macos-arm64-appleclang jobs green incl all
+  consumers; the lone recurring red is the dogfood `Certify sanitized generated HTTP runtime`
+  WebSocket stage -- intermittent `unexpected WebSocket upgrade response: b''`, ctest 38/38
+  passed on the affected job, NOT reproduced in 4/4 local runs, cause unresolved, unrelated to
+  FFI). Earlier runs: 38032885435 (FFI-8 consumers), 38036549178, 38042265629 (mac link/DYLD),
+  38058744246 (mac C# armored runtime), 38063827372/38065965620/38067898898 (Windows fixes).
+
+INSTALLATION / CERT (9-CERT): cmake install rules ship strut_embed (LIBDIR/BINDIR portability),
+include/strut public headers (INCLUDEDIR, incl embed.h), the strut CLI, and share/strut/jsonic
+runtime-support headers. Auto discovery order in codegen.cpp jsonic_include_dir():
+STRUT_JSONIC_INCLUDE_DIR override -> executable-relative (build tree or installed
+prefix/share/strut/jsonic) -> EMBEDDING-LIBRARY-relative (<libdir>/../share/strut/jsonic) via a
+dladdr/GetModuleHandle anchor so host-loaded Python/Go/Node/.NET locate installed assets with no
+env. Verified: staged prefix at /tmp/strut-prefix runs all four consumers against ONLY installed
+artifacts (tools/ffi9_cert.py, 4/4 PASS), relocated prefix (cp A->B) runs Python+Go with the env
+unset, installed CLI compiles+runs a real json.p without the override. Source loading compiles
+native C++ with the configured native compiler (CXX env / STRUT_HOST_CXX) and REQUIRES the
+runtime-support headers; documented, not interpreter-style.
+
+OWNERSHIP SUMMARY (unchanged from FFI-7/FFI-8): embedding-owned strings/bytes/errors +
+retained single-owner values released exactly once via strut_embed_value_free / -error_release;
+borrowed callbacks synchronous, direct-callee-only, never escape; retained callbacks survive
+reload through module leases and release before BUSY destroy; structured error categories and
+stable INVOKE sub-codes; bool export restriction; Node JS-thread-only synchronous borrowed
+callbacks; Go fixed-export borrowed-callback scope; Python ctypes consumers not ASan-certified
+(native fixture remains ASan/UBSan clean; Python runs in ordinary builds).
+
+Commits: 0df9e38 (shared lib + python), 15d483c/0016d7b/181c238 (embed export convention + MSVC
+C2375), c4e840c/7c624d8/38f6abd/1eda89b/08bc5d0 (go), 81d006c + node runner fixes (node),
+336a47a/8eed13b/30f6f90/b2472fe/c179f51/41d67b9 (csharp), 5ec725d (install rules + tools/ffi9_cert.py),
+d97bd0c/30f6f90 (library-relative discovery + resolver), 424c64b/753088d (CI provisioning:
+arm64 .NET + node-gyp + x64 .NET), 9a1d7f7/37dd55a (declarative node-gyp include + link via
+npm_config promotion; MSVC env-inheritance gap). Local walls 39/39 GCC+embed; Nift integration
+d8a1165 (see FFI-10 below).
+REMAINING: FFI-10 direct Nift<->Strut language-level calls, final ABI audit, release
+certification, v0.0.5.
+
 ## Release sequence (after this dev line)
 FFI-7 -> FFI-8 -> FFI-9 consumers -> FFI-10 Nift dogfood -> final ABI audit -> full certification
 -> v0.0.5 release. v0.0.4 immutable; no v0.0.5 tag until the full FFI roadmap is complete.
