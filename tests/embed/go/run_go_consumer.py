@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix="strut-embed-go-") as td:
     if b.returncode != 0:
         print("go build FAILED:", b.stderr[:2000]); sys.exit(1)
     run_env = dict(os.environ, LD_LIBRARY_PATH=str(libdir),
+                   DYLD_LIBRARY_PATH=str(libdir),
                    STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
     sep = ";" if os.name == "nt" else ":"
     run_env["PATH"] = str(libdir) + sep + run_env.get("PATH", "")

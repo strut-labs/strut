@@ -10,6 +10,13 @@
 #include <sstream>
 #include <string>
 #include <filesystem>
+
+extern "C" void strut_embed_runtime_anchor(void) {}  /* dladdr/GetModuleHandle anchor for installed runtime-support discovery */
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
@@ -2289,6 +2296,7 @@ std::filesystem::path executable_path() {
     return std::filesystem::path(buffer);
 #endif
 }
+static std::filesystem::path embed_library_dir();
 std::filesystem::path jsonic_include_dir() {
     if (const char* override_dir = std::getenv("STRUT_JSONIC_INCLUDE_DIR"); override_dir && *override_dir)
         return override_dir;
@@ -2299,6 +2307,41 @@ std::filesystem::path jsonic_include_dir() {
         const auto installed = executable.parent_path().parent_path() / "share" / "strut" / "jsonic";
         if (std::filesystem::exists(installed / "json.h")) return installed;
     }
+    /* Installed runtime-support discovery hosted by an unrelated process: when libstrut_embed is
+     * dlopen'd into a Python/Go/Node/.NET host, the host executable's parent tree does not
+     * contain the Strut distribution, so fall back to the embedding library's own location
+     * (<libdir>/../share/strut/jsonic). STRUT_JSONIC_INCLUDE_DIR remains the explicit override. */
+    const auto library_dir = embed_library_dir();
+    if (!library_dir.empty()) {
+        const auto installed = library_dir.parent_path() / "share" / "strut" / "jsonic";
+        if (std::filesystem::exists(installed / "json.h")) return installed;
+    }
+    return {};
+}
+
+std::filesystem::path embed_library_dir() {
+    void* address = reinterpret_cast<void*>(&strut_embed_runtime_anchor);
+#if defined(_WIN32)
+    HMODULE module = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           static_cast<LPCWSTR>(address), &module) && module) {
+        std::wstring buffer(4096, L'\0');
+        DWORD n = GetModuleFileNameW(module, &buffer[0], static_cast<DWORD>(buffer.size()));
+        if (n > 0 && n < buffer.size()) {
+            buffer.resize(n);
+            auto path = std::filesystem::path(buffer).parent_path();
+            return path.is_absolute() ? path : std::filesystem::strongly_canonical(path);
+        }
+    }
+#else
+    Dl_info info;
+    if (dladdr(address, &info) != 0 && info.dli_fname && *info.dli_fname) {
+        std::error_code ec;
+        auto path = std::filesystem::path(info.dli_fname).parent_path();
+        if (std::filesystem::is_directory(path, ec)) return std::filesystem::weakly_canonical(path, ec);
+    }
+#endif
     return {};
 }
 bool target_windows(const std::string& t) { return t == "windows-x64" || (t == "native"

@@ -16,7 +16,8 @@ if shutil.which(dotnet) is None:
     print("SKIP: dotnet SDK not available")
     sys.exit(77)
 
-env = dict(os.environ, LD_LIBRARY_PATH=str(libdir), STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
+env = dict(os.environ, LD_LIBRARY_PATH=str(libdir), DYLD_LIBRARY_PATH=str(libdir),
+                  STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
 sep = ";" if os.name == "nt" else ":"
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 

@@ -27,19 +27,25 @@ if shutil.which(nodegyp) is None:
         sys.exit(77)
 
 sep = ";" if os.name == "nt" else ":"
-extra_ldflags = "-Wl,--no-as-needed -L%s -lstrut_embed -Wl,--as-needed -Wl,-rpath,%s" % (libdir, libdir)
 if os.name == "nt":
     extra_ldflags = "/LIBPATH:%s strut_embed.lib" % libdir
+elif sys.platform == "darwin":
+    # Apple's linker does not support GNU --as-needed/--no-as-needed; RPATH + explicit -l.
+    extra_ldflags = "-L%s -lstrut_embed -Wl,-rpath,%s" % (libdir, libdir)
+else:
+    extra_ldflags = "-Wl,--no-as-needed -L%s -lstrut_embed -Wl,--as-needed -Wl,-rpath,%s" % (libdir, libdir)
 
 env = dict(os.environ,
            CXXFLAGS="-I" + str(inc) + " -std=c++17",
            LDFLAGS=extra_ldflags,
            LD_LIBRARY_PATH=str(libdir),
+           DYLD_LIBRARY_PATH=str(libdir),
            STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 
 args = [x for x in ([nodegyp, "rebuild"] if not use_npx else [nodegyp, "-y", "node-gyp", "rebuild"])]
-b = subprocess.run(args, env=env, capture_output=True, text=True, cwd=str(srcdir))
+b = subprocess.run(args, env=env, capture_output=True, text=True, cwd=str(srcdir),
+                   shell=(os.name == "nt" and use_npx))
 if b.returncode != 0:
     print("node addon build FAILED:", b.stderr[-2000:]); sys.exit(1)
 r = subprocess.run([node, "index.js"], env=env, capture_output=True, text=True, cwd=str(srcdir))
