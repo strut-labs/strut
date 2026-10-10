@@ -54,5 +54,7 @@ if r.returncode != 0 or "csharp consumer ok" not in out:
     print("dotnet info:\n" + "\n".join(runtime_line[:4]))
     if info.stderr.strip():
         print("dotnet --info stderr: " + info.stderr.strip()[-500:])
+    smoke = subprocess.run([str(bin_path), "--smoke"], env=env, capture_output=True, text=True)
+    print("smoke rc=%d out=%r stderr=%r" % (smoke.returncode, smoke.stdout.strip()[-500:], smoke.stderr.strip()[-800:]))
     sys.exit(1)
 print("csharp consumer ok")

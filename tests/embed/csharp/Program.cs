@@ -96,6 +96,29 @@ internal static class Program
 
     static void Main()
     {
+        if (args.Length > 0 && args[0] == "--smoke")
+        {
+            // Test A/B isolation: managed boot + native-library load/create/destroy only.
+            Console.WriteLine("startup");
+            NativeLibrary.SetDllImportResolver(typeof(Embed).Assembly, (name, asm, path) =>
+            {
+                if (name == "strut_embed")
+                {
+                    string abs = Environment.GetEnvironmentVariable("STRUT_EMBED_LIB");
+                    if (!string.IsNullOrEmpty(abs) && System.IO.File.Exists(abs))
+                        return NativeLibrary.Load(abs);
+                }
+                return IntPtr.Zero;
+            });
+            Console.WriteLine("resolver-registered");
+            IntPtr c = Embed.strut_embed_context_create();
+            if (c == IntPtr.Zero) { Console.WriteLine("context-create FAILED"); Environment.Exit(1); }
+            Console.WriteLine("context-created");
+            if (Embed.strut_embed_context_destroy(c) != 0) { Console.WriteLine("context-destroy BUSY"); Environment.Exit(1); }
+            Console.WriteLine("context-destroyed");
+            Console.WriteLine("smoke ok");
+            return;
+        }
         // macOS dyld resolution for a local unsigned dylib is unreliable via short DllImport
         // names (consumer previously exited ~131/SIGQUIT). Resolve by absolute path from
         // STRUT_EMBED_LIB -- the same mechanism the Python consumer uses successfully -- and
