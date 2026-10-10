@@ -40,4 +40,17 @@ with tempfile.TemporaryDirectory(prefix="strut-nift-brt-") as td:
     expected = "BYTES-RT-OK\nEMPTY-OK\nNEG-IN-OK\nCAP-OK"
     if r.returncode != 0 or out != expected:
         print("nift_bytes_rt FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
+    # Additional branches that cannot be expressed in Strut source (NULL pointers, negative
+    # capacity, NULL out_len) are exercised by a native direct-call probe of the adapter.
+    probe = td / "nift_bytes_probe"
+    p = subprocess.run([cc, "-std=c++20", str(srcdir / "nift_bytes_rt_probe.cpp"),
+                        str(adapter), "-L" + str(nift_lib),
+                        "-l" + ("nift_c" if os.name != "nt" else "nift_c.lib"),
+                        "-Wl,-rpath," + str(nift_lib), "-o", str(probe)],
+                       env=env, capture_output=True, text=True)
+    if p.returncode != 0:
+        print("probe build FAILED:", (p.stdout + p.stderr)[-1200:]); sys.exit(1)
+    pr = subprocess.run([str(probe)], env=env, capture_output=True, text=True)
+    if pr.returncode != 0 or pr.stdout.strip() != "probe-ok":
+        print("nift bytes probe FAILED rc=%d out=%r" % (pr.returncode, pr.stdout.strip())); sys.exit(1)
 print("nift bytes rt ok")
