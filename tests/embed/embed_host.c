@@ -33,6 +33,23 @@ static void* conc_worker(void* a) {
 
 static int32_t my_cb(void* c, int32_t x) { int32_t base = *(int32_t*)c; return x + base; }
 struct rb_work { strut_embed_context* c; strut_embed_value r; int bad; int result; };
+struct same_work { strut_embed_context* c; int depth; int bad; };
+static int32_t same_cb(void* c, int32_t x) {
+    struct same_work* w = (struct same_work*)c;
+    strut_embed_value o; strut_embed_error* e = 0;
+    if (w->depth > 0) {
+        --w->depth;
+        strut_embed_value a; memset(&a, 0, sizeof a); a.kind = STRUT_EMBED_VALUE_INT; a.i = x;
+        strut_embed_value cbv; memset(&cbv, 0, sizeof cbv); cbv.kind = STRUT_EMBED_VALUE_CALLBACK; cbv.cb_fn = (void*)same_cb; cbv.cb_ctx = w;
+        strut_embed_value args2[2] = { cbv, a };
+        if (strut_embed_invoke(w->c, "nest", args2, 2, &o, &e) != 0) { w->bad = 1; return -777; }
+        return (int32_t)o.i;
+    }
+    strut_embed_value a2; memset(&a2, 0, sizeof a2); a2.kind = STRUT_EMBED_VALUE_INT; a2.i = x;
+    if (strut_embed_invoke(w->c, "neg", &a2, 1, &o, &e) != 0) { w->bad = 1; return -777; }   /* same-context reentrancy */
+    return (int32_t)o.i;
+}
+
 static int32_t re_cb(void* c, int32_t x) {
     struct rb_work* w = (struct rb_work*)c;
     strut_embed_value a; memset(&a, 0, sizeof a); a.kind = STRUT_EMBED_VALUE_INT; a.i = x;
@@ -62,6 +79,7 @@ int main(void) {
         "export \"C\" function echo_bytes(bytes b) -> bytes { return b; }\n"
         "export \"C\" function takes_f32(double_32 x) -> double_32 { return x; }\n"
         "export \"C\" function apply_cb(function<(int_32)->int_32> f, int_32 v) -> int_32 { return f(v) + f(v + 1); }\n"
+        "export \"C\" function nest(function<(int_32)->int_32> f, int_32 v) -> int_32 { return f(v); }\n"
 
         "error EmbedErr { string message; }\n"
         "export \"C\" function risky(int_32 x) -> int_32 : EmbedErr { if (x < 0) { throw EmbedErr { message: \"bad\" }; } return x; }\n";
@@ -373,6 +391,22 @@ int main(void) {
         CHECK(strut_embed_invoke(bc, "apply_cb", rr, 2, &co, &bl) == 0 && co.i == (2*5) + (2*6));   /* 10 + 12 = 22 */
         CHECK(strut_embed_context_destroy(cb_other) == 0);
         CHECK(strut_embed_context_destroy(bc) == 0);
+    }
+    /* bounded SAME-context reentrancy: host -> nest -> same_cb -> nest -> ... -> neg (depth 3) */
+    {
+        strut_embed_context* sc = strut_embed_context_create();
+        strut_embed_error* sl = 0;
+        CHECK(strut_embed_context_load_source(sc, src, strlen(src), &sl) == 0);
+        struct same_work sw; sw.c = sc; sw.depth = 3; sw.bad = 0;
+        strut_embed_value scb; memset(&scb, 0, sizeof scb); scb.kind = STRUT_EMBED_VALUE_CALLBACK; scb.cb_fn = (void*)same_cb; scb.cb_ctx = &sw;
+        strut_embed_value sv; memset(&sv, 0, sizeof sv); sv.kind = STRUT_EMBED_VALUE_INT; sv.i = 5;
+        strut_embed_value sa2[2] = { scb, sv };
+        strut_embed_value so;
+        CHECK(strut_embed_invoke(sc, "nest", sa2, 2, &so, &sl) == 0 && so.i == -5);   /* depth exhausted -> neg(5) */
+        CHECK(sw.depth == 0 && sw.bad == 0);
+        strut_embed_value nv; nv.kind = STRUT_EMBED_VALUE_INT; nv.i = 9;
+        CHECK(strut_embed_invoke(sc, "neg", &nv, 1, &so, &sl) == 0 && so.i == -9);    /* context still usable after recursion */
+        CHECK(strut_embed_context_destroy(sc) == 0);
     }
     strut_embed_context_destroy(ctx);
     if (failures == 0) printf("embed ok\n");
