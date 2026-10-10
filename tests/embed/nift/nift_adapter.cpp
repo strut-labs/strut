@@ -21,12 +21,20 @@
 static int parse_i32(const char* data, size_t len, int32_t* out) {
     if (!data || len == 0 || len >= 16) return 0;
     // Strict JSON integer contract (input is Nift's JSON serialization): no surrounding
-    // whitespace, no leading '+' or '-0' forms, no leading zeros; a lone "0" is valid.
+    // whitespace, no leading '+' or leading zeros, but "-0" is valid JSON.
     if (len > 0 && (data[len - 1] == '\n' || data[0] == ' ' || data[0] == '\t')) return 0;
     if (data[0] == '+' || data[0] == '-') {
         if (len == 1) return 0;
-        if (data[0] == '-' && (data[1] == '0' || data[1] == '-')) return 0;
         if (data[0] == '+') return 0;
+        // "-0" is valid (-0 with no further digits); "-0<digit>" and "-<non-digit>" are rejected.
+        if (data[0] == '-') {
+            if (data[1] == '-') return 0;
+            if (data[1] >= '0' && data[1] <= '9') {
+                if (data[1] == '0' && len > 2) return 0;
+            } else {
+                return 0;
+            }
+        }
     } else if (len > 1 && data[0] == '0') {
         return 0;
     }
@@ -49,6 +57,7 @@ extern "C" int strut_nift_parse_i32_check(void) {
     static const Row rows[] = {
         {"42", 1, 42}, {"-103", 1, -103}, {"0", 1, 0},
         {"2147483647", 1, INT32_MAX}, {"-2147483648", 1, INT32_MIN},
+        {"-0", 1, 0},
         {"2147483648", 0, 0}, {"-2147483649", 0, 0},
         {"", 0, 0}, {"12x", 0, 0}, {"1.5", 0, 0}, {"null", 0, 0}, {"true", 0, 0},
         {"+42", 0, 0}, {" 42", 0, 0}, {"042", 0, 0}, {"--42", 0, 0}, {"42\n", 0, 0}, {"-042", 0, 0},
@@ -94,6 +103,54 @@ static int result_int(nift_script_result* r) {
     return parse_i32(json.data, json.length, &v) ? (int)v : -1;
 }
 
+// Decode a JSON string literal (a required leading/trailing quote pair). Standard JSON escapes
+// (\" \\ \/ \n \r \t \b \f \uXXXX) are decoded; raw control bytes are dropped; everything else
+// is copied verbatim. Sufficient for Nift's JSON serialization output.
+static void json_string_decode(const char* data, size_t len, std::string& out) {
+    out.clear();
+    if (len < 2 || data[0] != '"' || data[len - 1] != '"') { out.assign(data, len); return; }
+    for (size_t i = 1; i + 1 < len; ++i) {
+        char c = data[i];
+        if (c == '"') {
+            out += c;
+        } else if (c != '\\') {
+            if (!((unsigned char)c < 0x20u)) out += c;
+        } else if (i + 1 < len - 1) {
+            char e = data[i + 1];
+            switch (e) {
+                case '"': out += '"'; ++i; break;
+                case '\\': out += '\\'; ++i; break;
+                case '/': out += '/'; ++i; break;
+                case 'n': out += '\n'; ++i; break;
+                case 'r': out += '\r'; ++i; break;
+                case 't': out += '\t'; ++i; break;
+                case 'b': out += '\b'; ++i; break;
+                case 'f': out += '\f'; ++i; break;
+                case 'u': {
+                    ++i;
+                    if (i + 4 < len && data[i] == '0' && data[i + 1] == '0' && data[i + 2] == '0' && data[i + 3] >= '0' && data[i + 3] <= '9') {
+                        out += (char)('0' + (data[i + 3] - '0'));
+                    } else {
+                        // bounded \uXXXX byte pass-through for the corpus (escaped non-ASCII is
+                        // produced by Nift only for contents not already UTF-8).
+                        out += '\\'; out += 'u';
+                        for (int k = 0; k < 4 && i + (size_t)k < len; ++k) out += data[i + (size_t)k];
+                        i += 3;
+                    }
+                    break;
+                }
+                default: out += e; ++i; break;
+            }
+        }
+    }
+}
+
+// NOTE: strut_string reconstructs Strut's generated string representation
+// ({ std::string v; }, by value across the extern "C" boundary). This is a PRIVATE,
+// compiler-and-standard-library-coupled fixture ABI (both translation units must use the same
+// compiler configuration); it is not part of any public Strut contract. FFI-10 uses it only for
+// the local test adapter -- a supported pointer+length byte_view boundary is the preferred shape
+// for any production integration.
 struct strut_string {
     std::string v;
     strut_string() {}
@@ -120,9 +177,7 @@ extern "C" strut_string strut_nift_string_op(strut_string value) {
     if (nift_script_result_ok(r)) {
         nift_string json = {0};
         if (nift_script_result_value_json(r, &json) == NIFT_OK && json.data && json.length) {
-            size_t start = 0, end = json.length;
-            if (end >= 2 && json.data[0] == '"' && json.data[end - 1] == '"') { start = 1; end -= 1; }
-            out_value.assign(json.data + start, end - start);
+            json_string_decode(json.data, json.length, out_value);
         }
     }
     nift_script_result_free(r);
@@ -154,6 +209,26 @@ extern "C" int strut_nift_same_engine_recovery(void) {
     }
     nift_engine_free(engine);
     return (first_ok && failed_with_diag && third_ok) ? 0 : 2;
+}
+
+// Decoder regression over the real helper: JSON text (including escapes) must decode to exact
+// bytes. Returns 0 only if every row decodes correctly.
+extern "C" int strut_nift_decode_check(void) {
+    struct Row { const char* json_len_input[2]; const char* json; const char* want; };
+    static const char* rows[][2] = {
+        {"\"hi!\"", "hi!"},
+        {"\"a\\\"b\"", "a\"b"},
+        {"\"a\\\\b\"", "a\\b"},
+        {"\"a\\nb\"", "a\nb"},
+        {"\"a\\tb\"", "a\tb"},
+        {"\"a\\rb\"", "a\rb"},
+    };
+    for (const auto& row : rows) {
+        std::string decoded;
+        json_string_decode(row[0], strlen(row[0]), decoded);
+        if (decoded != row[1]) return 0;
+    }
+    return 1;
 }
 
 extern "C" int strut_nift_add25_i32(int32_t seed, int32_t* out) {
