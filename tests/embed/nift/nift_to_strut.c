@@ -76,6 +76,33 @@ int main(int argc, char** argv) {
             nift_engine_free(engine); return 1;
         }
     }
+    // Nift-origin UTF-8 into a Strut export: real UTF-8 bytes in the script, byte length passed
+    // explicitly. "h<C3 A9>llo " is 6 chars / 7 bytes; ASCII "hello" is 5 bytes.
+    {
+        struct Case { const char* text; int len; };
+        static const struct Case cases[] = {
+            {"\"h\xC3\xA9llo \"", 7},
+            {"\"hello\"", 5},
+        };
+        int all_ok = 1;
+        for (int i = 0; i < 2; ++i) {
+            char script[320];
+            int n = snprintf(script, sizeof script,
+                "ffi_call(ffi_open(\"%s\"), \"nift_verify_string\", \"i32(cstr,u64)\", %s, %d)",
+                libbase, cases[i].text, cases[i].len);
+            nift_script_result* result = NULL;
+            if (nift_engine_evaluate(engine, script, (size_t)n, &result) != NIFT_OK || !result) {
+                all_ok = 0; break;
+            }
+            if (!nift_script_result_ok(result)) { nift_script_result_free(result); all_ok = 0; break; }
+            nift_string json = {0};
+            int okv = (nift_script_result_value_json(result, &json) == NIFT_OK && json.length == 2 &&
+                       memcmp(json.data, "42", 2) == 0);
+            nift_script_result_free(result);
+            if (!okv) { fprintf(stderr, "nift->strut string case %d mismatch\n", i); all_ok = 0; break; }
+        }
+        if (!all_ok) { nift_engine_free(engine); return 1; }
+    }
     nift_engine_free(engine);
     printf("nift strut ok\n");
     return 0;

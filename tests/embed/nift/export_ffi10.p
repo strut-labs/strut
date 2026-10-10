@@ -5,7 +5,6 @@ export "C" function nift_verify_bytes(bytes data) -> int_32 {
     return 42;
 }
 export "C" function nift_verify_string(string text) -> int_32 {
-    if (text.length() != 6) { return -1; }
-    if (text != "héllo ") { return -2; }
+    if (text != "héllo ") { return 1000 + text.length(); }
     return 42;
 }
