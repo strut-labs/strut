@@ -623,8 +623,47 @@ d97bd0c/30f6f90 (library-relative discovery + resolver), 424c64b/753088d (CI pro
 arm64 .NET + node-gyp + x64 .NET), 9a1d7f7/37dd55a (declarative node-gyp include + link via
 npm_config promotion; MSVC env-inheritance gap). Local walls 39/39 GCC+embed; Nift integration
 d8a1165 (see FFI-10 below).
-REMAINING: FFI-10 direct Nift<->Strut language-level calls, final ABI audit, release
-certification, v0.0.5.
+
+## FFI-10 COMPLETE / CERTIFIED (Linux-local; Nift C ABI v1.3, dist/embed-prefix libnift_c)
+Bidirectional Nift <-> Strut interoperability through each language's EXISTING public interfaces.
+Nift core strictly read-only (workspace boundary); no Strut public-ABI change was required.
+
+DIRECTIONS (permanent CTests, gated on STRUT_NIFT_LIBDIR, SKIP 77 when Nift absent):
+- C-hosted coexistence: struct_ffi_nift_strut (both engines in one process, d8a1165).
+- Strut -> Nift integers: nift_from_strut.p extern->adapter; status/out, checked int32,
+  strict JSON-integer parse incl -0 (19-row table); 17->42, 0->25, -25->0, 100->125,
+  -128->-103; same-engine recovery ok->fail-with-diagnostic->ok; DECODE-OK (6a8b918, 8def97e).
+- Strut -> Nift UTF-8: strut_nift_string_op(status,out) via nift_engine_set_string + proper JSON
+  decoder (surrogate pairs, embedded NUL, non-string rejects); "hi!/!/h\u00E9llo!" (92f4cc9).
+- Strut -> Nift binary: nift_bytes_rt.p: bytes[97,0,98,255,128] via bytes.data()->
+  raw_ptr<uint_8> extern; negative-branch probe (NULL/negative capacity/length) with sentinel
+  preservation (b87033f); same-engine payload->empty->payload with copied-output
+  re-verification AFTER each result free (SAME-OK, c160d64); BYTES-OK (d45dce6).
+- Nift -> Strut integers: nift_to_strut.c evaluates Nift ffi_call(ffi_open,"add",...) for four
+  pairs on a reused engine (42/15/-2/0) against a Strut --shared export (e87debf).
+- Nift -> Strut strings: ffi_call("i32(cstr,u64)") into nift_verify_string export; "hello"
+  (5B), "h\u00E9llo " (7B real UTF-8; lengths are BYTES: 6 chars = 7 bytes!), "" (0B) -> 42
+  (e0d1a32, empty at c160d64).
+- Nift -> Strut binary: ffi_buffer([97,0,98,255,128]) -> nift_verify_bytes() -> 42; empty -> -1
+  (d03f13c). Repeated per-case ffi_open/ffi_call on one engine exercises Nift's automatic
+  temporary-handle release (ParserScript erase_new + FfiLibraryInstance dtor dlclose); explicit
+  ffi_close is not reachable in the expression evaluator (documented).
+
+FIXTURE NOTES: struct strut_string {std::string v} by-value crossing is a PRIVATE
+compiler+stdlib-coupled fixture (documented in nift_adapter.cpp), NOT a public ABI; the
+production byte boundary uses C-compatible raw_ptr<uint_8>/ptr<int> arguments. Hex integer
+literals (0xFF) unsupported by this Strut parser version (decimals used). The Nift script
+language does not decode \u00E9 escapes (real UTF-8 bytes must be embedded). The earlier
+"Strut byte marshalling impossible" conclusion was WRONG and is superseded by the supported
+bytes.data()/raw_ptr<uint_8> route; bytes.from_string arrays give contents. Adapters live in
+tests/embed/nift, all private; adapter statuses 1..11 documented in nift_adapter.cpp.
+
+WALL: relgcc GCC 42/42 (embed + four Nift integration tests). UTF-8 bytes/characters lesson
+recorded so the earlier fixture mismatch is not mistaken for a Strut FFI defect.
+REMAINING: final public ABI/source-compat audit; resolve the recurring WebSocket dogfood
+release blocker (intermittent "unexpected WebSocket upgrade response: b''" - ctest 38/38
+passing on the affected job, not reproduced 4/4 locally, cause unresolved); full release
+certification; then Strut v0.0.5.
 
 ## Release sequence (after this dev line)
 FFI-7 -> FFI-8 -> FFI-9 consumers -> FFI-10 Nift dogfood -> final ABI audit -> full certification
