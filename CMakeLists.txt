@@ -212,3 +212,13 @@ if(Python3_EXECUTABLE AND NOT STRUT_SANITIZERS)
         ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/embed/python/strut_consumer.py)
     set_tests_properties(strut_ffi_embed_python PROPERTIES TIMEOUT 300)
 endif()
+find_program(GO_EXECUTABLE NAMES go)
+if(GO_EXECUTABLE AND NOT STRUT_SANITIZERS)
+    add_test(NAME strut_ffi_embed_go COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tests/embed/go/run_go_consumer.py
+        $<TARGET_FILE_DIR:strut_embed>
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_BINARY_DIR}/share/strut/jsonic
+        ${CMAKE_SOURCE_DIR}/tests/embed/go)
+    set_tests_properties(strut_ffi_embed_go PROPERTIES TIMEOUT 300)
+endif()
