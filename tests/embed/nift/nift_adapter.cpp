@@ -103,20 +103,25 @@ static int result_int(nift_script_result* r) {
     return parse_i32(json.data, json.length, &v) ? (int)v : -1;
 }
 
-// Decode a JSON string literal (a required leading/trailing quote pair). Standard JSON escapes
-// (\" \\ \/ \n \r \t \b \f \uXXXX) are decoded; raw control bytes are dropped; everything else
-// is copied verbatim. Sufficient for Nift's JSON serialization output.
-static void json_string_decode(const char* data, size_t len, std::string& out) {
+// Decode a complete JSON string literal into exact bytes with a success/failure contract.
+// Returns false (leaving out untouched) for: leading/trailing garbage or a non-string JSON value,
+// unterminated input, unknown or incomplete escapes, unescaped control bytes, isolated or
+// truncated Unicode surrogate escapes, and trailing content after the closing quote. Embedded NUL
+// is preserved via \u0000. Surrogate pairs are combined and encoded as UTF-8.
+static bool json_string_decode(const char* data, size_t len, std::string& out) {
+    if (!data || len < 2 || data[0] != '"' || data[len - 1] != '"') return false;
     out.clear();
-    if (len < 2 || data[0] != '"' || data[len - 1] != '"') { out.assign(data, len); return; }
-    for (size_t i = 1; i + 1 < len; ++i) {
-        char c = data[i];
+    size_t i = 1;
+    while (i < len) {
+        unsigned char c = (unsigned char)data[i];
         if (c == '"') {
-            out += c;
-        } else if (c != '\\') {
-            if (!((unsigned char)c < 0x20u)) out += c;
-        } else if (i + 1 < len - 1) {
-            char e = data[i + 1];
+            if (i + 1 == len) return true;       // closing quote consumed, nothing trailing
+            return false;                          // trailing content after closing quote
+        }
+        if (c == '\\') {
+            ++i;
+            if (i + 1 >= len) return false;        // escape at end of input
+            char e = data[i];
             switch (e) {
                 case '"': out += '"'; ++i; break;
                 case '\\': out += '\\'; ++i; break;
@@ -127,22 +132,51 @@ static void json_string_decode(const char* data, size_t len, std::string& out) {
                 case 'b': out += '\b'; ++i; break;
                 case 'f': out += '\f'; ++i; break;
                 case 'u': {
-                    ++i;
-                    if (i + 4 < len && data[i] == '0' && data[i + 1] == '0' && data[i + 2] == '0' && data[i + 3] >= '0' && data[i + 3] <= '9') {
-                        out += (char)('0' + (data[i + 3] - '0'));
-                    } else {
-                        // bounded \uXXXX byte pass-through for the corpus (escaped non-ASCII is
-                        // produced by Nift only for contents not already UTF-8).
-                        out += '\\'; out += 'u';
-                        for (int k = 0; k < 4 && i + (size_t)k < len; ++k) out += data[i + (size_t)k];
-                        i += 3;
+                    if (i + 5 > len) return false;               // \ uXXXX needs 6 chars
+                    unsigned int cp = 0;
+                    for (int k = 1; k <= 4; ++k) {
+                        char h = data[i + (size_t)k];
+                        cp <<= 4;
+                        if (h >= '0' && h <= '9') cp |= (unsigned int)(h - '0');
+                        else if (h >= 'a' && h <= 'f') cp |= (unsigned int)(h - 'a' + 10);
+                        else if (h >= 'A' && h <= 'F') cp |= (unsigned int)(h - 'A' + 10);
+                        else return false;
                     }
+                    i += 5;                                       // consumed \uXXXX
+                    if (cp >= 0xD800 && cp <= 0xDBFF) {
+                        // high surrogate: require a following low surrogate
+                        if (i + 6 > len || data[i] != '\\' || data[i + 1] != 'u') return false;
+                        unsigned int low = 0;
+                        for (int k = 2; k <= 5; ++k) {
+                            char h = data[i + (size_t)k];
+                            low <<= 4;
+                            if (h >= '0' && h <= '9') low |= (unsigned int)(h - '0');
+                            else if (h >= 'a' && h <= 'f') low |= (unsigned int)(h - 'a' + 10);
+                            else if (h >= 'A' && h <= 'F') low |= (unsigned int)(h - 'A' + 10);
+                            else return false;
+                        }
+                        if (low < 0xDC00 || low > 0xDFFF) return false;
+                        i += 6;
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+                    } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                        return false;              // isolated low surrogate
+                    }
+                    // UTF-8 encode
+                    if (cp < 0x80) { out += (char)cp; }
+                    else if (cp < 0x800) { out += (char)(0xC0 | (cp >> 6)); out += (char)(0x80 | (cp & 0x3F)); }
+                    else if (cp < 0x10000) { out += (char)(0xE0 | (cp >> 12)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+                    else { out += (char)(0xF0 | (cp >> 18)); out += (char)(0x80 | ((cp >> 12) & 0x3F)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
                     break;
                 }
-                default: out += e; ++i; break;
+                default: return false;             // unknown escape
             }
+        } else {
+            if (c < 0x20u) return false;           // unescaped control byte
+            out += (char)c;
+            ++i;
         }
     }
+    return false;                                  // unterminated
 }
 
 // NOTE: strut_string reconstructs Strut's generated string representation
@@ -158,31 +192,41 @@ struct strut_string {
 };
 
 // UTF-8 string round-trip: Strut passes a string into a Nift engine binding; Nift evaluates
-// s + "!"; the JSON-encoded result is decoded and returned to Strut as a fresh string.
-extern "C" strut_string strut_nift_string_op(strut_string value) {
+// s + "!"; the JSON-encoded result is decoded into *out. Status/result contract mirrors the
+// integer adapter: 0 success, 1 engine, 2 binding, 3 mechanical, 4 semantic, 5 conversion,
+// 6 decode failure/type mismatch. *out is untouched unless 0 is returned, so an empty successful
+// string and a failure are distinguishable.
+extern "C" int strut_nift_string_op(strut_string value, strut_string* out) {
+    if (!out) return 6;
     nift_engine* engine = nift_engine_new();
-    std::string empty;
-    if (!engine) return strut_string();
+    if (!engine) return 1;
     if (nift_engine_set_string(engine, "s", 1, value.v.data(), value.v.size()) != NIFT_OK) {
         nift_engine_free(engine);
-        return strut_string();
+        return 2;
     }
     static const char* expression = "s + '!'";
     nift_script_result* r = nullptr;
     if (nift_engine_evaluate(engine, expression, strlen(expression), &r) != NIFT_OK || !r) {
         nift_engine_free(engine);
-        return strut_string();
+        return 3;
     }
-    std::string out_value;
+    int status = 4;
     if (nift_script_result_ok(r)) {
         nift_string json = {0};
-        if (nift_script_result_value_json(r, &json) == NIFT_OK && json.data && json.length) {
-            json_string_decode(json.data, json.length, out_value);
+        status = 5;
+        if (nift_script_result_value_json(r, &json) == NIFT_OK && json.data) {
+            std::string decoded;
+            if (json_string_decode(json.data, json.length, decoded)) {
+                out->v = std::move(decoded);
+                status = 0;
+            } else {
+                status = 6;
+            }
         }
     }
     nift_script_result_free(r);
     nift_engine_free(engine);
-    return strut_string(std::move(out_value));
+    return status;
 }
 extern "C" int strut_nift_same_engine_recovery(void) {
     nift_engine* engine = nift_engine_new();
@@ -211,22 +255,33 @@ extern "C" int strut_nift_same_engine_recovery(void) {
     return (first_ok && failed_with_diag && third_ok) ? 0 : 2;
 }
 
-// Decoder regression over the real helper: JSON text (including escapes) must decode to exact
-// bytes. Returns 0 only if every row decodes correctly.
+// Decoder regression over the real helper: each row is a JSON text plus the exact expected bytes
+// (or "REJECT"). A NUL byte is captured through the explicit-length input, never strlen.
 extern "C" int strut_nift_decode_check(void) {
-    struct Row { const char* json_len_input[2]; const char* json; const char* want; };
-    static const char* rows[][2] = {
-        {"\"hi!\"", "hi!"},
-        {"\"a\\\"b\"", "a\"b"},
-        {"\"a\\\\b\"", "a\\b"},
-        {"\"a\\nb\"", "a\nb"},
-        {"\"a\\tb\"", "a\tb"},
-        {"\"a\\rb\"", "a\rb"},
+    struct Row { const char* json; size_t len; const char* want; size_t want_len; int expect; };
+    static const Row rows[] = {
+        {"\"hi!\"", 5, "hi!", 3, 1},
+        {"\"\"", 2, "", 0, 1},
+        {"\"a\\\"b\"", 6, "a\"b", 3, 1},
+        {"\"a\\\\b\"", 6, "a\\b", 3, 1},
+        {"\"a\\nb\"", 6, "a\nb", 3, 1},
+        {"\"\\u0000\"", 8, "\0", 1, 1},
+        {"\"\\u00E9\"", 8, "\xC3\xA9", 2, 1},
+        {"\"\\uD83D\\uDE00\"", 14, "\xF0\x9F\x98\x80", 4, 1},
+        {"\"\\uD800\"", 8, "", 0, 0},
+        {"\"\\uDC00\"", 8, "", 0, 0},
+        {"\"\\x\"", 4, "", 0, 0},
+        {"\"unterminated", 13, "", 0, 0},
+        {"null", 4, "", 0, 0},
+        {"42", 2, "", 0, 0},
+        {"\"a\"b\"", 6, "", 0, 0},
+        {"\"\\u12g4\"", 9, "", 0, 0},
     };
     for (const auto& row : rows) {
-        std::string decoded;
-        json_string_decode(row[0], strlen(row[0]), decoded);
-        if (decoded != row[1]) return 0;
+        std::string decoded = "SENTINEL";
+        bool ok = json_string_decode(row.json, row.len, decoded);
+        if (ok != (row.expect == 1)) return 0;
+        if (ok && !(decoded.size() == row.want_len && memcmp(decoded.data(), row.want, row.want_len) == 0)) return 0;
     }
     return 1;
 }
