@@ -51,10 +51,10 @@ args = [x for x in ([nodegyp, "rebuild"] if not use_npx else [nodegyp, "-y", "no
 b = subprocess.run(args, env=env, capture_output=True, text=True, cwd=str(srcdir),
                    shell=(os.name == "nt"))
 if b.returncode != 0:
-    err = b.stderr or ""
-    detail = "\n".join(ln for ln in err.splitlines()
-                       if any(k in ln.lower() for k in ("error", "gyp err", "msb", "fatal", "ld", "lnk")))
-    print("node addon build FAILED (%s):\n%s" % (b.returncode, (detail or err)[-4000:]))
+    combined = (b.stdout or "") + "\n" + (b.stderr or "")
+    detail = "\n".join(ln for ln in combined.splitlines()
+                        if any(k in ln.lower() for k in ("error", "gyp err", "msb", "fatal", "lnk", "ld\'", "cl.exe", "unresolved")))
+    print("node addon build FAILED (%s):\n%s" % (b.returncode, (detail or combined)[-6000:]))
     sys.exit(1)
 r = subprocess.run([node, "index.js"], env=env, capture_output=True, text=True, cwd=str(srcdir))
 out = r.stdout.strip()

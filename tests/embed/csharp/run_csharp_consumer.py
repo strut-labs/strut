@@ -29,21 +29,17 @@ if b.returncode != 0:
     print("dotnet build FAILED:", b.stderr[-2000:]); sys.exit(1)
 
 bin_dir = srcdir / "bin" / "Release"
-projs = list(bin_dir.glob("net*")) + list(bin_dir.glob("*/"))
-bin_path = None
-for d in sorted(bin_dir.iterdir(), key=lambda p: len(str(p))):
-    if d.is_dir() and bin_path is None:
-        exe = d / "strut_consumer"
-        if not os.name == "nt" and exe.exists():
-            bin_path = exe
-        elif os.name == "nt":
-            exe = d / "strut_consumer.exe"
-            if exe.exists():
-                bin_path = exe
-if bin_path is None:
-    print("dotnet output binary not found"); sys.exit(1)
+dll = None
+tfm_dirs = sorted(bin_dir.glob("net*"), key=lambda p: str(p)) if bin_dir.exists() else []
+if tfm_dirs:
+    cand = tfm_dirs[-1] / "strut_consumer.dll"
+    if cand.exists():
+        dll = cand
+if dll is None:
+    print("dotnet output dll not found; build tree:", list(bin_dir.rglob("*.dll")) if bin_dir.exists() else "bin/Release missing")
+    sys.exit(1)
 
-r = subprocess.run([str(bin_path)], env=env, capture_output=True, text=True, cwd=str(srcdir))
+r = subprocess.run([dotnet, str(dll)], env=env, capture_output=True, text=True, cwd=str(srcdir))
 out = r.stdout.strip()
 if r.returncode != 0 or "csharp consumer ok" not in out:
     print("csharp consumer FAILED rc=%d out=%r" % (r.returncode, out))
@@ -54,7 +50,7 @@ if r.returncode != 0 or "csharp consumer ok" not in out:
     print("dotnet info:\n" + "\n".join(runtime_line[:4]))
     if info.stderr.strip():
         print("dotnet --info stderr: " + info.stderr.strip()[-500:])
-    smoke = subprocess.run([str(bin_path), "--smoke"], env=env, capture_output=True, text=True)
+    smoke = subprocess.run([dotnet, str(dll), "--smoke"], env=env, capture_output=True, text=True)
     print("smoke rc=%d out=%r stderr=%r" % (smoke.returncode, smoke.stdout.strip()[-500:], smoke.stderr.strip()[-800:]))
     sys.exit(1)
 print("csharp consumer ok")
