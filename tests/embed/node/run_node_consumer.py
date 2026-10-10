@@ -47,6 +47,7 @@ env = dict(os.environ,
 env["CPATH"] = str(inc)
 env["npm_config_strut_include_dir"] = str(inc)
 if os.name == "nt":
+    env["npm_config_strut_embed_lib"] = str(libdir / "strut_embed.lib")
     env["INCLUDE"] = str(inc) + ";" + env.get("INCLUDE", "")
     env["LIB"] = str(libdir) + ";" + env.get("LIB", "")
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
