@@ -96,6 +96,20 @@ internal static class Program
 
     static void Main()
     {
+        // macOS dyld resolution for a local unsigned dylib is unreliable via short DllImport
+        // names (consumer previously exited ~131/SIGQUIT). Resolve by absolute path from
+        // STRUT_EMBED_LIB -- the same mechanism the Python consumer uses successfully -- and
+        // fall back to the default loader when unset.
+        NativeLibrary.SetDllImportResolver(typeof(Embed).Assembly, (name, asm, path) =>
+        {
+            if (name == "strut_embed")
+            {
+                string abs = Environment.GetEnvironmentVariable("STRUT_EMBED_LIB");
+                if (!string.IsNullOrEmpty(abs) && System.IO.File.Exists(abs))
+                    return NativeLibrary.Load(abs);
+            }
+            return IntPtr.Zero;
+        });
         var SRC = string.Join("\n",
             "export \"C\" function add(int_32 a, int_32 b) -> int_32 { return a + b; }",
             "export \"C\" function addf(double_64 a, double_64 b) -> double_64 { return a + b; }",
@@ -186,6 +200,7 @@ internal static class Program
 
         if (failed != 0) { Console.WriteLine("csharp consumer FAILED"); }
         else { Console.WriteLine("csharp consumer ok"); }
+        Environment.Exit(failed != 0 ? 1 : 0);
 
         static Embed.Value I(long x) => new Embed.Value { kind = Embed.INT, i = x };
         static Embed.Value F(double x) => new Embed.Value { kind = Embed.FLOAT, d = x };

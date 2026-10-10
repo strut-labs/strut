@@ -16,8 +16,10 @@ if shutil.which(dotnet) is None:
     print("SKIP: dotnet SDK not available")
     sys.exit(77)
 
+libname = "strut_embed.dll" if os.name == "nt" else ("libstrut_embed.dylib" if sys.platform == "darwin" else "libstrut_embed.so")
 env = dict(os.environ, LD_LIBRARY_PATH=str(libdir), DYLD_LIBRARY_PATH=str(libdir),
-                  STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
+           STRUT_EMBED_LIB=str((libdir / libname).resolve()),
+           STRUT_JSONIC_INCLUDE_DIR=str(jsonic))
 sep = ";" if os.name == "nt" else ":"
 env["PATH"] = str(libdir) + sep + env.get("PATH", "")
 
@@ -44,5 +46,8 @@ if bin_path is None:
 r = subprocess.run([str(bin_path)], env=env, capture_output=True, text=True, cwd=str(srcdir))
 out = r.stdout.strip()
 if r.returncode != 0 or "csharp consumer ok" not in out:
-    print("csharp consumer FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
+    print("csharp consumer FAILED rc=%d out=%r" % (r.returncode, out))
+    if r.stderr.strip():
+        print("csharp consumer stderr:\n" + r.stderr.strip()[-2000:])
+    sys.exit(1)
 print("csharp consumer ok")
