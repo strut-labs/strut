@@ -5,12 +5,14 @@
 #include <string.h>
 #include <stdlib.h>
 
-extern "C" int64_t strut_nift_eval(int64_t seed) {
-    static const char* expression = "40 + 2";
-    int64_t expected = 42;
-    (void)seed;
+// Strut supplies "seed" through Nift's engine binding API (no expression string concatenation);
+// Nift computes seed + 25. Returned value is validated against the expectation so a hardcoded
+// fixture cannot fake a success.
+static int64_t nift_add25(int64_t seed, int64_t expected) {
     nift_engine* engine = nift_engine_new();
     if (!engine) return -100;
+    nift_engine_set_int(engine, "seed", 4, static_cast<int32_t>(seed));
+    static const char* expression = "seed + 25";
     nift_script_result* result = nullptr;
     if (nift_engine_evaluate(engine, expression, strlen(expression), &result) != NIFT_OK || !result) {
         nift_engine_free(engine);
@@ -29,4 +31,11 @@ extern "C" int64_t strut_nift_eval(int64_t seed) {
     nift_script_result_free(result);
     nift_engine_free(engine);
     return value == expected ? value : -103;
+}
+
+extern "C" int64_t strut_nift_eval(int64_t seed) {
+    return nift_add25(seed, seed + 25);
+}
+extern "C" int64_t strut_nift_add25_seventeen(void) {
+    return nift_add25(17, 42);
 }

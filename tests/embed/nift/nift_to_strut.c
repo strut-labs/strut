@@ -12,7 +12,8 @@ int main(int argc, char** argv) {
 
     char script[1024];
     int n = snprintf(script, sizeof script,
-        "ffi_call(ffi_open(\"%s\"), \"add\", \"i32(i32,i32)\", 20, 22)\n", libbase);
+        "lib := ffi_open(\"%s\"); r := ffi_call(lib, \"add\", \"i32(i32,i32)\", 20, 22); ffi_close(lib); r",
+        libbase);
     if (n < 0 || (size_t)n >= sizeof script) { fprintf(stderr, "script too large\n"); return 2; }
 
     nift_engine* engine = nift_engine_new();
