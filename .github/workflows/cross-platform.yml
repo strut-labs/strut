@@ -101,6 +101,12 @@ jobs:
       - name: Enable MSVC developer environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Install arm64 .NET SDK (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          architecture: arm64
       - name: Configure (POSIX)
         if: runner.os == 'Linux'
         run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSTRUT_WARNINGS_AS_ERRORS=ON
