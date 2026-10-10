@@ -71,7 +71,9 @@ def run():
     epp = ctypes.POINTER(EmbedError)()
     r = lib.strut_embed_context_load_source(ctx, SRC, len(SRC), ctypes.byref(epp))
     if r != 0:
-        check(False, "load source: " + err_text(epp.contents))
+        det = err_text(epp.contents)
+        lib.strut_embed_error_release(None, epp)   # release regardless of the caller's outcome
+        check(False, "load source: " + det)
     else:
         check(True, "load source")
 
