@@ -94,7 +94,7 @@ internal static class Program
         return outVal;
     }
 
-    static void Main()
+    static void Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "--smoke")
         {
