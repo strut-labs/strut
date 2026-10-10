@@ -2385,13 +2385,14 @@ void append_runtime_link_libraries(std::string& command,const IRProgram& program
     }
 }
 }
+static int run_native_shown(const std::string& cmd){if(std::getenv("STRUT_SHOW_NATIVE"))return std::system(cmd.c_str());return run_native_command(cmd);}
 std::string classify_native_failure(const IRProgram& program,std::string_view phase){return native_failure(program,phase);}
 bool CppBackend::compile_object(const IRProgram& p,const std::filesystem::path& object,const std::filesystem::path& generated_cpp,std::string& error,const NativeLinkOptions& link) const {
  auto g=generate(p);if(!g.ok()){error=g.error;return false;}std::error_code ec;std::filesystem::create_directories(object.parent_path(),ec);if(ec){error=ec.message();return false;}std::filesystem::create_directories(generated_cpp.parent_path(),ec);if(ec){error=ec.message();return false;}{std::ofstream f(generated_cpp);if(!f){error="cannot write generated C++ source";return false;}f<<g.cpp;}
 bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string cmd; const auto jsonic=jsonic_include_dir().string();
  if(msvc) cmd="\""+cxx+"\" /nologo /std:c++20 /EHsc /DWIN32_LEAN_AND_MEAN /DNOMINMAX /c "+(link.release?"/O2 /Gy ":"/Od /Zi ")+env_flags("STRUT_CXXFLAGS")+" /I\""+jsonic+"\" \""+generated_cpp.string()+"\" /Fo:\""+object.string()+"\"";
  else cmd="\""+cxx+"\" -std=c++20 "+(link.release?"-O2 -flto -ffunction-sections -fdata-sections ":"-O0 -g ")+env_flags("STRUT_CXXFLAGS")+" -I\""+jsonic+"\" -c \""+generated_cpp.string()+"\" -o \""+object.string()+"\"";
- if(run_native_command(cmd)!=0){error=native_failure(p,"C++ object compilation");return false;}return true;
+ if(run_native_shown(cmd)!=0){error=native_failure(p,"C++ object compilation");return false;}return true;
 }
 
 bool CppBackend::link_objects(const IRProgram& p,const std::vector<std::filesystem::path>& objects,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {
@@ -2428,7 +2429,7 @@ bool msvc=false; std::string cxx=target_compiler(link.target,msvc); std::string 
  if(!msvc) cmd += env_flags("STRUT_LDFLAGS");
  if(!msvc && target_windows(link.target)) cmd += " -lws2_32";
  append_runtime_link_libraries(cmd,p,msvc);
- if(run_native_command(cmd)!=0){error=native_failure(p,"linking");return false;}return true;
+ if(run_native_shown(cmd)!=0){error=native_failure(p,"linking");return false;}return true;
 }
 
 bool CppBackend::compile(const IRProgram& p,const std::filesystem::path& output,std::string& error,const NativeLinkOptions& link) const {if(link.fully_static){const auto libraries=analyze_runtime_components(p).link_libraries();if(std::find(libraries.begin(),libraries.end(),"curl")!=libraries.end()){error="fully static linking with libcurl is not supported; use --dynamic";return false;}}if(link.target!="native"){auto obj=output;obj += ".strut.o";auto gen=output;gen += ".strut.cpp";if(!compile_object(p,obj,gen,error,link))return false;bool ok=link_objects(p,{obj},output,error,link);std::error_code ec;std::filesystem::remove(obj,ec);std::filesystem::remove(gen,ec);return ok;}auto g=generate(p);if(!g.ok()){error=g.error;return false;}auto tmp=output;tmp += ".strut.cpp";{std::ofstream f(tmp);if(!f){error="cannot write temporary C++ source";return false;}f<<g.cpp;}
