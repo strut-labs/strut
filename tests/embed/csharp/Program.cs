@@ -111,14 +111,18 @@ internal static class Program
         byte[] src = Utf8(SRC);
         IntPtr e;
         int lrc = Embed.strut_embed_context_load_source(ctx, src, (ulong)src.LongLength, out e);
-        string lmsg = "";
-        if (lrc != 0 && e != IntPtr.Zero)
+        if (lrc != 0)
         {
-            Embed.NativeError ne = Marshal.PtrToStructure<Embed.NativeError>(e);
-            lmsg = Str(ne.type) + "/" + Str(ne.message);
-            Embed.strut_embed_error_release(ctx, e);
+            string lm = "";
+            if (e != IntPtr.Zero)
+            {
+                Embed.NativeError ne = Marshal.PtrToStructure<Embed.NativeError>(e);
+                lm = Str(ne.type) + "/" + Str(ne.message);
+                Embed.strut_embed_error_release(ctx, e);
+            }
+            Err("load source rc=" + lrc + " " + lm);
+            return;
         }
-        Check(lrc == 0, "load source rc=" + lrc + " " + lmsg);
 
         Embed.Value r = Call(ctx, "add", new[] { I(20), I(22) }, out _, out _);
         Check(r.kind == Embed.INT && r.i == 42, "add=42");
@@ -127,6 +131,7 @@ internal static class Program
         Check(r.kind == Embed.FLOAT && Math.Abs(r.d - 5.75) < 1e-9, "addf=5.75");
 
         r = Call(ctx, "greet", new[] { S("stranger") }, out _, out _);
+        if (r.s_data == IntPtr.Zero || r.s_len == 0) { Err("greet null result"); return; }
         byte[] gstr = new byte[r.s_len];
         Marshal.Copy(r.s_data, gstr, 0, (int)r.s_len);
         Check(System.Text.Encoding.UTF8.GetString(gstr) == "hi stranger", "greet");
@@ -136,10 +141,17 @@ internal static class Program
         GCHandle pin = GCHandle.Alloc(payload, GCHandleType.Pinned);
         Embed.Value b = new Embed.Value { kind = Embed.BYTES, s_data = pin.AddrOfPinnedObject(), s_len = (ulong)payload.Length };
         r = Call(ctx, "echo_bytes", new[] { b }, out _, out _);
-        byte[] back = new byte[r.s_len];
-        Marshal.Copy(r.s_data, back, 0, (int)r.s_len);
-        Check(back.Length == 4 && back[0] == 0x61 && back[1] == 0 && back[2] == 0x62 && back[3] == 0xFF, "bytes exact");
-        Free(ctx, r);
+        if (r.s_data != IntPtr.Zero && r.s_len > 0)
+        {
+            byte[] back = new byte[r.s_len];
+            Marshal.Copy(r.s_data, back, 0, (int)r.s_len);
+            Check(back.Length == 4 && back[0] == 0x61 && back[1] == 0 && back[2] == 0x62 && back[3] == 0xFF, "bytes exact");
+            Free(ctx, r);
+        }
+        else
+        {
+            Err("echo_bytes null result");
+        }
         pin.Free();
 
         r = Call(ctx, "risky", new[] { I(-1) }, out string t, out string m);

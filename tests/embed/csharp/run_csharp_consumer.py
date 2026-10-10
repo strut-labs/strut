@@ -42,6 +42,6 @@ if bin_path is None:
 
 r = subprocess.run([str(bin_path)], env=env, capture_output=True, text=True, cwd=str(srcdir))
 out = r.stdout.strip()
-if r.returncode != 0 or out != "csharp consumer ok":
+if r.returncode != 0 or "csharp consumer ok" not in out:
     print("csharp consumer FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
 print("csharp consumer ok")

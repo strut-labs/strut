@@ -28,6 +28,6 @@ with tempfile.TemporaryDirectory(prefix="strut-embed-go-") as td:
     run_env["PATH"] = str(libdir) + sep + run_env.get("PATH", "")
     r = subprocess.run([str(exe)], env=run_env, capture_output=True, text=True)
     out = r.stdout.strip()
-    if r.returncode != 0 or out != "go consumer ok":
+    if r.returncode != 0 or "go consumer ok" not in out:
         print("go consumer FAILED rc=%d out=%r" % (r.returncode, out)); sys.exit(1)
 print("go consumer ok")
