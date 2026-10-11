@@ -44,15 +44,23 @@ GetModuleHandle anchor; `STRUT_JSONIC_INCLUDE_DIR`, `STRUT_LDFLAGS`, `STRUT_CXXF
 documented overrides.
 
 ## 2a. ABI evidence reconciliation (verified after report)
+- Staged-install header: a standalone C11 TU **compiled against only the installed
+  /tmp/strut-prefix/include/strut/embed.h** (no source-tree include paths), confirming the
+  installed public header is independently consumable.
+- Public POD layout measured from the installed header (gcc C11):
+  `strut_embed_value` sizeof=72, alignof=8, kind@0, i@8, s{data,len}@32, retained@48, cb_fn@56
+  -- consistent with the C# P/Invoke mirror used on five platforms in FFI-9.
 - include/strut/embed.h compiles STANDALONE as C11 (`gcc -std=c11`) and as C++20 (`g++ -std=c++20`);
   the audit's "pure C header" claim is thus executable evidence, not assumption.
 - Shared library exports the documented unmangled symbols (nm -D libstrut_embed.so):
   strut_embed_context_create/destroy, context_load_source, invoke, retained_invoke,
   value_free, error_release. Symbol-checked evidence recorded.
 - v0.0.4 compatibility precision: FFI-7/8/9/10 are v0.0.5-dev ADDITIONS; the immutable v0.0.4
-  predates these public contracts, so no v0.0.4 binary-compatibility promise is made or implied;
-  source/binary compatibility applies forward from v0.0.5. The CLI `.p` language ABI is unchanged
-  across the campaign.
+  predates these public contracts, so **no retrospective v0.0.4 binary-compatibility guarantee is
+  made or implied**. Compatibility of future releases depends on the public ABI versioning and
+  stability policy ultimately adopted (to be documented explicitly). The claim that the CLI `.p`
+  language ABI is unchanged across the campaign is supported by the preserved 307/307 regression
+  suite on default and reactor modes (not by an independent diff).
 
 ## 3. Compatibility findings
 
