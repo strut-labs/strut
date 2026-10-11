@@ -1707,7 +1707,15 @@ private:
             strut_websocket upgraded(ws);
             handler(req,upgraded);
             upgraded.finish();
-            bool ws_failed=false;upgraded.invalidate(&ws_failed);
+            bool ws_failed=false;
+            const bool ws_committed = upgraded.invalidate(&ws_failed);
+            if(!ws_committed && !ws_failed){
+                // Handler returned without accepting the upgrade: mirror legacy send_error(403).
+                static const char decline[] =
+                    "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n"
+                    "Content-Length: 9\r\nConnection: close\r\n\r\nForbidden";
+                reactor_push_output(conn, reactor, decline, sizeof(decline) - 1);
+            }
         }catch(...){std::lock_guard<std::mutex> lock(conn->out_mutex);conn->out_error=true;}conn->out_cv.notify_all();
         {std::lock_guard<std::mutex> lock(run->mutex);conn->stream_finished=true;conn->phase=reactor_phase::websocket;conn->close_after_write=true;}
         if(run->reactor)run->reactor->wake();
