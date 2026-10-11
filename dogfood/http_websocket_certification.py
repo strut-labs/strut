@@ -139,6 +139,8 @@ def self_check():
     return 1
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-check":
+        sys.exit(self_check())
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
     with tempfile.TemporaryDirectory(prefix="strut-http-websocket-") as temporary:
         root = Path(temporary)
@@ -350,7 +352,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         tls_server = subprocess.Popen([tls_executable, certificate, private_key], cwd=root,
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(tls_port, opening(path="/ws"), context=context, retry=True), scenario="tls-ws")
+            require_switch(exchange(tls_port, opening(path="/ws"), context=context, retry=True), scenario="tls-ws", servers=(('tls-server', tls_server)))
             stdout, stderr = tls_server.communicate(timeout=10)
             if tls_server.returncode != 0:
                 raise RuntimeError(f"TLS server failed ({tls_server.returncode})\n{stdout}\n{stderr}")
@@ -383,7 +385,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         stop_server = subprocess.Popen([stop_executable], cwd=root, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(stop_port, opening(path="/wait"), retry=True), scenario="stop-race-wait")
+            require_switch(exchange(stop_port, opening(path="/wait"), retry=True), scenario="stop-race-wait", servers=(('stop-server', stop_server)))
             stdout, stderr = stop_server.communicate(timeout=8)
             if stop_server.returncode != 0:
                 raise RuntimeError(f"upgraded stop failed ({stop_server.returncode})\n{stdout}\n{stderr}")
@@ -415,7 +417,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         race_server = subprocess.Popen([race_executable], cwd=root, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(race_port, opening(path="/race"), retry=True), scenario="stop-accept-race")
+            require_switch(exchange(race_port, opening(path="/race"), retry=True), scenario="stop-accept-race", servers=(('race-server', race_server)))
             stdout, stderr = race_server.communicate(timeout=8)
             if race_server.returncode != 0:
                 raise RuntimeError(f"stop/accept race failed ({race_server.returncode})\n{stdout}\n{stderr}")
