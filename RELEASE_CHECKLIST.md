@@ -28,11 +28,16 @@ inferred from an earlier state or a different platform's results.
       FIRST request before the HTTP 101 is sent (`accepting` conflated admission exhaustion with
       explicit stop). Fixed by separating `cancellation_requested` from `accepting` (request_stop
       drains first requests on admission exhaustion; explicit stop retains cancellation);
-      idle/served_request transition moved under run->mutex (no data race). SHA of the fix: TBD.
-- [ ] Deterministic regression: 45/45 consecutive legacy TCP http_websocket_certification runs
-      post-fix (was intermittent ~1/10 and recurrent in CI); reuse-first/reuse-second
-      finite-limit-one scenarios covered by the cert. Full wall 42/42 default + reactor.
-- [ ] Sanitized certification PASS on the affected platform (pending CI sanitized step).
+      idle/served_request transition moved under run->mutex (no data race). Fix SHA: 02b50f8.
+- [x] Deterministic worker-first regression (Commit Codex orderings, permanent driver
+      dogfood/websocket_admission_drain_regression.py, commit 421f6fa): forced worker-first AND
+      stop-first orderings both yield valid HTTP/1.1 101 with the correct Sec-WebSocket-Accept
+      key and exit 0 (pre-fix worker-first produced b''). Worker-first under ASan+UBSan: valid 101.
+- [x] Existing WebSocket certification post-fix: 45/45 consecutive runs (previously intermittent
+      ~1/10); reuse-first/reuse-second finite-limit-one scenarios covered by the cert.
+- [x] Full default CTest 42/42; full reactor CTest 42/42.
+- [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
+      PASS locally under ASan+UBSan; CI sanitized dogfood step still pending.
 - [x] No retries added solely to conceal the failure; gate intact.
 - [ ] TLS WSS and reactor admission-drain parity: legacy TCP proven; TLS/reactor not yet
       separately reproduced (Codex-dependent; reactor reading/waiting_body interruption unchanged).
