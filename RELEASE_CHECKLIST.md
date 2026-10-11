@@ -29,10 +29,16 @@ inferred from an earlier state or a different platform's results.
       explicit stop). Fixed by separating `cancellation_requested` from `accepting` (request_stop
       drains first requests on admission exhaustion; explicit stop retains cancellation);
       idle/served_request transition moved under run->mutex (no data race). Fix SHA: 02b50f8.
-- [x] Deterministic worker-first regression (Commit Codex orderings, permanent driver
-      dogfood/websocket_admission_drain_regression.py, commit 421f6fa): forced worker-first AND
-      stop-first orderings both yield valid HTTP/1.1 101 with the correct Sec-WebSocket-Accept
-      key and exit 0 (pre-fix worker-first produced b''). Worker-first under ASan+UBSan: valid 101.
+- [x] Deterministic worker-first regression (permanent driver
+      dogfood/websocket_admission_drain_regression.py, commits 421f6fa/64b28a7 + negative
+      control): forced worker-first AND stop-first orderings both yield valid HTTP/1.1 101 with
+      the correct Sec-WebSocket-Accept key and exit 0. SENSITIVITY: the pre-fix
+      original_worker_first control must FAIL (b'') and does, so a future reintroduction of the
+      original admission-shutdown behavior leaves the driver red. Worker-first under ASan+UBSan:
+      valid 101. NOTE: probes are pinned runtime snapshots (the compiler currently has no C++
+      emission path to auto-rebuild them from src/generated_runtime.cpp); the live
+      http_websocket_certification.py covers the CURRENT emitted runtime - reconnection to the
+      live emission path remains the documented residual gap.
 - [x] Existing WebSocket certification post-fix: 45/45 consecutive runs (previously intermittent
       ~1/10); reuse-first/reuse-second finite-limit-one scenarios covered by the cert.
 - [x] Full default CTest 42/42; full reactor CTest 42/42.

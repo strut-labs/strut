@@ -17,7 +17,10 @@ pre-fix the worker-first variant produced b'' under the same forced ordering.
 
 The probes are pinned runtime snapshots (they cannot be regenerated while the compiler cannot
 emit plain C++); the live http_websocket_certification.py runs verify the CURRENT emitted runtime.
-Exit code is nonzero if any ordering fails."""
+SENSITIVITY: original_worker_first.cpp is the PRE-FIX runtime snapshot under the same forced
+ordering and must FAIL (b''), so a future reintroduction of the original admission-shutdown
+behavior in src/generated_runtime.cpp leaves the driver red. Exit code is nonzero if any ordering
+mismatches its expected outcome."""
 import os, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 
@@ -64,7 +67,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="strut-ws-drain-") as td:
         td = Path(td)
         exes = {}
-        for name in ("worker_first", "stop_first"):
+        for name in ("worker_first", "stop_first", "original_worker_first"):
             exe = td / name
             b = subprocess.run([cc, "-std=c++20", "-O2", "-pthread",
                                 str(probe_dir / (name + ".cpp")), "-o", str(exe)],
@@ -73,14 +76,18 @@ def main():
                 print("build FAILED (%s):\n%s" % (name, b.stderr[-1500:])); sys.exit(1)
             exes[name] = exe
         failed = False
+        expect_pass = {"worker_first": True, "stop_first": True, "original_worker_first": False}
         for name, exe in exes.items():
             with socket.socket() as reserve:
                 reserve.bind(("127.0.0.1", 0))
                 port = reserve.getsockname()[1]
             rc, data, stdout, stderr = run_probe(exe, port)
             ok = (rc == 0 and b"HTTP/1.1 101" in data and ACCEPT_KEY in data and b"Sec-WebSocket-Accept" in data)
-            print("%s: %s (rc=%d)" % (name, "valid HTTP/1.1 101" if ok else "FAILED", rc))
-            if not ok:
+            good = (ok == expect_pass[name])
+            print("%s: %s %s (rc=%d)" % (name,
+                  "valid HTTP/1.1 101" if ok else "empty/no-101 (expected for the pre-fix control)",
+                  "PASS" if good else "UNEXPECTED", rc))
+            if not good:
                 failed = True
         if failed:
             print("websocket admission-drain regression FAILED"); sys.exit(1)
