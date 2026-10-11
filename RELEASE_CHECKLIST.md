@@ -89,6 +89,15 @@ TRANSPORT PARITY (current runtime):
       wall 42/42 both.
       Codex's high-priority finite-admission reactor request_stop + parameter
       propagation also remain; CI reactor coverage still absent.
+- [x] REACTOR PARAMETER PROPAGATION FIXED + end-to-end VERIFIED (c11a9d2 fix; permanent driver
+      dogfood/ws_drain_probes/run_reactor_param_probe.py): the handler accepts only when
+      request.params["id"]=="abc123" (no stdout oracle); legacy-positive 101 / legacy-negative
+      no-101 / reactor-positive 101 / reactor-negative no-101 all PASS -- correct captured values
+      reach reactor WebSocket handlers in both modes.
+- [ ] REACTOR P4 invalid-opening status: exact trigger identified -- malformed
+      Sec-WebSocket-Extensions openings to /ws/one (permessage-deflate; =bad etc.) return 400 in
+      legacy but 405 Method Not Allowed in reactor; root-cause of the upgrade-classification
+      ordering in reactor pending; do not blanket-convert 405->400.
       Previously: reactor ws-upgrade 404 (pre-fix), now 101.
       Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
       (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
