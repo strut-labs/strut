@@ -60,15 +60,24 @@ TRANSPORT PARITY (current runtime):
       TLS; part of the 45/45 current-runtime runs (tests/fixtures/tls certs exist).
 - [x] Legacy TCP finite-admission WebSocket (foundation-accept + reuse-first/reuse-second limit 1)
       passes 45/45 current-runtime; websocket_runtime_certification passes in legacy mode.
-- [ ] REACTOR parity: VERIFIED process-safe matrix (dogfood/ws_drain_probes/run_reactor_probe.py,
-      fresh server process per (mode,request) row, isolated ports, current runtime):
-          legacy: /plain 200 | /ws-upgrade 101 | /missing 404 | /ws-no-upgrade 400
-          reactor: /plain 200 | /ws-upgrade 404 | /missing 404 | /ws-no-upgrade 404
-      Isolates the defect as WEBSOCKET-SPECIFIC: ordinary HTTP routing works in reactor
-      (/plain 200, /missing 404), but the static /ws websocket route returns 404 (both upgrade
-      and no-upgrade) where legacy returns 101/400 -> reactor dispatch/route-classification omits
-      websocket routes (registered via add_websocket_route). Driver asserts the matrix and TODAY
-      FAILS (demonstrating the bug); it must PASS once the narrow reactor ws-route fix lands.
+- [x] REACTOR ROUTING FIXED (Codex diagnosis + fix integrated): root cause was a C++ preprocessor
+      ordering defect - strut_route_has_websocket was emitted BEFORE #define STRUT_USE_WEBSOCKET,
+      so its #ifdef permanently selected `return false` and reactor discarded every websocket
+      route (legacy unaffected). Replaced with compile-time member detection:
+      `if constexpr(requires { r.websocket; }) return (bool)r.websocket; else return false;`.
+      VERIFIED process-safe matrix (dogfood/ws_drain_probes/run_reactor_probe.py, fresh server
+      per (mode,request) row, isolated ports, current runtime), matrix now PASSES in BOTH modes:
+          legacy:  /plain 200 | /ws-upgrade 101+accept-key | /missing 404 | /ws-no-upgrade 400
+          reactor: /plain 200 | /ws-upgrade 101+accept-key | /missing 404 | /ws-no-upgrade 400
+      A no-websocket-route fixture (/plain only) compiles and runs cleanly, exercising the
+      constexpr else path.
+- [ ] REACTOR LIFECYCLE (next robot): routing now works under STRUT_HTTP_REACTOR=1, but
+      websocket_runtime_certification advances past routing and TIMES OUT in
+      exercise_server_closing (client waits for the server-close frame) - a reactor websocket
+      close/lifecycle difference vs legacy to characterize (Codex's high-priority finite-admission
+      reactor request_stop and parameter-propagation items also remain). CI reactor coverage
+      still absent.
+      Previously: reactor ws-upgrade 404 (pre-fix), now 101.
       Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
       (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
 - [ ] Explicit-stop validation (stop during drain, partial headers, keepalive, active WS,

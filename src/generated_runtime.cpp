@@ -1060,11 +1060,8 @@ struct strut_route_candidate{int route_id=-1;std::vector<std::string> param_name
 struct strut_route_trie_node{std::vector<std::pair<std::string,int>> static_children;int param_child=-1;std::vector<int> terminal_routes;std::vector<std::vector<std::string>> terminal_param_names;};
 struct strut_route_trie{std::vector<strut_route_trie_node> nodes;strut_route_trie(){nodes.emplace_back();}void add(const std::vector<strut_route_segment>& segs,int route_id,std::vector<std::string>&& names){int cur=0;for(const auto& s:segs){if(s.param){if(nodes[cur].param_child<0){nodes[cur].param_child=static_cast<int>(nodes.size());nodes.emplace_back();}cur=nodes[cur].param_child;}else{int found=-1;for(std::size_t i=0;i<nodes[cur].static_children.size();++i)if(nodes[cur].static_children[i].first==s.text){found=nodes[cur].static_children[i].second;break;}if(found<0){found=static_cast<int>(nodes.size());nodes[cur].static_children.emplace_back(s.text,found);nodes.emplace_back();}cur=found;}}nodes[cur].terminal_routes.push_back(route_id);nodes[cur].terminal_param_names.push_back(std::move(names));}};
 template<class R> static bool strut_route_has_websocket(const R& r){
-#ifdef STRUT_USE_WEBSOCKET
-    return (bool)r.websocket;
-#else
-    (void)r;return false;
-#endif
+    if constexpr(requires { r.websocket; })return static_cast<bool>(r.websocket);
+    else return false;
 }
 static bool strut_route_cand_on(){static bool v=std::getenv("STRUT_ROUTE_PROFILE")!=nullptr;return v;}
 static long long& strut_route_cand_iter_ref(){static long long c=0;return c;}

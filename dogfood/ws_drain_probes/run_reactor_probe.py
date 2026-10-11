@@ -64,7 +64,9 @@ def run_matrix(exe, port):
             try:
                 deadline = time.monotonic() + 6
                 r = request(port, rq, deadline)
-                out["reactor" if reactor else "legacy"][key] =                     r[:64].decode(errors="replace").replace("\r\n", " | ")
+                body = r[:64].decode(errors="replace").replace("\r\n", " | ")
+                accept = b"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in r
+                out["reactor" if reactor else "legacy"][key] = (body, accept)
             finally:
                 os.killpg(p.pid, signal.SIGKILL)
                 p.wait()
@@ -85,18 +87,18 @@ def main():
         m = run_matrix(exe, port)
         for mode, rows in m.items():
             print("[%s]" % mode)
-            for k, v in rows.items():
-                print("  %-9s %s" % (k, v))
+            for k, (body, accept) in rows.items():
+                print("  %-9s %s%s" % (k, body, "  [accept-key]" if accept else ""))
         mtx = m
-        ok = True
-        assert mtx["legacy"]["plain"].startswith("HTTP/1.1 200"), mtx
-        assert mtx["reactor"]["plain"].startswith("HTTP/1.1 200"), mtx
-        assert mtx["legacy"]["ws_up"].startswith("HTTP/1.1 101"), mtx
-        assert mtx["reactor"]["ws_up"].startswith("HTTP/1.1 101"), mtx
-        assert mtx["legacy"]["missing"].startswith("HTTP/1.1 404"), mtx
-        assert mtx["reactor"]["missing"].startswith("HTTP/1.1 404"), mtx
-        assert "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in mtx["legacy"]["ws_up"] or "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in mtx["reactor"]["ws_up"], mtx
-        print("matrix assertions PASS (legacy + reactor /plain 200, /ws 101, /missing 404)")
+        assert mtx["legacy"]["plain"][0].startswith("HTTP/1.1 200"), mtx
+        assert mtx["reactor"]["plain"][0].startswith("HTTP/1.1 200"), mtx
+        assert mtx["legacy"]["ws_up"][0].startswith("HTTP/1.1 101") and mtx["legacy"]["ws_up"][1], mtx
+        assert mtx["reactor"]["ws_up"][0].startswith("HTTP/1.1 101") and mtx["reactor"]["ws_up"][1], mtx
+        assert mtx["legacy"]["missing"][0].startswith("HTTP/1.1 404"), mtx
+        assert mtx["reactor"]["missing"][0].startswith("HTTP/1.1 404"), mtx
+        assert mtx["legacy"]["ws_noup"][0].startswith("HTTP/1.1 400"), mtx
+        assert mtx["reactor"]["ws_noup"][0].startswith("HTTP/1.1 400"), mtx
+        print("matrix assertions PASS (legacy + reactor: /plain 200, /ws-upgrade 101 + accept-key, /missing 404, /ws-no-upgrade 400)")
         return 0
 
 if __name__ == "__main__":
