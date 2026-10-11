@@ -78,10 +78,17 @@ TRANSPORT PARITY (current runtime):
       the server CLOSE frame (op 8, code 1001) and answer the masked Ping with Pong; the true
       divergence is the final TCP EOF: legacy closes the socket after the close handshake
       (recv returns b''), reactor leaves it open (recv times out), matching
-      websocket_runtime_certification exercise_server_closing's recv(1) timeout. Reactor defect
-      = missing final socket close in the reactor websocket teardown path (frame emission
-      intact); not yet fixed. Codex's high-priority finite-admission reactor request_stop +
-      parameter propagation also remain; CI reactor coverage still absent.
+      websocket_runtime_certification exercise_server_closing's recv(1) timeout.
+- [x] REACTOR FINAL-CLOSE FIXED (Codex reactor_arm_streams close-scheduling patch, integrated at
+      7cb4c87): the residual strict-probe reactor timeout was a STALE-COMPILER artifact --
+      run_ws_close_probe.py defaulted to repo-root build/strut (dated Oct 7, pre-fix); with the
+      freshly rebuilt compiler (and Codex's known-good compiler) the strict regression PASSES in
+      BOTH modes (reactor eof, rc=0), matching Codex's demonstration; only the Oct-7 binary
+      reproduced the timeout. Harness now selects the most recent candidate (env STRUT
+      authoritative). Full websocket_runtime_certification passes legacy + reactor;
+      wall 42/42 both.
+      Codex's high-priority finite-admission reactor request_stop + parameter
+      propagation also remain; CI reactor coverage still absent.
       Previously: reactor ws-upgrade 404 (pre-fix), now 101.
       Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
       (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
