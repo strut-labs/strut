@@ -60,15 +60,17 @@ TRANSPORT PARITY (current runtime):
       TLS; part of the 45/45 current-runtime runs (tests/fixtures/tls certs exist).
 - [x] Legacy TCP finite-admission WebSocket (foundation-accept + reuse-first/reuse-second limit 1)
       passes 45/45 current-runtime; websocket_runtime_certification passes in legacy mode.
-- [ ] REACTOR parity: MINIMAL REPRODUCER in dogfood/ws_drain_probes/reactor_ws_probe.p
-      (static GET /ws websocket route + plain /plain): identical request yields HTTP/1.1 101 in
-      legacy and HTTP/1.1 404 Not Found in reactor (STRUT_HTTP_REACTOR=1) with the CURRENT
-      runtime - definite reactor route-DISPATCH divergence even for a static websocket route,
-      distinct from the admission race (not yet demonstrated admission-related). CI NEVER sets
-      STRUT_HTTP_REACTOR in any workflow step, so reactor HTTP/WebSocket has zero CI coverage
-      (latent). Root cause narrowed to reactor dispatch not matching the websocket route; exact
-      dispatch code fix + reactor admission tests remain. Also both websocket cert scripts fail
-      under reactor (foundation-accept 404; websocket_runtime upgrade 404).
+- [ ] REACTOR parity: VERIFIED process-safe matrix (dogfood/ws_drain_probes/run_reactor_probe.py,
+      fresh server process per (mode,request) row, isolated ports, current runtime):
+          legacy: /plain 200 | /ws-upgrade 101 | /missing 404 | /ws-no-upgrade 400
+          reactor: /plain 200 | /ws-upgrade 404 | /missing 404 | /ws-no-upgrade 404
+      Isolates the defect as WEBSOCKET-SPECIFIC: ordinary HTTP routing works in reactor
+      (/plain 200, /missing 404), but the static /ws websocket route returns 404 (both upgrade
+      and no-upgrade) where legacy returns 101/400 -> reactor dispatch/route-classification omits
+      websocket routes (registered via add_websocket_route). Driver asserts the matrix and TODAY
+      FAILS (demonstrating the bug); it must PASS once the narrow reactor ws-route fix lands.
+      Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
+      (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
 - [ ] Explicit-stop validation (stop during drain, partial headers, keepalive, active WS,
       bounded deadlines): not yet separately exercised.
 - [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
