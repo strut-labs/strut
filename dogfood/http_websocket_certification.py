@@ -117,7 +117,7 @@ def dump_server_diag(servers):
             except Exception as exc:
                 print("[ws-diag] %s stderr read failed: %r" % (name, exc), flush=True)
 
-def require_switch(response, protocol=None, servers=()):
+def require_switch(response, protocol=None, servers=(), scenario=None):
     expected = (
         "HTTP/1.1 101 Switching Protocols\r\n"
         "Upgrade: websocket\r\n"
@@ -128,8 +128,15 @@ def require_switch(response, protocol=None, servers=()):
         expected += f"Sec-WebSocket-Protocol: {protocol}\r\n"
     expected = (expected + "\r\n").encode()
     if not response.startswith(expected):
-        raise RuntimeError(f"unexpected WebSocket upgrade response: {response!r}")
+        raise RuntimeError("unexpected WebSocket upgrade response: %r [scenario=%s]" % (response, scenario or ACTIVE_SCENARIO))
 
+
+def self_check():
+    try:
+        require_switch(b"", scenario="probe-self-check")
+    except RuntimeError as exc:
+        return 0 if "[scenario=probe-self-check]" in str(exc) else 1
+    return 1
 
 def main():
     compiler = Path(sys.argv[1] if len(sys.argv) > 1 else "build/strut").resolve()
@@ -188,7 +195,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
                                   stderr=subprocess.PIPE, text=True)
         try:
             ACTIVE_SCENARIO = "foundation-accept"
-            require_switch(exchange(port, opening(), retry=True), servers=(('server', server),))
+            require_switch(exchange(port, opening(), retry=True), servers=(('server', server),), scenario="foundation-accept")
             visible = opening(
                 path="/visible",
                 extra=(b"Origin: https://example.test\r\n"
@@ -196,7 +203,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
             )
             ACTIVE_SCENARIO = "visible-subprotocols"
             visible_response = exchange(port, visible)
-            require_switch(visible_response, "chat")
+            require_switch(visible_response, "chat", scenario="visible-subprotocols")
 
             ACTIVE_SCENARIO = "h2c-extension"
 
@@ -204,10 +211,10 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
                 port,
                 opening(extra=b"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n"),
             )
-            require_switch(extension_response)
+            require_switch(extension_response, scenario="visible-subprotocols-extension")
             if b"Sec-WebSocket-Extensions" in extension_response:
                 raise RuntimeError("P4 unexpectedly accepted a WebSocket extension")
-            require_switch(exchange(port, opening(upgrade="h2c/1.0, WebSocket")))
+            require_switch(exchange(port, opening(upgrade="h2c/1.0, WebSocket")), scenario="h2c-extension")
 
             invalid = [
                 opening(method="POST"),
@@ -250,12 +257,12 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
 
             ACTIVE_SCENARIO = "escape"
 
-            require_switch(exchange(port, opening(path="/escape")))
+            require_switch(exchange(port, opening(path="/escape")), scenario="escape")
             disconnected = socket.create_connection(("127.0.0.1", port), timeout=2)
             disconnected.sendall(opening())
             disconnected.close()
             ACTIVE_SCENARIO = "shutdown"
-            require_switch(exchange(port, opening(path="/shutdown")))
+            require_switch(exchange(port, opening(path="/shutdown")), scenario="shutdown")
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or "WebSocket handle is no longer active" not in stdout:
                 raise RuntimeError(f"escaped WebSocket remained usable ({server.returncode})\n{stdout}\n{stderr}")
@@ -343,7 +350,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         tls_server = subprocess.Popen([tls_executable, certificate, private_key], cwd=root,
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(tls_port, opening(path="/ws"), context=context, retry=True))
+            require_switch(exchange(tls_port, opening(path="/ws"), context=context, retry=True), scenario="tls-ws")
             stdout, stderr = tls_server.communicate(timeout=10)
             if tls_server.returncode != 0:
                 raise RuntimeError(f"TLS server failed ({tls_server.returncode})\n{stdout}\n{stderr}")
@@ -376,7 +383,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         stop_server = subprocess.Popen([stop_executable], cwd=root, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(stop_port, opening(path="/wait"), retry=True))
+            require_switch(exchange(stop_port, opening(path="/wait"), retry=True), scenario="stop-race-wait")
             stdout, stderr = stop_server.communicate(timeout=8)
             if stop_server.returncode != 0:
                 raise RuntimeError(f"upgraded stop failed ({stop_server.returncode})\n{stdout}\n{stderr}")
@@ -408,7 +415,7 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         race_server = subprocess.Popen([race_executable], cwd=root, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(race_port, opening(path="/race"), retry=True))
+            require_switch(exchange(race_port, opening(path="/race"), retry=True), scenario="stop-accept-race")
             stdout, stderr = race_server.communicate(timeout=8)
             if race_server.returncode != 0:
                 raise RuntimeError(f"stop/accept race failed ({race_server.returncode})\n{stdout}\n{stderr}")
@@ -434,8 +441,8 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         repeated = subprocess.Popen([repeated_executable], cwd=root, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(first, opening(path="/ws"), retry=True))
-            require_switch(exchange(second, opening(path="/ws"), retry=True))
+            require_switch(exchange(first, opening(path="/ws"), retry=True), scenario="reuse-first")
+            require_switch(exchange(second, opening(path="/ws"), retry=True), scenario="reuse-second")
             stdout, stderr = repeated.communicate(timeout=10)
             if repeated.returncode != 0:
                 raise RuntimeError(f"repeated lifecycle failed ({repeated.returncode})\n{stdout}\n{stderr}")
