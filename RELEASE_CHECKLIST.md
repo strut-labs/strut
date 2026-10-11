@@ -71,12 +71,14 @@ TRANSPORT PARITY (current runtime):
           reactor: /plain 200 | /ws-upgrade 101+accept-key | /missing 404 | /ws-no-upgrade 400
       A no-websocket-route fixture (/plain only) compiles and runs cleanly, exercising the
       constexpr else path.
-- [ ] REACTOR LIFECYCLE (next robot): routing now works under STRUT_HTTP_REACTOR=1, but
-      websocket_runtime_certification advances past routing and TIMES OUT in
-      exercise_server_closing (client waits for the server-close frame) - a reactor websocket
-      close/lifecycle difference vs legacy to characterize (Codex's high-priority finite-admission
-      reactor request_stop and parameter-propagation items also remain). CI reactor coverage
-      still absent.
+- [ ] REACTOR WEBSOCKET CLOSE LIFECYCLE (next): minimal probe (dogfood/ws_drain_probes/
+      reactor_ws_close_probe.p: /explicit-close route calling socket.close(1001,'explicit')):
+      legacy sends the CLOSE frame AND closes TCP (recv-after-close=0 bytes); reactor transmits
+      NO server close frame (recv times out) and the socket stays open (matching the cert's
+      exercise_server_closing recv(1) timeout) -- concrete divergence in the reactor websocket
+      close/transport path (close frame emission + socket close after WS close handshake); not
+      yet fixed. Codex's high-priority finite-admission reactor request_stop + parameter
+      propagation also remain; CI reactor coverage still absent.
       Previously: reactor ws-upgrade 404 (pre-fix), now 101.
       Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
       (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
