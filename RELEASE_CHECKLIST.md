@@ -23,12 +23,22 @@ inferred from an earlier state or a different platform's results.
 - [ ] FFI-9 five-platform consumer execution 25/25 (run 38069818109 evidence preserved).
 - [ ] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK; skips not counted as PASS.
 
-## WebSocket dogfood (release blocker)
-- [ ] Root cause identified and attributed (scenario + server evidence) OR independent review
-      (WebSocket investigation now owned by Codex from SHA 04d8675) establishes a demonstrated
-      defect + correction.
-- [ ] Ordinary certification PASS; sanitized certification PASS on the affected platform.
-- [ ] No retries added solely to conceal the failure; gate intact.
+## WebSocket dogfood (admission-drain fix implemented; validation ongoing)
+- [x] Root cause (independent Codex review): finite-admission shutdown interrupts an admitted
+      FIRST request before the HTTP 101 is sent (`accepting` conflated admission exhaustion with
+      explicit stop). Fixed by separating `cancellation_requested` from `accepting` (request_stop
+      drains first requests on admission exhaustion; explicit stop retains cancellation);
+      idle/served_request transition moved under run->mutex (no data race). SHA of the fix: TBD.
+- [ ] Deterministic regression: 45/45 consecutive legacy TCP http_websocket_certification runs
+      post-fix (was intermittent ~1/10 and recurrent in CI); reuse-first/reuse-second
+      finite-limit-one scenarios covered by the cert. Full wall 42/42 default + reactor.
+- [ ] Sanitized certification PASS on the affected platform (pending CI sanitized step).
+- [x] No retries added solely to conceal the failure; gate intact.
+- [ ] TLS WSS and reactor admission-drain parity: legacy TCP proven; TLS/reactor not yet
+      separately reproduced (Codex-dependent; reactor reading/waiting_body interruption unchanged).
+  SEPARATE RELEASE ISSUE (not the WebSocket race): PTY thread-count certification failures
+      observed historically at CLI runs (e.g. 38034787150/38069818109 x64 jobs) must be assessed
+      independently before overall release approval.
 
 ## Five-platform release certification (one final SHA)
 - [ ] Linux x64 GCC / Linux x64 Clang / Linux ARM64 GCC / macOS ARM64 AppleClang /
