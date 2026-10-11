@@ -37,11 +37,13 @@ def run_probe(exe, port):
     env.pop("STRUT_HTTP_REACTOR", None)
     p = subprocess.Popen([str(exe), str(port)], stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, env=env)
+    connected = False
     try:
         deadline = time.monotonic() + 5
         while True:
             try:
                 c = socket.create_connection(("127.0.0.1", port), timeout=2)
+                connected = True
                 break
             except ConnectionRefusedError:
                 if time.monotonic() > deadline:
@@ -55,7 +57,7 @@ def run_probe(exe, port):
                     break
                 data += v
         stdout, stderr = p.communicate(timeout=8)
-        return p.returncode, data, stdout, stderr
+        return p.returncode, data, stdout, stderr, connected
     finally:
         if p.poll() is None:
             p.kill()
@@ -81,11 +83,17 @@ def main():
             with socket.socket() as reserve:
                 reserve.bind(("127.0.0.1", 0))
                 port = reserve.getsockname()[1]
-            rc, data, stdout, stderr = run_probe(exe, port)
+            rc, data, stdout, stderr, connected = run_probe(exe, port)
             ok = (rc == 0 and b"HTTP/1.1 101" in data and ACCEPT_KEY in data and b"Sec-WebSocket-Accept" in data)
-            good = (ok == expect_pass[name])
+            # Negative control must reproduce the ORIGINAL signature precisely: TCP connected,
+            # server exited 0, no bytes received, no crash/timeout. A crash/timeout/empty-mark
+            # is a FAIL, not a pass, for the pre-fix control.
+            if expect_pass[name]:
+                good = ok
+            else:
+                good = connected and rc == 0 and data == b""
             print("%s: %s %s (rc=%d)" % (name,
-                  "valid HTTP/1.1 101" if ok else "empty/no-101 (expected for the pre-fix control)",
+                  "valid HTTP/1.1 101" if ok else "empty (original signature) " if connected and rc == 0 and data == b"" else "UNDETERMINED",
                   "PASS" if good else "UNEXPECTED", rc))
             if not good:
                 failed = True

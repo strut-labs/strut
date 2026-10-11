@@ -32,9 +32,15 @@ inferred from an earlier state or a different platform's results.
 - [x] Deterministic worker-first regression (permanent driver
       dogfood/websocket_admission_drain_regression.py, commits 421f6fa/64b28a7 + negative
       control): forced worker-first AND stop-first orderings both yield valid HTTP/1.1 101 with
-      the correct Sec-WebSocket-Accept key and exit 0. SENSITIVITY: the pre-fix
-      original_worker_first control must FAIL (b'') and does, so a future reintroduction of the
-      original admission-shutdown behavior leaves the driver red. Worker-first under ASan+UBSan:
+      the correct Sec-WebSocket-Accept key and exit 0. Historical negative control (strengthened):
+      the pre-fix original_worker_first control must reproduce the ORIGINAL signature (TCP
+      connected, server exited 0, zero bytes received -- no crash/timeout counted as a pass) and
+      does. This proves the HARNESS distinguishes original from corrected FROZEN implementations;
+      it does NOT by itself protect future changes to src/generated_runtime.cpp. LIVE-runtime
+      linkage is the separate outstanding item (a test-only emit_probe tool reusing the public
+      CppBackend API now exists and compiles; the fixture in probe.p uses strut_string.to_int(),
+      which is not bound by this compiler, so live generation is scaffolded-not-yet-wired).
+      Worker-first under ASan+UBSan:
       valid 101. NOTE: probes are pinned runtime snapshots (the compiler currently has no C++
       emission path to auto-rebuild them from src/generated_runtime.cpp); the live
       http_websocket_certification.py covers the CURRENT emitted runtime - reconnection to the
