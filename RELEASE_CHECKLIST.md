@@ -60,11 +60,15 @@ TRANSPORT PARITY (current runtime):
       TLS; part of the 45/45 current-runtime runs (tests/fixtures/tls certs exist).
 - [x] Legacy TCP finite-admission WebSocket (foundation-accept + reuse-first/reuse-second limit 1)
       passes 45/45 current-runtime; websocket_runtime_certification passes in legacy mode.
-- [ ] REACTOR parity: BOTH websocket cert scripts fail under STRUT_HTTP_REACTOR=1 with
-      HTTP/1.1 404 Not Found on the websocket route under the CURRENT runtime
-      (http_websocket_certification foundation-accept; websocket_runtime_certification upgrade) -
-      a reactor route-dispatch defect distinct from the admission race and NOT yet demonstrated
-      admission-related; legacy passes. Needs targeted fix/characterization before parity claimed.
+- [ ] REACTOR parity: MINIMAL REPRODUCER in dogfood/ws_drain_probes/reactor_ws_probe.p
+      (static GET /ws websocket route + plain /plain): identical request yields HTTP/1.1 101 in
+      legacy and HTTP/1.1 404 Not Found in reactor (STRUT_HTTP_REACTOR=1) with the CURRENT
+      runtime - definite reactor route-DISPATCH divergence even for a static websocket route,
+      distinct from the admission race (not yet demonstrated admission-related). CI NEVER sets
+      STRUT_HTTP_REACTOR in any workflow step, so reactor HTTP/WebSocket has zero CI coverage
+      (latent). Root cause narrowed to reactor dispatch not matching the websocket route; exact
+      dispatch code fix + reactor admission tests remain. Also both websocket cert scripts fail
+      under reactor (foundation-accept 404; websocket_runtime upgrade 404).
 - [ ] Explicit-stop validation (stop during drain, partial headers, keepalive, active WS,
       bounded deadlines): not yet separately exercised.
 - [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
