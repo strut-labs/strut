@@ -1537,10 +1537,11 @@ private:
         return true;
     }
     static void reactor_hard_error(const std::shared_ptr<reactor_connection>& conn,std::int32_t status,const char* message){const std::string text(message);conn->out_head="HTTP/1.1 "+std::to_string(status)+" "+(status==400?"Bad Request":status==431?"Request Header Fields Too Large":status==413?"Payload Too Large":status==404?"Not Found":status==405?"Method Not Allowed":status==501?"Not Implemented":"Internal Server Error")+"\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: "+std::to_string(text.size())+"\r\nConnection: close\r\n\r\n";conn->out_body=text;conn->head_offset=0;conn->body_offset=0;conn->close_after_write=true;conn->keep_alive=false;}
-    static void reactor_send_status(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn,std::int32_t status,const char* message,strut_http_version version=strut_http_version::http_1_1,bool head_request=false){
+    static void reactor_send_status(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn,std::int32_t status,const char* message,strut_http_version version=strut_http_version::http_1_1,bool head_request=false,const char* ws_version_header=nullptr){
         (void)run;
         conn->head.version=version;conn->head_request=head_request;
         strut_server_response response{status,strut_string(message),"text/plain; charset=utf-8",{}, {}};
+        if(ws_version_header)response.headers.emplace(strut_string("Sec-WebSocket-Version"),strut_string(ws_version_header));
         bool ok=false;try{ok=reactor_build_response(conn,response,true);}catch(...){ok=false;}
         if(!ok)reactor_hard_error(conn,status,message);
         conn->phase=reactor_phase::writing;const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);
@@ -1577,7 +1578,7 @@ private:
             }
             if(!conn->early_routed){
                 auto& req=conn->head.request;req.buffered_body_available=true;
-                bool found=false,method_mismatch=false;handler cursor;stream_handler stream_cursor;request_stream_handler request_cursor;
+                bool found=false,method_mismatch=false,ws_candidate=false;handler cursor;stream_handler stream_cursor;request_stream_handler request_cursor;
 #ifdef STRUT_USE_WEBSOCKET
                 websocket_handler websocket_cursor;
 #endif
@@ -1588,7 +1589,7 @@ private:
                 if(!candidates.empty())any_path_match=true;
                 strut_route_cand_scan(static_cast<long long>(candidates.size()));
                 {int winner=-1;const strut_route_candidate* winner_cand=nullptr;
-                for(const auto& cand:candidates){const auto& route=s->routes[cand.route_id];if(route.method!=route_method){method_mismatch=true;continue;}const bool has_handler=route.fn||route.stream||route.request_stream||strut_route_has_websocket(route);if(!has_handler)continue;if(winner<0||cand.route_id<winner){winner=cand.route_id;winner_cand=&cand;}}
+                for(const auto& cand:candidates){const auto& route=s->routes[cand.route_id];if(route.method!=route_method){method_mismatch=true;if(route.websocket)ws_candidate=true;continue;}const bool has_handler=route.fn||route.stream||route.request_stream||strut_route_has_websocket(route);if(!has_handler)continue;if(winner<0||cand.route_id<winner){winner=cand.route_id;winner_cand=&cand;}}
                 if(winner>=0){const auto& route=s->routes[winner];for(std::size_t pi=0;pi<winner_cand->param_names.size();++pi)req.params[strut_string(winner_cand->param_names[pi])]=strut_string(req.path.v.substr(winner_cand->captures[pi].offset,winner_cand->captures[pi].length));if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;}else if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;}else if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;}
 #ifdef STRUT_USE_WEBSOCKET
                 else if(route.websocket){websocket_cursor=route.websocket;cursor=nullptr;stream_cursor=nullptr;request_cursor=nullptr;found=true;}
@@ -1606,7 +1607,7 @@ private:
                 if(websocket_cursor){
                     std::string ws_accept;std::vector<std::string> ws_protocols;
                     const auto ws_opening=strut_validate_websocket_opening(conn->head,ws_accept,ws_protocols);
-                    if(ws_opening==strut_websocket_opening_result::unsupported_version){reactor_send_status(run,reactor,conn,426,"Upgrade Required");return;}
+                    if(ws_opening==strut_websocket_opening_result::unsupported_version){reactor_send_status(run,reactor,conn,426,"Upgrade Required",strut_http_version::http_1_1,false,"13");return;}
                     if(ws_opening!=strut_websocket_opening_result::valid){reactor_send_status(run,reactor,conn,400,"Bad Request");return;}
                     conn->max_body=s->max_websocket_frame;conn->max_framing=s->max_websocket_message;conn->cancellation=std::make_shared<strut_cancellation_source>();
                     const std::string ws_accept_capture=ws_accept;const std::vector<std::string> ws_protocols_capture=ws_protocols;
@@ -1621,7 +1622,7 @@ private:
                     return;
                 }
 #endif
-                if(!found){reactor_send_status(run,reactor,conn,method_mismatch?405:404,method_mismatch?"Method Not Allowed":"Not Found");return;}
+                if(!found){if(method_mismatch&&ws_candidate){reactor_send_status(run,reactor,conn,400,"Bad Request");}else{reactor_send_status(run,reactor,conn,method_mismatch?405:404,method_mismatch?"Method Not Allowed":"Not Found");}return;}
                 conn->fn=cursor;conn->stream_fn=stream_cursor;conn->max_body=s->max_body_bytes;conn->max_framing=s->max_header_bytes;conn->cancellation=std::make_shared<strut_cancellation_source>();
             }
             if(conn->request_stream_fn)return;
