@@ -1775,7 +1775,11 @@ private:
         {std::lock_guard<std::mutex> lock(run->mutex);if(!run->reactor_data||run->reactor_data->streaming==0)return;}
         std::vector<std::shared_ptr<reactor_connection>> connections;
         {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data)for(auto& kv:run->reactor_data->connections)connections.push_back(kv.second);}
-        for(auto& conn:connections){bool write=false;bool read=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);write=!conn->out_stream.empty();}
+        for(auto& conn:connections){bool websocket_finished=false;{std::lock_guard<std::mutex> lock(run->mutex);websocket_finished=conn->websocket_mode&&conn->stream_finished;}
+            bool write=false;bool read=false;{std::lock_guard<std::mutex> lock(conn->out_mutex);write=!conn->out_stream.empty();}
+            // Worker completion is actionable even when no further socket readiness arrives.
+            // Observe completion before checking output: no producer can enqueue more frames.
+            if(websocket_finished&&!write){reactor_close(run,reactor,conn);continue;}
 #ifdef STRUT_USE_SERVER_TLS
             if(conn->tls_want_write)write=true;
 #endif

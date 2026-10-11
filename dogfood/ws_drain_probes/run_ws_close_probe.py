@@ -3,7 +3,7 @@
 frames (reusing the certification client_frame semantics), full HTTP header termination, a
 buffered frame parser feeding leftover bytes from the handshake recv, isolated ports, process
 cleanup. Records each closing-handshake stage to find the FIRST divergence."""
-import os, signal, socket, struct, subprocess, sys, tempfile, time
+import json, os, signal, socket, struct, subprocess, sys, tempfile, time
 from pathlib import Path
 
 PORT = int(os.environ.get("PORT", "0"))
@@ -38,7 +38,13 @@ def read_http_upgrade(c):
             return data, b"", False
         data += v
     head, rest = data.split(b"\r\n\r\n", 1)
-    return head + b"\r\n\r\n", rest, (b"101" in head and b"Sec-WebSocket-Accept:" in head)
+    lines = head.split(b"\r\n")
+    headers = {name.lower(): value.strip() for name, value in (line.split(b":",1) for line in lines[1:])}
+    valid = (lines[0] == b"HTTP/1.1 101 Switching Protocols" and
+             headers.get(b"sec-websocket-accept") == b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" and
+             headers.get(b"upgrade", b"").lower() == b"websocket" and
+             headers.get(b"connection", b"").lower() == b"upgrade")
+    return head + b"\r\n\r\n", rest, valid
 
 class FrameReader:
     def __init__(self, conn, buf=b""):
@@ -50,13 +56,21 @@ class FrameReader:
                 return None
             self.buf += v
         hdr = self.buf[:2]
+        if hdr[0] & 0x70 or not hdr[0] & 0x80 or hdr[1] & 0x80:
+            raise RuntimeError("invalid server control frame flags")
         ln = hdr[1] & 0x7F
         offset = 2
         if ln == 126:
-            while len(self.buf) < 4: self.buf += self.c.recv(4096)
+            while len(self.buf) < 4:
+                v=self.c.recv(4096)
+                if not v: raise RuntimeError("EOF in extended frame length")
+                self.buf += v
             ln = struct.unpack("!H", self.buf[2:4])[0]; offset = 4
         elif ln == 127:
-            while len(self.buf) < 10: self.buf += self.c.recv(4096)
+            while len(self.buf) < 10:
+                v=self.c.recv(4096)
+                if not v: raise RuntimeError("EOF in extended frame length")
+                self.buf += v
             ln = struct.unpack("!Q", self.buf[2:10])[0]; offset = 10
         need = offset + ln
         while len(self.buf) < need:
@@ -67,6 +81,21 @@ class FrameReader:
         payload = self.buf[offset:need]
         self.buf = self.buf[need:]
         return hdr[0] & 0x0F, payload
+
+def owns_listener(proc, port):
+    if not sys.platform.startswith('linux'):
+        return True
+    inodes = set()
+    for fd in Path(f'/proc/{proc.pid}/fd').iterdir():
+        try: target = os.readlink(fd)
+        except FileNotFoundError: continue
+        if target.startswith('socket:['): inodes.add(target[8:-1])
+    for line in Path('/proc/net/tcp').read_text().splitlines()[1:]:
+        f = line.split()
+        if int(f[1].split(':')[1], 16) == port and f[3] == '0A' and f[9] in inodes:
+            return True
+    return False
+
 
 def run():
     with tempfile.TemporaryDirectory(prefix="strut-wsclose-") as td:
@@ -93,9 +122,12 @@ def run():
             try:
                 deadline = time.monotonic() + 6
                 while True:
+                    if p.poll() is not None: raise RuntimeError("fresh server exited before connection")
                     try: c = socket.create_connection(("127.0.0.1", used), timeout=2); break
                     except OSError:
                         if time.monotonic() > deadline: raise
+                if not owns_listener(p, used):
+                    c.close(); raise RuntimeError("fresh process does not own listener")
                 with c:
                     c.sendall(b"GET /explicit-close HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\n"
                               b"Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n"
@@ -107,13 +139,32 @@ def run():
                         fr = FrameReader(c, rest)
                         op1, pl1 = fr.read()                      # server CLOSE
                         close_code = struct.unpack("!H", pl1[:2])[0] if pl1 and len(pl1) >= 2 else None
-                        c.sendall(client_frame(9, b"after-close"))  # masked Ping
+                        case = os.environ.get("WS_CLOSE_CASE", "reply")
+                        ping = client_frame(9, b"after-close")
+                        if case == "coalesced_reply":
+                            c.sendall(ping + client_frame(8,struct.pack("!H",1001)))
+                        else:
+                            c.sendall(ping)
                         op2, pl2 = fr.read()                      # Pong
-                        pong_ok = (op2 == 10)
-                        c.sendall(client_frame(8, struct.pack("!H", 1000)))  # masked CLOSE
+                        pong_ok = (op2 == 10 and pl2 == b"after-close")
+                        if case == "reply":
+                            c.sendall(client_frame(8, struct.pack("!H", 1001)))
+                        elif case == "partial_reply":
+                            reply = client_frame(8, struct.pack("!H",1001))
+                            c.sendall(reply[:1]); c.sendall(reply[1:5]); c.sendall(reply[5:])
+                        elif case == "malformed_reply":
+                            c.sendall(client_frame(8, b"x"))  # prohibited one-byte Close payload
+                        elif case == "unmasked_reply":
+                            c.sendall(client_frame(8, struct.pack("!H",1001),masked=False))
+                        elif case == "disconnect":
+                            c.shutdown(socket.SHUT_WR)
+                        elif case not in ("no_reply", "coalesced_reply"):
+                            raise ValueError("unknown WS_CLOSE_CASE")
                         # wait for TCP EOF after close handshake
                         c.settimeout(3)
-                        tail = b""
+                        started = time.monotonic()
+                        tail = fr.buf
+                        fr.buf = b""
                         try:
                             while True:
                                 v = c.recv(4096)
@@ -124,15 +175,23 @@ def run():
                             eof = "timeout"
                         results["reactor" if reactor else "legacy"] = {
                             "upgrade": "101+accept", "server_close_op": (op1, close_code),
-                            "pong": pong_ok, "eof_after_close": eof, "tail_len": len(tail)}
+                            "pong": pong_ok, "eof_after_close": eof, "tail_len": len(tail),
+                            "case": case, "eof_seconds": round(time.monotonic()-started,3)}
                 sys.stdout.flush()
             finally:
                 try: os.killpg(p.pid, signal.SIGKILL)
                 except Exception: pass
-                p.wait()
+                stdout, stderr = p.communicate(timeout=5)
+                if stderr:
+                    print(stderr.decode(errors="replace"), file=sys.stderr)
+                    results["reactor" if reactor else "legacy"]["stderr"] = stderr.decode(errors="replace")
         for mode, r in results.items():
             print("[%s] %s" % (mode, r))
-        return 0
+        valid = all(r.get("upgrade") == "101+accept" and
+                    r.get("server_close_op") == (8,1001) and r.get("pong") and
+                    r.get("eof_after_close") == "eof" and r.get("tail_len") == 0 and r.get("eof_seconds",99) <= 2 and not r.get("stderr")
+                    for r in results.values())
+        return 0 if valid else 1
 
 if __name__ == "__main__":
     sys.exit(run())
