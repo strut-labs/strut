@@ -1,7 +1,8 @@
 # WebSocket certification failure — independent investigation handoff
 
 Concise, self-contained context for an independent (read-only) reviewer. Strut repo, branch
-`main`, SHA `f00a82b`. Do NOT modify the runtime or the certification harness while investigating.
+`main`, starting SHA **`04d8675`** (the SHA that created this handoff). Do NOT modify the runtime
+or the certification harness while investigating.
 
 ## Observed failure
 Exactly one intermittent failure signature, in the **dogfood certification stage** (run AFTER the
@@ -62,6 +63,10 @@ connection closed **before delivering even the first byte of an HTTP upgrade res
     env STRUT_WEBSOCKET_DIAG=1 python3 dogfood/http_websocket_certification.py build/strut
     # rapid stress (may take many iterations before/without reproducing)
     for i in $(seq 1 10); do python3 dogfood/http_websocket_certification.py build/strut || break; done
+
+Recommended process: perform your OWN initial inspection of the runtime and harness BEFORE
+relying on this document, and treat the hypotheses below skeptically - they are options to test,
+not conclusions to confirm.
 
 ## Current hypotheses (all UNPROVEN; do not treat any as established)
 1. **Harness readiness/teardown race** — `exchange(retry=True)` retries TCP connect only; a

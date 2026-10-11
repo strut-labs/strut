@@ -25,7 +25,8 @@ inferred from an earlier state or a different platform's results.
 
 ## WebSocket dogfood (release blocker)
 - [ ] Root cause identified and attributed (scenario + server evidence) OR independent review
-      establishes a demonstrated defect + correction.
+      (WebSocket investigation now owned by Codex from SHA 04d8675) establishes a demonstrated
+      defect + correction.
 - [ ] Ordinary certification PASS; sanitized certification PASS on the affected platform.
 - [ ] No retries added solely to conceal the failure; gate intact.
 
