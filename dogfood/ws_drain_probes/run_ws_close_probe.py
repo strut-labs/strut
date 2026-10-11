@@ -7,8 +7,19 @@ import json, os, signal, socket, struct, subprocess, sys, tempfile, time
 from pathlib import Path
 
 PORT = int(os.environ.get("PORT", "0"))
-STRUT = os.environ.get("STRUT") or ("build/strut" if Path("build/strut").exists()
-                                   else "/home/nick/relgcc/strut")
+def _pick_strut():
+    env = os.environ.get("STRUT")
+    if env:
+        return env
+    # Prefer the most recently built candidate so a stale repo-root build/strut cannot silently
+    # select a pre-fix compiler.
+    cands = []
+    for p in (Path("build/strut"), Path("/home/nick/relgcc/strut")):
+        if p.exists():
+            cands.append((p.stat().st_mtime, str(p)))
+    return max(cands)[1] if cands else "build/strut"
+
+STRUT = _pick_strut()
 
 def mask_payload(payload, mask):
     return bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
