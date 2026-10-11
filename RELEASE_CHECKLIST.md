@@ -54,8 +54,21 @@ inferred from an earlier state or a different platform's results.
 - [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
       PASS locally under ASan+UBSan; CI sanitized dogfood step still pending.
 - [x] No retries added solely to conceal the failure; gate intact.
-- [ ] TLS WSS and reactor admission-drain parity: legacy TCP proven; TLS/reactor not yet
-      separately reproduced (Codex-dependent; reactor reading/waiting_body interruption unchanged).
+TRANSPORT PARITY (current runtime):
+- [x] TLS/WSS finite-admission parity: http_websocket_certification tls-ws uses listen_tls(...,1)
+      (finite admission) and asserts a valid HTTP/1.1 101 WSS upgrade with the acceptance key over
+      TLS; part of the 45/45 current-runtime runs (tests/fixtures/tls certs exist).
+- [x] Legacy TCP finite-admission WebSocket (foundation-accept + reuse-first/reuse-second limit 1)
+      passes 45/45 current-runtime; websocket_runtime_certification passes in legacy mode.
+- [ ] REACTOR parity: BOTH websocket cert scripts fail under STRUT_HTTP_REACTOR=1 with
+      HTTP/1.1 404 Not Found on the websocket route under the CURRENT runtime
+      (http_websocket_certification foundation-accept; websocket_runtime_certification upgrade) -
+      a reactor route-dispatch defect distinct from the admission race and NOT yet demonstrated
+      admission-related; legacy passes. Needs targeted fix/characterization before parity claimed.
+- [ ] Explicit-stop validation (stop during drain, partial headers, keepalive, active WS,
+      bounded deadlines): not yet separately exercised.
+- [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
+      PASS locally under ASan+UBSan (frozen snapshot); CI sanitized dogfood step still pending.
   SEPARATE RELEASE ISSUE (not the WebSocket race): PTY thread-count certification failures
       observed historically at CLI runs (e.g. 38034787150/38069818109 x64 jobs) must be assessed
       independently before overall release approval.
