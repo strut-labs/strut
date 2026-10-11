@@ -37,9 +37,12 @@ inferred from an earlier state or a different platform's results.
       connected, server exited 0, zero bytes received -- no crash/timeout counted as a pass) and
       does. This proves the HARNESS distinguishes original from corrected FROZEN implementations;
       it does NOT by itself protect future changes to src/generated_runtime.cpp. LIVE-runtime
-      linkage is the separate outstanding item (a test-only emit_probe tool reusing the public
-      CppBackend API now exists and compiles; the fixture in probe.p uses strut_string.to_int(),
-      which is not bound by this compiler, so live generation is scaffolded-not-yet-wired).
+      linkage is the separate outstanding item: the ad-hoc emit_probe (test-only CppBackend tool)
+      was ABANDONED after bounded diagnosis -- the production CLI compiles the committed probe.p
+      cleanly (exit 0), so the emitter's spurious parse diagnostics are a hand-assembled
+      front-end divergence, not a fixture defect; the scaffold was removed (no dead experiment
+      infra). A checked transformation of src/generated_runtime.cpp is the sanctioned alternative
+      but is NOT yet implemented.
       Worker-first under ASan+UBSan:
       valid 101. NOTE: probes are pinned runtime snapshots (the compiler currently has no C++
       emission path to auto-rebuild them from src/generated_runtime.cpp); the live
