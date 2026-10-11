@@ -1589,7 +1589,11 @@ private:
                 if(!candidates.empty())any_path_match=true;
                 strut_route_cand_scan(static_cast<long long>(candidates.size()));
                 {int winner=-1;const strut_route_candidate* winner_cand=nullptr;
-                for(const auto& cand:candidates){const auto& route=s->routes[cand.route_id];if(route.method!=route_method){method_mismatch=true;if(route.websocket)ws_candidate=true;continue;}const bool has_handler=route.fn||route.stream||route.request_stream||strut_route_has_websocket(route);if(!has_handler)continue;if(winner<0||cand.route_id<winner){winner=cand.route_id;winner_cand=&cand;}}
+                for(const auto& cand:candidates){const auto& route=s->routes[cand.route_id];if(route.method!=route_method){method_mismatch=true;
+#ifdef STRUT_USE_WEBSOCKET
+                if(route.websocket)ws_candidate=true;
+#endif
+                continue;}const bool has_handler=route.fn||route.stream||route.request_stream||strut_route_has_websocket(route);if(!has_handler)continue;if(winner<0||cand.route_id<winner){winner=cand.route_id;winner_cand=&cand;}}
                 if(winner>=0){const auto& route=s->routes[winner];for(std::size_t pi=0;pi<winner_cand->param_names.size();++pi)req.params[strut_string(winner_cand->param_names[pi])]=strut_string(req.path.v.substr(winner_cand->captures[pi].offset,winner_cand->captures[pi].length));if(route.fn){cursor=route.fn;stream_cursor=nullptr;request_cursor=nullptr;found=true;}else if(route.stream){stream_cursor=route.stream;cursor=nullptr;request_cursor=nullptr;found=true;}else if(route.request_stream){request_cursor=route.request_stream;cursor=nullptr;stream_cursor=nullptr;found=true;}
 #ifdef STRUT_USE_WEBSOCKET
                 else if(route.websocket){websocket_cursor=route.websocket;cursor=nullptr;stream_cursor=nullptr;request_cursor=nullptr;found=true;}
