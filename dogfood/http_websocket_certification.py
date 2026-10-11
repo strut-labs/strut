@@ -101,7 +101,23 @@ def require_version_rejection(response):
         raise RuntimeError(f"426 Content-Length did not match its body: {response!r}")
 
 
-def require_switch(response, protocol=None):
+ACTIVE_SCENARIO = "unknown"
+
+def dump_server_diag(servers):
+    """Best-effort server-side evidence. Gated by STRUT_WEBSOCKET_DIAG=1 so ordinary runs are
+    byte-for-byte identical; used to attribute the intermittent empty upgrade response."""
+    import os
+    if os.environ.get("STRUT_WEBSOCKET_DIAG") != "1":
+        return
+    for name, proc in servers:
+        print("[ws-diag] server %s poll=%s" % (name, proc.poll() if proc else None), flush=True)
+        if proc and proc.stderr and proc.poll() is not None:
+            try:
+                print("[ws-diag] %s stderr:\n%s" % (name, proc.stderr.read()[-2000:]), flush=True)
+            except Exception as exc:
+                print("[ws-diag] %s stderr read failed: %r" % (name, exc), flush=True)
+
+def require_switch(response, protocol=None, servers=()):
     expected = (
         "HTTP/1.1 101 Switching Protocols\r\n"
         "Upgrade: websocket\r\n"
@@ -171,14 +187,18 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
         server = subprocess.Popen([executable], cwd=root, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, text=True)
         try:
-            require_switch(exchange(port, opening(), retry=True))
+            ACTIVE_SCENARIO = "foundation-accept"
+            require_switch(exchange(port, opening(), retry=True), servers=(('server', server),))
             visible = opening(
                 path="/visible",
                 extra=(b"Origin: https://example.test\r\n"
                        b"Sec-WebSocket-Protocol: chat, superchat\r\n"),
             )
+            ACTIVE_SCENARIO = "visible-subprotocols"
             visible_response = exchange(port, visible)
             require_switch(visible_response, "chat")
+
+            ACTIVE_SCENARIO = "h2c-extension"
 
             extension_response = exchange(
                 port,
@@ -215,19 +235,26 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
                 if status(response) != 400:
                     raise RuntimeError(f"invalid opening was not rejected with 400: {response!r}")
 
+            ACTIVE_SCENARIO = "version-rejection"
+
             require_version_rejection(exchange(port, opening(ws_version="12")))
 
             generic = opening(path="/http", upgrade="h2c")
             if status(exchange(port, generic)) != 501:
                 raise RuntimeError("generic unsupported upgrade did not retain 501")
 
+            ACTIVE_SCENARIO = "handler-return-reject"
+
             if status(exchange(port, opening(path="/reject"))) != 403:
                 raise RuntimeError("handler return without acceptance did not produce 403")
+
+            ACTIVE_SCENARIO = "escape"
 
             require_switch(exchange(port, opening(path="/escape")))
             disconnected = socket.create_connection(("127.0.0.1", port), timeout=2)
             disconnected.sendall(opening())
             disconnected.close()
+            ACTIVE_SCENARIO = "shutdown"
             require_switch(exchange(port, opening(path="/shutdown")))
             stdout, stderr = server.communicate(timeout=10)
             if server.returncode != 0 or "WebSocket handle is no longer active" not in stdout:
