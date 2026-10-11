@@ -64,7 +64,11 @@ def probe(exe, port, reactor, ident):
                 if not v:
                     break
                 data += v
-        return b"HTTP/1.1 101" in data or b"101 Switching" in data
+        if b"HTTP/1.1 101" in data or b"101 Switching" in data:
+            return "101"
+        if data.startswith(b"HTTP/1.1 403"):
+            return "403"
+        return "other:" + data[:24].decode(errors="replace")
     finally:
         try:
             os.killpg(p.pid, signal.SIGKILL)
@@ -84,18 +88,16 @@ def main():
         if b.returncode != 0:
             print("compile FAILED:", b.stderr[-600:]); sys.exit(1)
         checks = [
-            ("legacy-positive", False, "abc123", True),
-            ("legacy-negative", False, "nope", False),
-            ("reactor-positive", True, "abc123", True),
-            ("reactor-negative", True, "nope", False),
+            ("legacy-positive", False, "abc123", "101"),
+            ("legacy-negative", False, "nope", "403"),
+            ("reactor-positive", True, "abc123", "101"),
+            ("reactor-negative", True, "nope", "403"),
         ]
         failed = False
         for name, reactor, ident, expect in checks:
             got = probe(exe, port, reactor, ident)
             ok = (got == expect)
-            print("%s: %s (expected %s) %s" % (name, "101" if got else "no-101",
-                                               "101" if expect else "no-101",
-                                               "PASS" if ok else "FAIL"))
+            print("%s: %s (expected %s) %s" % (name, got, expect, "PASS" if ok else "FAIL"))
             if not ok:
                 failed = True
         if failed:

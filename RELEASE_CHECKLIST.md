@@ -94,10 +94,16 @@ TRANSPORT PARITY (current runtime):
       request.params["id"]=="abc123" (no stdout oracle); legacy-positive 101 / legacy-negative
       no-101 / reactor-positive 101 / reactor-negative no-101 all PASS -- correct captured values
       reach reactor WebSocket handlers in both modes.
-- [ ] REACTOR P4 invalid-opening status: exact trigger identified -- malformed
-      Sec-WebSocket-Extensions openings to /ws/one (permessage-deflate; =bad etc.) return 400 in
-      legacy but 405 Method Not Allowed in reactor; root-cause of the upgrade-classification
-      ordering in reactor pending; do not blanket-convert 405->400.
+- [ ] REACTOR P4 remaining divergences (isolated, current runtime):
+      (a) HANDLER-DECLINE: when a WebSocket handler returns without accepting, legacy answers
+      HTTP/1.1 403 Forbidden but reactor closes the connection with NO bytes (EMPTY/closed) -
+      confirmed on a /ws/:id route in both modes; the hardened run_reactor_param_probe.py
+      negative control now expects 403 and FAILS on reactor (the regression for this defect).
+      (b) MALFORMED-EXTENSION: malformed Sec-WebSocket-Extensions (permessage-deflate; =bad)
+      returns 400 in BOTH modes on isolated static and /ws/:id single-route fixtures - the
+      cert's 405 only manifests in the multi-route P4 server (composition-dependent); needs the
+      multi-route server repro to pin the 405 branch.
+      Do not blanket-convert 405->400.
       Previously: reactor ws-upgrade 404 (pre-fix), now 101.
       Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
       (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
