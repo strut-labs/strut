@@ -239,10 +239,12 @@ function main() -> int : (NetworkError, PolicyError, ThreadError, TimeError) {{
                 opening(extra=b"Sec-WebSocket-Extensions: permessage-deflate; =bad\r\n"),
                 opening(extra=b"Sec-WebSocket-Extensions: permessage-deflate; mode=\"not token\"\r\n"),
             ]
-            for request in invalid:
+            for idx, request in enumerate(invalid):
                 response = exchange(port, request)
                 if status(response) != 400:
-                    raise RuntimeError(f"invalid opening was not rejected with 400: {response!r}")
+                    raise RuntimeError(
+                        "invalid opening %d of %d was not rejected with 400: %r\nrequest=%r"
+                        % (idx, len(invalid), response, request))
 
             ACTIVE_SCENARIO = "version-rejection"
 
