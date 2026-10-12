@@ -5,7 +5,7 @@ incomplete POST body in waiting_body while normal draining may begin; a SECOND c
 /shutdown. Explicit cancellation must take precedence over the normal drain: the shutdown gets
 200/bye, the admitted partial-body first request is interrupted (EOF), and the server exits 0.
 Legacy and reactor. Bounded and failure-propagating."""
-import os, socket, subprocess, sys, tempfile, time
+import os, signal, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 
 STRUT = os.environ.get("STRUT") or ("/home/nick/relgcc/strut"
@@ -43,31 +43,43 @@ def main():
                         if time.monotonic() > dl: raise
                 c1.settimeout(3)
                 c1.sendall(b"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n12345")
+                # legacy closes an incomplete-body first request at its ~5s read/shutdown
+                # deadline, not instantly; extend the client recv window past that so EOF is
+                # separable from a stuck server (timeout -> FAIL).
+                c1.settimeout(12)
                 time.sleep(0.3)
                 c2 = socket.create_connection(("127.0.0.1", port), timeout=2)
                 c2.settimeout(3)
                 c2.sendall(b"GET /shutdown HTTP/1.1\r\nHost: localhost\r\n\r\n")
-                r2 = b""
+                r2 = b""; shutdown_eof = False; shutdown_failed = False
                 while True:
                     try:
                         v = c2.recv(4096)
-                        if not v: break
-                        r2 += v
-                    except Exception: break
-                r1 = b""
-                try:
-                    while True:
+                    except socket.timeout:
+                        shutdown_failed = True; break
+                    except Exception:
+                        shutdown_failed = True; break
+                    if v == b"": shutdown_eof = True; break
+                    r2 += v
+                r1 = b""; partial_eof = False; partial_bad = False
+                while True:
+                    try:
                         v = c1.recv(4096)
-                        if not v: break
-                        r1 += v
-                except Exception: pass
+                    except socket.timeout:
+                        partial_bad = True; break   # read timed out -> not closed -> FAIL
+                    except Exception as exc:
+                        partial_bad = True; break   # unexpected socket error -> report
+                    if v == b"": partial_eof = True; break
+                    r1 += v
                 c1.close(); c2.close()
                 rc = None; dl = time.monotonic() + 5
                 while time.monotonic() < dl:
                     if p.poll() is not None: rc = p.returncode; break
                     time.sleep(0.05)
-                ok = (b"HTTP/1.1 200" in r2 and b"bye" in r2 and r1 == b"" and rc == 0)
-                print("[%s] shutdown-200 + partial-first interrupted + exit0 -> %s"
+                ok = (b"HTTP/1.1 200" in r2 and b"bye" in r2 and shutdown_eof is not False
+                      and not shutdown_failed and partial_eof and not partial_bad and r1 == b""
+                      and rc == 0)
+                print("[%s] shutdown-200+EOF, partial-first-EOF, exit0 -> %s"
                       % ("reactor" if reactor else "legacy", "PASS" if ok else "FAIL"))
                 if not ok: failed = True
             finally:
