@@ -230,6 +230,11 @@ add_test(NAME strut_ffi_ws_partial_body COMMAND ${CMAKE_COMMAND} -E env
         "STRUT=$<TARGET_FILE:strut>"
         ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/dogfood/ws_drain_probes/run_reactor_postbody.py)
     set_tests_properties(strut_ffi_ws_partial_body PROPERTIES TIMEOUT 180)
+add_test(NAME strut_ffi_ws_explicit_stop COMMAND ${CMAKE_COMMAND} -E env
+        "STRUT=$<TARGET_FILE:strut>"
+        ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/dogfood/ws_drain_probes/run_reactor_explicit_stop.py)
+    set_tests_properties(strut_ffi_ws_explicit_stop PROPERTIES TIMEOUT 180)
+
 find_program(NODE_EXECUTABLE NAMES node nodejs)
 if(NODE_EXECUTABLE AND NOT STRUT_SANITIZERS)
     # 9-NODE: build the dependency-free N-API addon with node-gyp, then execute the JS consumer
