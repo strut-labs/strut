@@ -199,13 +199,19 @@ ASan. The current candidate does NOT reproduce it across repeated runs:
 | PASS | websocket_pty_session (P10) | ASan, 50 seq/8 conc (x8) | 5->5, 10->10 | 0 | p10_asan_*.log |
 | PASS | websocket_pty_session (P10) | TSan, 50 seq/8 conc | 6->6, 11->11 | 0 | p10_tsan_candidate_*.log |
 
-Assessment: the historical 11->12 was a single transient thread during an abrupt-
-disconnect phase on a busy shared runner at an older SHA; fd=4, children/zombies=0
-returned exactly in the same failing sample (RSS within ASan allowance), so it is
-best explained as a timing-sensitive test-accounting transient rather than a permanent
-thread leak. Current candidate returns threads to baseline exactly across plain/ASan/TSan.
-The PTY worker-thread join model (worker_loop joins on drain, close_timer joins in
-destructor, P10 output thread joins in handler) shows no permanent retention.
+Assessment (revised to the reviewer taxonomy): the historical failure is CONFIRMED;
+its root cause is NOT CONCLUSIVELY ESTABLISHED. The evidence supports current-candidate
+health but does not prove the original 11->12 was merely a measurement transient — a
+worker still draining when sampled, a genuine short-lived leak, and incorrect test
+accounting are all still viable explanations. fd=4, children/zombies=0 returned exactly
+in the failing sample and RSS was within ASan allowance, which argues against a permanent
+leak, but the pass/fail is a single sample point. Current-candidate reproduction: NOT
+OBSERVED (P10 plain 34->34, ASan 10->10 x8, TSan 11->11; P7/P8 threads return exactly
+with allowance 0, three plain + ASan + TSan repeats). Thread-count assertions were NOT
+weakened. Residual risk is accepted pending the permanent reactor CI (which will run the
+legacy P10 under ASan/TSan on every push) and, if that still does not resolve the root
+cause, a targeted stress campaign is warranted before final approval — no speculative PTY
+change is made solely on this historical result.
 
 Pre-existing reactor limitation (documented, NOT a regression): websocket_pty_session
 cert times out in reactor mode without sanitizers (server never delivers a frame in a
@@ -230,11 +236,27 @@ Reactor mode has zero CI coverage; P10 is only required in legacy mode where it 
 - `strut_embed_value` layout measured: sizeof=72, alignof=8, kind@0 i@8 s@32 retained@48
   cb_fn@56 cb_ctx@64 — matches FFI_ABI_AUDIT.md / FFI-9 C# mirror.
 - Exported symbols present and unmangled in libstrut_embed.so (9 strut_embed_* exports).
-- FFI/embed CTest suite 28/28 PASS (final GCC candidate), including ffi_abi_identity,
+- FFI/embed CTest suite 28/28 PASS locally (final GCC candidate), including ffi_abi_identity,
   aggregate, pointer, callback, error, retained, node/csharp/python/go consumers, embed_host.
-- FFI-10 Nift interop 4/4 PASS (strut_ffi_nift_strut, from_strut, to_strut, bytes_rt).
-- FFI-9 five-platform 25/25 remains historical evidence (run 38069818109, SHA 37dd55a),
-  to be re-confirmed by the final five-platform CI matrix on the candidate SHA.
+
+Precise FFI evidence separation (per reviewer taxonomy):
+
+1. **Historical FFI-9 25/25** — five-platform consumer campaign at SHA 37dd55a, run
+   38069818109. Historical evidence preserved; not rerun in the final CI matrix.
+2. **Final-candidate FFI-9 evidence — CI run 38373411911 (SHA e082b1a)**. The five-platform
+   matrix runs the FFI/embed CTests on each job's own compiler. Actually executed per job
+   (from job logs):
+   - linux-x64-gcc, linux-arm64-gcc, linux-x64-clang, windows-x64-msvc: 24/24 FFI/embed tests
+     PASS (embed_host, ffi_export, multilib, aggregate(+bidir), module_slug, pointer(+bidir),
+     abi_identity, callback(+bidir), error(+bidir), fallback_callback(+bidir), retained
+     (+_b/_f), embed_python, embed_go, embed_node, embed_csharp).
+   - macos-arm64-appleclang: 23/24 — no embed_go (Go not provisioned on the macOS path in
+     this workflow); all other FFI/embed PASS.
+   The claim "FFI-9 all five platforms PASS" is therefore accurate at the level of the tests
+   each job executed; the Go consumer is not part of macOS coverage in this workflow.
+3. **FFI-10 Nift interop 4/4** — Linux-local only (strut_ffi_nift_strut, from_strut,
+   to_strut, bytes_rt), final candidate GCC build. The CI workflow does not configure a
+   Nift C ABI library on any platform, so FFI-10 is not a five-platform claim.
 
 ### Five-platform release certification (one exact candidate SHA)
 
@@ -252,9 +274,10 @@ branch main, head SHA **e082b1a2d2** (exact candidate), started 2026-10-13, conc
 The linux-x64-gcc job's "Certify sanitized generated HTTP runtime" (ASan/UBSan, includes
 the reactor leak-fix candidate 4b5e171) and "Certify generated HTTP worker concurrency"
 (TSan, includes the workers_stopping race-fix candidate 65eefb1) stages both PASS in CI,
-matching local evidence. FFI-9 five-platform consumer execution runs within the dogfood
-stage per platform (ffi embed consumers); the historical 25/25 FFI-9 run 38069818109
-remains preserved for the five-platform FFI consumer matrix reference.
+matching local evidence. FFI-9 consumer coverage in this run = the FFI/embed CTests each
+job executed (see the FFI section: 24/24 per platform, 23/24 on macOS where Go is not
+provisioned). The historical 25/25 FFI-9 run 38069818109 (SHA 37dd55a) is preserved as
+separate historical evidence and is NOT claimed to have been rerun on the final candidate.
 
 ### Open / in progress
 
@@ -271,7 +294,7 @@ remains preserved for the five-platform FFI consumer matrix reference.
 | PASS | Regression suite (default+reactor+Clang) | candidate | 307/307 x3 |
 | PASS | FFI-10 Nift Linux-local (final candidate) | candidate | 4/4 + FFI/embed 28/28, ABI 72/8 verified |
 | PASS | Five-platform CI matrix | e082b1a | run 38373411911, all 5 jobs success |
-| PASS | FFI-9 five-platform consumers | e082b1a | exercised via dogfood; 25/25 historical + CI |
+| PASS | FFI-9 five-platform consumers | e082b1a | CI run 38373411911 FFI/embed CTests (24/24; macOS 23/24, no Go) |
 | PASS | Reactor P4 divergences (handler-decline 403, malformed-extension 400) | candidate | resolved; param probe + P4 reactor PASS |
 | PASS | Reactor WS final-close parity | candidate | ws_close_probe eof_after_close=eof both modes |
 | PASS | Staged/relocated-prefix install | candidate | consumer add(2,3)=5, no dev paths |
@@ -284,8 +307,45 @@ remains preserved for the five-platform FFI consumer matrix reference.
   They demonstrate the original admission race and its correction but do not provide
   deterministic scheduling coverage of subsequent live-runtime changes. Current-runtime
   integration suites provide separate executable coverage. Not restarted for v0.0.5.
-- Reactor HTTP/WebSocket has zero CI coverage (CI never sets `STRUT_HTTP_REACTOR`);
-  local reactor coverage is the evidence source.
+- Reactor HTTP/WebSocket: dedicated CI stages added at fc3d780 (linux-x64-gcc: routing
+  matrix, parameter propagation, WS close lifecycle, partial-body, explicit-stop, P4/P5;
+  ASan/UBSan reactor; TSan reactor). Known reactor-only defects not yet wired in are
+  documented in the "Reactor scope review" section below.
+
+## Reactor scope review (2026-10-13)
+
+Scope decision under review. Two reactor-only behaviours diverge from the legacy/public
+contract and are NOT fixed in this pass (report-first, per release-review instruction).
+
+**Defect A — reactor WebSocket output-watermark deadlock (P10 flood).**
+- Contract: public docs (websitesource docs/websockets.html) promise WebSocket-PTY
+  composition on the built-in server; HTTP_REACTOR_DESIGN.md says the reactor preserves
+  the public API unchanged and all certified scenarios.
+- Observed: reactor P10 WebSocket-PTY cert times out reading the 32 MiB flood. Isolated
+  repro: reactor 32 MiB WS write stalls at ~10,981,376 bytes (32%) and the server hangs;
+  8 MiB passes (drain keeps up within the read window). Root cause: `reactor_push_output`
+  blocks the WS writer in `conn->out_cv.wait` when `out_stream.size() > out_limit` (1 MiB),
+  but `reactor_drain_stream` never calls `conn->out_cv.notify_all()` after draining, so a
+  producer that saturates the 1 MiB watermark permanently blocks. Pre-existing at the
+  candidate start SHA 0a27604 (not introduced by the sanitizer fixes 4b5e171/65eefb1).
+- Recommendation: this is a supported-behaviour correctness defect. A minimal fix (notify
+  `out_cv` after draining) is proposed once the scope decision approves it.
+
+**Defect B — reactor saturation drops the connection instead of 503.**
+- Contract: public docs (docs/http-server.html) explicitly state "Saturated plaintext
+  admission receives 503."
+- Observed: with `app.limits(...,2)` and two blocked connections, the third reactor
+  connection is closed with an EMPTY response (`b''`); legacy writes HTTP/1.1 503.
+  Root cause: reactor accept loop does `if(saturated){socket.close();continue;}` — no
+  503 reject path, unlike legacy `run_server`'s `reject(...) -> send_error(503)`.
+  Pre-existing at candidate start SHA 0a27604.
+- Recommendation: supported-behaviour correctness defect (explicit documented contract).
+  Minimal fix (write 503 then close on reactor saturation) proposed pending scope approval.
+
+Both are classified as **defects within the intended v0.0.5 reactor contract**, not as
+acceptable de-scoped limitations. CI reactor stages added at fc3d780 deliberately exclude
+these two scenarios until the fixes land (a failing required test must not be silently
+skipped; equally, a knowingly-failing stage should not be committed as a required pass).
 
 ## Release assessment (2026-10-13)
 
@@ -301,7 +361,10 @@ candidate-SHA evidence and PASSES:
 - Local walls: GCC -Werror CTest 44/44 default + reactor; Clang -Werror 40/40 default +
   reactor (Nift-FFI 4 tests not configured, GCC covers); regression suite 307/307 default +
   reactor (GCC) and 307/307 (Clang).
-- FFI-10 Nift Linux-local 4/4; FFI-9 25/25 re-confirmed by the five-platform matrix.
+- FFI-10 Nift Linux-local 4/4 (not a five-platform claim); FFI-9 five-platform consumers
+  PASS in the final CI matrix at the level of the FFI/embed CTests each job executed
+  (24/24; macOS 23/24, Go not provisioned); the historical 25/25 at SHA 37dd55a remains
+  separate historical evidence, not rerun on the final candidate.
 - Sanitized networking: partial-body/explicit-stop/P4/P5/TLS-WSS PASS both modes; reuseable
   harness; reactor leak defects found + fixed; ASan/UBSan detect_leaks clean.
 - TSan: legacy CI scope + reactor focus PASS; reactor `workers_stopping` race found + fixed.

@@ -22,10 +22,13 @@ inferred from an earlier state or a different platform's results.
 - [x] Regressions: default 307/307 AND reactor 307/307 (GCC); 307/307 with Clang.
 
 ## FFI
-- [x] FFI-9 five-platform consumer execution 25/25 (historical run 38069818109 evidence
-      preserved; re-confirmed by the five-platform CI matrix on candidate SHA e082b1a,
-      run 38373411911).
-- [x] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK; skips not counted as PASS.
+- [x] FFI-9 five-platform consumer matrix: historical 25/25 run 38069818109 (SHA 37dd55a)
+      preserved as historical evidence; final-candidate CI run 38373411911 (SHA e082b1a)
+      executed the FFI/embed CTests per platform — 24/24 PASS on linux-x64-gcc,
+      linux-arm64-gcc, linux-x64-clang, windows-x64-msvc; 23/24 on macos-arm64-appleclang
+      (Go consumer not provisioned on the macOS path; all other FFI/embed PASS).
+- [x] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK (linux-x64-gcc only;
+      skips not counted as PASS; not a five-platform claim).
 
 ## Sanitized networking (ASan/UBSan, instrumented GENERATED servers via STRUT_CXXFLAGS/LDFLAGS)
 - [x] Reusable harness dogfood/sanitized_http_smoke.py (dynamic port, temp fixture, signal-import
@@ -142,11 +145,13 @@ TRANSPORT PARITY (current runtime):
       HTTP runtime" comprising http_websocket, websocket_runtime, http_worker, pty, P10 etc.
       under ASan/UBSan).
   PTY THREAD-COUNT RELEASE ISSUE (separate from the WebSocket race): ASSESSED. Historical
-      P10 "threads did not return 11 -> 12" (runs 38034787150/38069818109, SHA 37dd55a) does
-      NOT reproduce on the candidate: P10 plain (1000 seq/32 conc, 34->34), P10 ASan (50/8,
-      8 runs, 10->10), P10 TSan (6->6, 11->11); pty_cert/pty_lifecycle threads return exactly
-      (allowance 0). fd/children/zombies return exactly in the historical sample and RSS within
-      allowance, so it is a load-sensitive test-accounting transient, not a permanent leak.
+      P10 "threads did not return 11 -> 12" (runs 38034787150/38069818109, SHA 37dd55a) is
+      CONFIRMED as a historical failure, but its root cause is NOT CONCLUSIVELY ESTABLISHED
+      (measurement transient vs short-lived leak vs test accounting all remain possible).
+      Current candidate: NOT OBSERVED (P10 plain 34->34, ASan 10->10 x8, TSan 11->11; P7/P8
+      threads return exactly, allowance 0). Assertions not weakened. Permanent reactor/legacy
+      CI now re-runs P10 under ASan/TSan on every push, which will provide the ongoing evidence
+      to accept or retire the residual risk.
 
 ## Five-platform release certification (one final SHA)
 - [x] Linux x64 GCC / Linux x64 Clang / Linux ARM64 GCC / macOS ARM64 AppleClang /
