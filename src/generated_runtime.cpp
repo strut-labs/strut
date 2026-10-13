@@ -1554,7 +1554,7 @@ private:
         // that refuses to read is retired by the bounded rejection deadline (rejection flag; see the
         // expired-connection scan), never stalling the reactor loop.
         auto conn=std::make_shared<reactor_connection>(std::move(socket));
-        conn->close_after_write=true;conn->keep_alive=false;conn->rejection=true;conn->in_flight_counted=false;
+        conn->close_after_write=true;conn->keep_alive=false;conn->rejection=true;conn->in_flight_counted=false;if(std::getenv("STRUT_REACTOR_DIAG"))fprintf(stderr,"[rej-create h=%lld]\n",(long long)conn->socket.native_handle());
         conn->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(2000);conn->deadline_set=true;
         {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){conn->id=run->reactor_data->next_id++;run->reactor_data->connections.emplace(conn->socket.native_handle(),conn);++run->reactor_data->rejections;}}
         if(conn->socket.native_handle()!=strut_invalid_socket)reactor->add(conn->socket.native_handle(),false,true);
@@ -1877,7 +1877,7 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
                 {std::lock_guard<std::mutex> lock(run->mutex);conn->id=run->reactor_data->next_id++;conn->in_flight_counted=true;run->reactor_data->connections.emplace(conn->socket.native_handle(),conn);++run->in_flight;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(s->idle_timeout_ms);conn->deadline_set=true;reactor->add(conn->socket.native_handle(),true,false);++admitted;if(max_requests>0&&admitted>=static_cast<std::uint64_t>(max_requests)&&!stop_requested){stop_requested=true;request_stop(run,true);}}}continue;}
                 std::shared_ptr<reactor_connection> conn;reactor_phase conn_phase=reactor_phase::closing;{std::lock_guard<std::mutex> lock(run->mutex);auto& map=run->reactor_data->connections;auto f=map.find(event.handle);if(f!=map.end()){conn=f->second;conn_phase=conn->phase;}}
                 if(!conn)continue;
-                if(event.closed||event.error){if(conn_phase==reactor_phase::dispatched&&conn->cancellation){std::shared_ptr<strut_cancellation_source> source=conn->cancellation;source->cancel();}reactor_close(run,reactor,conn);continue;}
+                if(event.closed||event.error){if(std::getenv("STRUT_REACTOR_DIAG")&&conn->rejection)fprintf(stderr,"[rej closed/err readable=%d closed=%d writable=%d]\n",(int)event.readable,(int)event.closed,(int)event.writable);if(conn_phase==reactor_phase::dispatched&&conn->cancellation){std::shared_ptr<strut_cancellation_source> source=conn->cancellation;source->cancel();}reactor_close(run,reactor,conn);continue;}
                 if(event.readable){
 #ifdef STRUT_USE_SERVER_TLS
                 if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs<0){reactor_close(run,reactor,conn);continue;}if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;}else if(hs==2){reactor_arm_streams(run,reactor);}if(conn->tls_handshake)continue;}
@@ -1889,7 +1889,7 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
 #ifdef STRUT_USE_SERVER_TLS
                 if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs<0){reactor_close(run,reactor,conn);continue;}if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;reactor_arm_streams(run,reactor);}else if(hs==2){conn->tls_want_write=true;}continue;}
 #endif
-                if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
+                if(conn_phase==reactor_phase::writing){if(std::getenv("STRUT_REACTOR_DIAG")&&conn->rejection)fprintf(stderr,"[rej flush h=%lld]\n",(long long)conn->socket.native_handle());reactor_flush(s,run,reactor,conn);}else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
             }
             const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&!c->websocket_mode&&(c->phase!=reactor_phase::dispatched&&(c->phase!=reactor_phase::writing||c->rejection))&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
             if(stopping){std::vector<std::shared_ptr<reactor_connection>> idle;{std::lock_guard<std::mutex> lock(run->mutex);const bool cancel=run->cancellation_requested;for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->phase==reactor_phase::reading||c->phase==reactor_phase::waiting_body||c->phase==reactor_phase::closing){if(cancel||c->first_request_done)idle.push_back(c);}}}for(auto& c:idle)reactor_close(run,reactor,c);}
