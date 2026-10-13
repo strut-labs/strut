@@ -22,8 +22,9 @@ inferred from an earlier state or a different platform's results.
 - [x] Regressions: default 307/307 AND reactor 307/307 (GCC); 307/307 with Clang.
 
 ## FFI
-- [ ] FFI-9 five-platform consumer execution 25/25 (historical run 38069818109 evidence preserved;
-      to be re-confirmed by the final five-platform CI matrix on the candidate SHA).
+- [x] FFI-9 five-platform consumer execution 25/25 (historical run 38069818109 evidence
+      preserved; re-confirmed by the five-platform CI matrix on candidate SHA e082b1a,
+      run 38373411911).
 - [x] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK; skips not counted as PASS.
 
 ## Sanitized networking (ASan/UBSan, instrumented GENERATED servers via STRUT_CXXFLAGS/LDFLAGS)
@@ -143,9 +144,10 @@ TRANSPORT PARITY (current runtime):
       independently before overall release approval.
 
 ## Five-platform release certification (one final SHA)
-- [ ] Linux x64 GCC / Linux x64 Clang / Linux ARM64 GCC / macOS ARM64 AppleClang /
+- [x] Linux x64 GCC / Linux x64 Clang / Linux ARM64 GCC / macOS ARM64 AppleClang /
       Windows x64 MSVC: Build PASS, CTest PASS, dogfood certification PASS (each reported
-      separately; a platform is NOT fully certified if any mandatory stage failed).
+      separately; workflow run 38373411911 on candidate SHA e082b1a; linux-x64-gcc also
+      PASS on the sanitized HTTP runtime and generated HTTP worker TSan stages).
 
 ## Release artifacts
 - [ ] Staged install verified (header + lib + bin + share/strut/jsonic) and relocated-prefix

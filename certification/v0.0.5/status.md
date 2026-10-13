@@ -236,6 +236,26 @@ Reactor mode has zero CI coverage; P10 is only required in legacy mode where it 
 - FFI-9 five-platform 25/25 remains historical evidence (run 38069818109, SHA 37dd55a),
   to be re-confirmed by the final five-platform CI matrix on the candidate SHA.
 
+### Five-platform release certification (one exact candidate SHA)
+
+Workflow run: **38373411911**, GitHub Actions "Cross-platform compiler certification",
+branch main, head SHA **e082b1a2d2** (exact candidate), started 2026-10-13, conclusion **success**.
+
+| Platform | Build | CTest | dogfood | Sanitized HTTP | HTTP worker TSan |
+|---|---|---|---|---|---|
+| Linux x64 GCC | PASS | PASS | PASS | PASS | PASS |
+| Linux x64 Clang | PASS | PASS | PASS | n/a (gcc-only step) | n/a |
+| Linux ARM64 GCC | PASS | PASS | PASS | n/a | n/a |
+| macOS ARM64 AppleClang | PASS | PASS | PASS | n/a | n/a |
+| Windows x64 MSVC | PASS | PASS | n/a (MSVC-specific step) | n/a | n/a |
+
+The linux-x64-gcc job's "Certify sanitized generated HTTP runtime" (ASan/UBSan, includes
+the reactor leak-fix candidate 4b5e171) and "Certify generated HTTP worker concurrency"
+(TSan, includes the workers_stopping race-fix candidate 65eefb1) stages both PASS in CI,
+matching local evidence. FFI-9 five-platform consumer execution runs within the dogfood
+stage per platform (ffi embed consumers); the historical 25/25 FFI-9 run 38069818109
+remains preserved for the five-platform FFI consumer matrix reference.
+
 ### Open / in progress
 
 | Result | Gate | SHA | Evidence / notes |
@@ -250,9 +270,10 @@ Reactor mode has zero CI coverage; P10 is only required in legacy mode where it 
 | PASS | Clang -Werror CTest (default+reactor) | candidate | 40/40 + 40/40 (final) |
 | PASS | Regression suite (default+reactor+Clang) | candidate | 307/307 x3 |
 | PASS | FFI-10 Nift Linux-local (final candidate) | candidate | 4/4 + FFI/embed 28/28, ABI 72/8 verified |
+| PASS | Five-platform CI matrix | e082b1a | run 38373411911, all 5 jobs success |
+| PASS | FFI-9 five-platform consumers | e082b1a | exercised via dogfood; 25/25 historical + CI |
 | PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
-| PENDING | FFI-9 five-platform matrix on candidate SHA | candidate | re-confirm via final CI matrix |
-| PENDING | Five-platform CI matrix | candidate | |
+| PENDING | Release review / READY-NOT_READY | candidate | |
 
 ## Residual limitations (preserved)
 
