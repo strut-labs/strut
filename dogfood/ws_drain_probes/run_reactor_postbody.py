@@ -25,14 +25,15 @@ def main():
         td = Path(td)
         po = td / "p.p"; po.write_text(SRC.replace("%PORT%", str(port)))
         exe = td / "p"
-        b = subprocess.run([STRUT, str(po), "-o", str(exe)], capture_output=True, text=True)
+        b = subprocess.run([STRUT, str(po), "-o", str(exe)], capture_output=True, text=True, timeout=180)
         if b.returncode:
-            print("compile FAILED:", b.stderr[-500:]); sys.exit(1)
+            print("compile FAILED:", b.stdout, b.stderr); sys.exit(1)
         failed = False
         for reactor in (False, True):
             e = dict(os.environ); e.pop("STRUT_HTTP_REACTOR", None)
             if reactor: e["STRUT_HTTP_REACTOR"] = "1"
-            p = subprocess.Popen([str(exe)], env=e, start_new_session=True)
+            p = subprocess.Popen([str(exe)], env=e, start_new_session=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             try:
                 dl = time.monotonic() + 6
                 while True:
@@ -45,15 +46,16 @@ def main():
                     c.sendall(b"defghij")
                     c.settimeout(3); data = b""
                     while True:
-                        try: v = c.recv(4096)
-                        except Exception: break
+                        v = c.recv(4096)  # timeout/reset is a failure, never successful EOF
                         if not v: break
                         data += v
-                rc = None; dl = time.monotonic() + 5
-                while time.monotonic() < dl:
-                    if p.poll() is not None: rc = p.returncode; break
-                    time.sleep(0.05)
-                ok = (b"HTTP/1.1 200" in data and b"abcdefghij" in data and rc == 0)
+                stdout, stderr = p.communicate(timeout=8)
+                rc = p.returncode
+                head, body = data.split(b"\r\n\r\n", 1)
+                ok = (head.split(b"\r\n", 1)[0] == b"HTTP/1.1 200 OK"
+                      and body == b"abcdefghij" and rc == 0 and not stderr)
+                if stdout: print(stdout.decode(errors="replace"), end="")
+                if stderr: print(stderr.decode(errors="replace"), file=sys.stderr, end="")
                 print("[%s] partial-body drained + full response + exit=%r -> %s"
                       % ("reactor" if reactor else "legacy", rc, "PASS" if ok else "FAIL"))
                 if not ok: failed = True
@@ -61,7 +63,8 @@ def main():
                 if p.poll() is None:
                     try: os.killpg(p.pid, signal.SIGKILL)
                     except Exception: pass
-                p.wait()
+                stdout, stderr = p.communicate(timeout=5)
+                if stderr: print(stderr.decode(errors="replace"), file=sys.stderr, end="")
         sys.exit(1 if failed else 0)
 
 if __name__ == "__main__":
