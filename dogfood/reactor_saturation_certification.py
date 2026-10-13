@@ -45,7 +45,7 @@ def free_port():
 def full_request(port, timeout=5.0):
     c = socket.create_connection(("127.0.0.1", port), timeout=timeout)
     c.settimeout(timeout)
-    c.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+    c.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
     data = b""
     try:
         while True:
@@ -147,7 +147,16 @@ def run_mode(reactor):
             time.sleep(0.5)
             blk1 = open_blocker(port)
             blk2 = open_blocker(port)
-            time.sleep(0.3)
+            # Establish that BOTH blockers actually occupy their admission slots before
+            # asserting, so fixture-setup timing is never mistaken for an accounting result.
+            established = False
+            for _ in range(100):
+                if fast_status(port) == "503":
+                    established = True
+                    break
+                time.sleep(0.02)
+            if not established:
+                raise RuntimeError("neither admission slot reached the saturated state")
             r3 = full_request(port)          # over budget -> 503
             r4 = full_request(port)          # reject close must NOT free a slot -> 503
             blk1.close(); time.sleep(0.4)    # release one admitted slot

@@ -499,6 +499,74 @@ Windows poll-backend limitation, non-blocking).
 Local wall on the fix (GCC 45/45 + 45/45 reactor; Clang 41/41 + 41/41; regression 307/307 +
 307/307; P4/P5/P10 + saturation both modes; P10 reactor under ASan/UBSan detect_leaks=1).
 
+## Remaining release decisions (2026-10-13, post-9ba12da)
+
+**Defect C — HTTP route-handler ownership cycle (BLOCKER; design decision escalated).**
+Root cause (controlled experiment): a route handler that references the server handle is
+emitted `[=]` (src/codegen.cpp `strut_capture_spec`) capturing a COPY of
+`strut_http_server app`; `app` holds `std::shared_ptr<state> s_`; `add_route` stores the
+handler in `s_->routes`. Result:
+`state -> routes -> handler-closure -> captured app copy -> s_ (shared_ptr<state>) -> state`
+— a strong shared_ptr cycle. LSan reports the whole server-state tree as an indirect leak at
+process exit; handler not referencing `app` is leak-free. This is exit-time-only (no runtime
+growth) but is a genuine leak and a release blocker.
+Ownership analysis (alternatives considered):
+  1. Break the cycle at final server-state destruction without destroying registered handlers
+     early — the cycle prevents the state refcount from ever reaching zero, so there is no
+     "last owner" event to hook; not viable without a cycle detector.
+  2. A server-specific weak internal reference — requires the handler's captured server
+     handle to be weak. Because the closure is stored inside the very state it holds, a weak
+     handle breaks the cycle correctly (the handle only needs to be valid while the server is
+     running, which it is during request handling). This requires generating a non-owning
+     handle for `http_server`-typed captures in ROUTE-HANDLER lambdas only — a codegen change.
+  3. Separate registration ownership from executable handler ownership — the closure captures
+     the FULL `http_server` copy, which holds every shared member (state and any route table),
+     so moving the table does not break the cycle: `table -> closure -> app copy -> table`.
+  Conclusion: any strong capture of the server handle by a closure owned (transitively) by
+  that handle's state is an intrinsic cycle; it can only be broken by making the closure's
+  captured server handle NON-owning. Options that preserve observable semantics while fixing
+  it are (a) a targeted codegen change capturing `http_server`-typed variables weakly /
+  by a non-owning ref inside route-handler lambdas, or (b) a public semantic change to
+  closure capture. Both are material decisions. NOT implemented unilaterally. Note also a
+  handler may capture a struct that contains a server handle, which a type-directed fix must
+  cover. Windows/Linux identical; legacy and reactor identical.
+Status: ESCALATED — no implementation change made; the sanitized explicit-stop CI stage
+remains a visible non-blocking WARN.
+
+**Retired-handler — HTTP lifecycle contract (decision required).**
+Established behaviour: `app.stop()` initiates shutdown; `running()` must remain true while
+admitted work is still active and become false only when the shutdown lifecycle completes.
+Legacy: `run_server` detaches a still-retiring worker and returns, so `listener.join()`
+returns while `running()` is still true; the worker publishes 'stopped' later. Reactor: the
+event loop is the sole response writer and runs to full drain, so `listener.join()` returns
+after `running()` has become false. After the `1ba918b` fix, `running()` now stays true
+during drain in the reactor too (matching the contract); the residual is only that the
+reactor's `join` returns at a later point than legacy's. Recommendation: define the contract
+as "`running()` is true while admitted work is active, false once shutdown completes;
+`listen()`/`join` returning does not imply listeners outlive handlers" and correct the
+`http_worker_certification` retired-handler fixture to assert that contract (running() true
+immediately after `stop()`, then false after drain) rather than the legacy-specific
+"join returns with running() true". Do NOT make the reactor imitate legacy thread
+detachment. ESCALATED for approval of the contract wording + fixture change; not changed yet.
+
+**Windows reactor saturation (coverage classification).**
+Windows DOES select the reactor with `STRUT_HTTP_REACTOR=1`; the reactor has a WSAPoll
+fallback (`poll_descriptors`/`native_descriptor`, lines ~1208-1217) and the legacy reactor
+CTests (postbody/explicit-stop) pass on Windows. The new `strut_reactor_saturation` CTest
+times out on Windows: the saturated probe never receives its 503 there. So Windows reactor
+support is real, and the saturation-reject path is UNVERIFIED on Windows (a coverage gap,
+not a proven defect). The CTest is gated to non-Windows with this explicit reason; a
+Windows-side investigation is required to classify it as a Windows reactor reject-path
+defect vs a harness/timing issue. No Windows runtime change made (would need a Windows run
+to validate).
+
+**WebSocket output-buffer bound (documentation correction).**
+`out_limit` (1 MiB) is a backpressure watermark, NOT a hard queue maximum. The actual
+invariant: `strut_websocket::write_data` rejects any payload larger than the configured
+`max_frame`/`max_message` before `reactor_push_output`, so the output queue is bounded by
+`out_limit + (max_frame + framing header)` per connection. Verified: single 1.5 MiB write
+(messages limit 4 MiB) completes; 8 MiB write rejected. Not a strict 1 MiB bound.
+
 ## Release assessment (2026-10-13)
 
 Candidate production SHA (last production-touching commit): `0b0e344`, with the
