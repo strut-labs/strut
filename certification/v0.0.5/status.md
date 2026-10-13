@@ -598,9 +598,15 @@ Can explicit weak ownership solve the problem? **NO, not with current features.*
     pointer".
   - Heap-allocating the handle (`app := new(http_server())`; `w := weak(app)`) passes the
     type-checker but FAILS native codegen: `strut_weak` is not declared for the native class,
-    and `.lock()` returns a `shared_ptr<strut_http_server>` with no method surface (e.g.
-    `srv.stop()` fails). So `weak_ptr`/`weak()`/`lock()` do not currently work for native
-    handle classes such as `http_server`.
+    and `.lock()` returns a `shared_ptr<strut_http_server>` with no method surface.
+  - Wrapping the server in a user struct and weakly referencing the wrapper
+    (`struct Holder { http_server app; } ... w := weak(new(Holder{...}))`) ALSO fails native
+    codegen: `strut_weak` is not declared. `weak_ptr` works for plain user structs
+    (`struct Holder { int x; }` + `weak` + `.lock()` compiles and runs) and for the documented
+    docs example, but the presence of an `http_server` member makes the compiler omit the
+    weak-pointer runtime support (a runtime-slice/codegen gap). So the documented
+    "capture a weak reference and promote it" pattern is NOT currently expressible for a
+    server handle, directly or via a wrapper.
 
 Would this change closure semantics? NO (the recommended approach does not).
 Would this change the public ABI? YES if a new weak handle surface is added.
