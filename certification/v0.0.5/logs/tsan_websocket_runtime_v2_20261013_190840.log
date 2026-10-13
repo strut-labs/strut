@@ -1,0 +1,3 @@
+WebSocket resource counts after 100 cycles (FD/HANDLE, RSS KiB, threads): (4, 31068, 5) -> (5, 31268, 5) -> (4, 31268, 5)
+TLS WebSocket resource counts after 20 cycles (FD/HANDLE, RSS KiB, threads): (5, 41168, 7) -> (5, 41724, 7) -> (4, 41684, 5)
+WebSocket P5 certification: plaintext/TLS framing, bounded close handshakes, post-close Ping, operation draining, live resources and stress passed

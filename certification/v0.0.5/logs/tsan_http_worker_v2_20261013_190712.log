@@ -1,0 +1,1 @@
+HTTP worker certification: bounded admission, worker reuse, finite accounting, single-deadline shutdown, retired handlers, startup races, 600 sustained requests, sync/async handler stop, TLS handshake timeout, and TLS shutdown passed

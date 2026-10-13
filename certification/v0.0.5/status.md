@@ -148,6 +148,42 @@ automatically attributed to the candidate SHA:
 | PASS | ASan/UBSan legacy HTTP smoke | 0a27604 | codegen harness preserved at 8374423 |
 | PASS | ASan/UBSan reactor HTTP smoke | 0a27604 | codegen harness preserved at 8374423 |
 
+### TSan (thread sanitizer, generated servers via STRUT_CXXFLAGS/LDFLAGS)
+
+**Defect found + fixed in reactor shutdown synchronization.** ThreadSanitizer on
+reactor-mode WebSocket runtime reported a genuine data race on `run->workers_stopping`:
+the event-loop thread wrote it without holding `run->mutex` (drain-stop site,
+post-loop teardown, and worker-spawn catch path), while `reactor_worker_loop` and
+`reactor_stream_worker_loop` read it inside their `condition_variable::wait`
+predicates under `run->mutex`. Reactor mode had zero TSan coverage in CI (CI never
+sets STRUT_HTTP_REACTOR), so this was previously unobserved. Fix: all three reactor
+write sites now take `run->mutex` (src/generated_runtime.cpp).
+
+Evidence: logs/tsan_websocket_runtime_reactor_*.log (pre-fix WARNING), logs/tsan_websocket_runtime_reactor_fixed2_*.log (PASS), logs/tsan_*.
+
+TSan results (STRUT=/home/nick/relgcc/strut, -fsanitize=thread, TSAN_OPTIONS=halt_on_error=1):
+| Result | Test | Mode | Exit | Evidence |
+|---|---|---|---|---|
+| PASS | http_worker_certification | legacy | 0 | logs/tsan_http_worker_v2_*.log |
+| PASS | http_client_streaming_certification | legacy | 0 | logs/tsan_http_client_streaming_v2_*.log |
+| PASS | websocket_runtime_certification P5 | legacy | 0 | logs/tsan_websocket_runtime_v2_*.log |
+| PASS | websocket_runtime_certification P5 | reactor | 0 (x2) | logs/tsan_websocket_runtime_reactor_fixed2_*.log |
+| PASS | http_websocket_certification P4 | reactor | 0 | logs/tsan_p4_reactor_v2_*.log |
+| PASS | process_lifecycle_certification | legacy | 0 | logs/tsan_process_lifecycle_v2_*.log |
+| PASS | pty_certification | legacy | 0 | logs/tsan_pty_cert_v2_*.log |
+| PASS | pty_lifecycle_certification | legacy | 0 | logs/tsan_pty_lifecycle_v2_*.log |
+| PASS | run_ws_close_probe | legacy+reactor | 0 | probe run |
+| PASS | run_reactor_param_probe | legacy+reactor | 0 | probe run |
+| PASS | run_reactor_postbody.py | legacy+reactor | 0 | driver run |
+| PASS | run_reactor_explicit_stop.py | legacy+reactor | 0 | driver run |
+
+Pre-existing reactor limitations observed (NOT regressions; fail identically
+without sanitizers): reactor-mode http_worker_certification saturation reject and
+websocket_pty_session_certification (see PTY gate). websocket_pty_session_certification
+legacy under TSan timed out on a client recv during a heavy-host-load window (load ~11
+from unrelated npm/python/ChatGPT jobs) with no TSan data-race report; re-run under the
+PTY gate with normalized load.
+
 ### Open / in progress
 
 | Result | Gate | SHA | Evidence / notes |
@@ -156,9 +192,9 @@ automatically attributed to the candidate SHA:
 | PASS | ASan/UBSan P4/P5 (legacy+reactor) | candidate | incl. TLS/WSS, detect_leaks=1 (2026-10-13) |
 | PASS | ASan/UBSan smoke + probes (legacy+reactor) | candidate | sanitized_http_smoke, ws_close/param/probe |
 | PASS | ASan/UBSan TLS/WSS lifecycle | candidate | covered by P4/P5 runs (plaintext+TLS) |
+| PASS | TSan (legacy CI scope + reactor focus) | candidate | race fixed; see TSan section |
 | PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
-| PENDING | TSan | candidate | |
-| PENDING | PTY thread-count discrepancy | candidate | |
+| PENDING | PTY thread-count discrepancy + ws-pty reactor timeout | candidate | |
 | PASS | GCC -Werror full CTest (default + reactor) | candidate | 44/44 + 44/44 |
 | PENDING | Clang -Werror full CTest | candidate | |
 | PENDING | FFI final-candidate ABI/embedding | candidate | |

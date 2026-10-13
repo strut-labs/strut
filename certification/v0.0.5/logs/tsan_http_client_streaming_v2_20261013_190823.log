@@ -1,0 +1,1 @@
+HTTP client streaming certification: large bounded binary streams, redirects, callback failures, limits, backpressure, cancellation, async, proxy isolation and repeated cleanup passed, download snapshots [(8, 5, 33756), (56, 5, 33756)], upload snapshots [(8, 5, 33752), (56, 5, 33752)], cleanup snapshots [(1, 5, 33252), (100, 5, 33520), (200, 5, 33520), (300, 5, 33520)]

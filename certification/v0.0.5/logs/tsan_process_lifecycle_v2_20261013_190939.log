@@ -1,0 +1,1 @@
+Process lifecycle certification: Unicode/empty argv, cwd/env, CRLF compatibility, descriptor isolation, 2 MiB simultaneous streams, pipeline backpressure, exec/process descendant retention, bounded resistant cleanup, and 25 cycles passed
