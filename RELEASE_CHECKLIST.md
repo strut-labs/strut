@@ -23,6 +23,17 @@ inferred from an earlier state or a different platform's results.
 - [ ] FFI-9 five-platform consumer execution 25/25 (run 38069818109 evidence preserved).
 - [ ] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK; skips not counted as PASS.
 
+## Sanitized networking (ASan/UBSan, instrumented GENERATED servers via STRUT_CXXFLAGS/LDFLAGS)
+- [x] Reusable harness dogfood/sanitized_http_smoke.py (dynamic port, temp fixture, signal-import
+      cleanup, EOF-vs-timeout, no pkill).
+- [x] Legacy HTTP smoke: PASS (200/hello-asan, exit 0, 0 sanitizer bytes).
+- [x] Reactor HTTP smoke:  PASS (200/hello-asan, exit 0, 0 sanitizer bytes).
+- [ ] Partial-body regression under sanitizers: PENDING (execution sessions interrupted; not
+      observed as pass).
+- [ ] Explicit-stop regression under sanitizers: PENDING (interrupted; not observed).
+- [ ] Legacy/Reactor P4 and P5 under sanitizers: PENDING (not executed in-session).
+- [ ] Applicable TSan: PENDING (separate).
+
 ## WebSocket dogfood (admission-drain fix implemented; validation ongoing)
 - [x] Root cause (independent Codex review): finite-admission shutdown interrupts an admitted
       FIRST request before the HTTP 101 is sent (`accepting` conflated admission exhaustion with
