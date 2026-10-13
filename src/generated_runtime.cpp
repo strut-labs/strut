@@ -1697,7 +1697,7 @@ private:
     }
     static void reactor_push_output(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<strut_reactor>& reactor,const char* data,std::size_t size){
         if(size==0)return;
-        {std::unique_lock<std::mutex> lock(conn->out_mutex);while(!conn->out_closed&&!conn->out_error&&conn->out_stream.size()>conn->out_limit)conn->out_cv.wait(lock);if(conn->out_closed||conn->out_error)throw strut_checked_error("NetworkError","HTTP response stream closed");conn->out_stream.append(data,size);}
+        {std::unique_lock<std::mutex> lock(conn->out_mutex);while(!conn->out_closed&&!conn->out_error&&conn->out_stream.size()>=conn->out_limit)conn->out_cv.wait(lock);if(conn->out_closed||conn->out_error)throw strut_checked_error("NetworkError","HTTP response stream closed");conn->out_stream.append(data,size);}
         if(reactor)reactor->wake();
     }
 #ifdef STRUT_USE_WEBSOCKET
@@ -1782,6 +1782,7 @@ private:
                 if(n==0)break;conn->out_stream.erase(0,n);
             }
             drained=conn->out_stream.empty();error=error||conn->out_error||conn->out_closed;
+            conn->out_cv.notify_all();
         }
         if(drained&&error){reactor_close(run,reactor,conn);return;}
         if(!drained)return;
