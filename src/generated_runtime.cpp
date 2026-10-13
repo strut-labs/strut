@@ -1699,17 +1699,19 @@ private:
         return out;
     })STRUT_SERVER";
     out << R"STRUT_SERVER(
-    static void reactor_request_feed(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<reactor_connection>& conn){
+    static bool reactor_request_feed(const std::shared_ptr<state>& s,const std::shared_ptr<run_state>& run,const std::shared_ptr<reactor_connection>& conn){
         (void)run;
         char buffer[8192];
+        bool peer_closed=false;
         {std::lock_guard<std::mutex> lock(conn->body_mutex);
             for(;;){if(conn->body_closed)break;if(conn->body_buf.size()>=conn->body_limit)break;
                 std::ptrdiff_t n=0;try{n=reactor_read_some(conn,buffer,sizeof(buffer));}catch(...){conn->body_closed=true;break;}
-                if(n<0)break;if(n==0){conn->body_closed=true;break;}conn->body_buf.append(buffer,static_cast<std::size_t>(n));
+                if(n<0)break;if(n==0){conn->body_closed=true;peer_closed=true;break;}conn->body_buf.append(buffer,static_cast<std::size_t>(n));
             }
         }
         conn->body_cv.notify_all();
         if(!conn->websocket_mode){conn->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(s->read_timeout_ms);conn->deadline_set=true;}
+        return peer_closed;
     }
     static void reactor_push_output(const std::shared_ptr<reactor_connection>& conn,const std::shared_ptr<strut_reactor>& reactor,const char* data,std::size_t size){
         if(size==0)return;
@@ -1881,7 +1883,7 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
                 if(conn->tls_handshake){const int hs=reactor_tls_step(conn);if(hs<0){reactor_close(run,reactor,conn);continue;}if(hs==0){conn->tls_handshake=false;conn->tls_want_write=false;}else if(hs==2){reactor_arm_streams(run,reactor);}if(conn->tls_handshake)continue;}
 #endif
                 }
-                if(event.readable&&(conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket)){reactor_request_feed(s,run,conn);continue;}
+                if(event.readable&&(conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket)){if(reactor_request_feed(s,run,conn)&&conn->websocket_mode)reactor_close(run,reactor,conn);continue;}
                 if(event.readable&&(conn_phase==reactor_phase::reading||conn_phase==reactor_phase::waiting_body)){bool closed=false;try{for(;;){char buffer[8192];const std::ptrdiff_t n=reactor_read_some(conn,buffer,sizeof(buffer));if(n<0)break;if(n==0){closed=true;break;}conn->input.append(buffer,static_cast<std::size_t>(n));}}catch(...){closed=true;}if(closed){reactor_close(run,reactor,conn);continue;}conn->deadline=steady_clock::now()+std::chrono::milliseconds(conn->head_ready?s->read_timeout_ms:s->idle_timeout_ms);conn->deadline_set=true;reactor_pump(s,run,reactor,conn);}
                 if(event.writable){
 #ifdef STRUT_USE_SERVER_TLS
