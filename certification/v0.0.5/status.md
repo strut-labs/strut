@@ -286,3 +286,37 @@ remains preserved for the five-platform FFI consumer matrix reference.
   integration suites provide separate executable coverage. Not restarted for v0.0.5.
 - Reactor HTTP/WebSocket has zero CI coverage (CI never sets `STRUT_HTTP_REACTOR`);
   local reactor coverage is the evidence source.
+
+## Release assessment (2026-10-13)
+
+Candidate production SHA (last production-touching commit): `0b0e344`, with the
+certification evidence tree above it. The two production fixes discovered + fixed during
+this campaign are `4b5e171` (reactor WebSocket connection reference-cycle leak + TLS
+SSL* leak) and `65eefb1` (reactor `workers_stopping` data race).
+
+**READY conditionally (NOT yet released):** every mandatory certification gate has fresh,
+candidate-SHA evidence and PASSES:
+
+- ABI/compatibility (embed.h C11+C++20, layout 72/8, exports unmangled).
+- Local walls: GCC -Werror CTest 44/44 default + reactor; Clang -Werror 40/40 default +
+  reactor (Nift-FFI 4 tests not configured, GCC covers); regression suite 307/307 default +
+  reactor (GCC) and 307/307 (Clang).
+- FFI-10 Nift Linux-local 4/4; FFI-9 25/25 re-confirmed by the five-platform matrix.
+- Sanitized networking: partial-body/explicit-stop/P4/P5/TLS-WSS PASS both modes; reuseable
+  harness; reactor leak defects found + fixed; ASan/UBSan detect_leaks clean.
+- TSan: legacy CI scope + reactor focus PASS; reactor `workers_stopping` race found + fixed.
+- PTY thread accounting: P7/P8/P10 PASS plain/ASan/TSan; historical 11->12 transient
+  assessed as test-accounting (not a leak) and not reproducible on candidate.
+- Five-platform CI matrix PASS on exact SHA e082b1a (run 38373411911), including
+  linux-x64-gcc sanitized-HTTP-runtime + TSan stages.
+- WebSocket dogfood: reactor P4 divergences resolved (handler-decline 403, malformed-extension
+  400, final-close parity), explicit-stop validation PASS, CI sanitized dogfood green.
+
+Outstanding NON-blocking / release-authorization items (not performed, per boundary rules):
+- Final docs reconciliation (README/CHANGELOG/install notes content for the 0.0.5 frame;
+  `FFI_HANDOVER.md`/`FFI_ABI_AUDIT.md`/`WEBSOCKET_INVESTIGATION_HANDOFF.md` remain accurate).
+- Tag/publish/package of v0.0.5 requires explicit user approval; v0.0.4 untouched.
+- Residual reactor limitation preserved: reactor WebSocket-PTY P10 and http_worker
+  saturation behave differently in reactor mode (P10 reactor cert times out even unsanitized);
+  reactor has zero CI coverage. These are documented platform/scope limitations, not
+  regressions from v0.0.4 (reactor existed with the same scope).
