@@ -298,7 +298,9 @@ separate historical evidence and is NOT claimed to have been rerun on the final 
 | PASS | Reactor P4 divergences (handler-decline 403, malformed-extension 400) | candidate | resolved; param probe + P4 reactor PASS |
 | PASS | Reactor WS final-close parity | candidate | ws_close_probe eof_after_close=eof both modes |
 | PASS | Staged/relocated-prefix install | candidate | consumer add(2,3)=5, no dev paths |
-| PENDING | Docs reconciliation (README/CHANGELOG/install notes) | candidate | release-artifacts item |
+| PASS | Permanent reactor CI (plain+ASan+TSan) | 2c91435 | run 38388562113, linux-x64-gcc reactor stages green |
+| OPEN | Reactor defects A/B/C (WS-flood watermark deadlock, saturation 503, exit-time state retention) | candidate | scope review below; NOT fixed (report-first) |
+| PENDING | Docs reconciliation (README/CHANGELOG/install notes; reactor limitations) | candidate | deferred until scope decision; RELEASE_NOTES stays Unreleased |
 | PENDING | Release decision (tag/publish) | candidate | requires explicit user approval |
 
 ## Residual limitations (preserved)
@@ -307,10 +309,12 @@ separate historical evidence and is NOT claimed to have been rerun on the final 
   They demonstrate the original admission race and its correction but do not provide
   deterministic scheduling coverage of subsequent live-runtime changes. Current-runtime
   integration suites provide separate executable coverage. Not restarted for v0.0.5.
-- Reactor HTTP/WebSocket: dedicated CI stages added at fc3d780 (linux-x64-gcc: routing
-  matrix, parameter propagation, WS close lifecycle, partial-body, explicit-stop, P4/P5;
-  ASan/UBSan reactor; TSan reactor). Known reactor-only defects not yet wired in are
-  documented in the "Reactor scope review" section below.
+- Reactor HTTP/WebSocket: dedicated permanent CI stages added at fc3d780 and reorganized
+  at 2c91435 (linux-x64-gcc). Verified GREEN in run 38388562113 (SHA 2c91435):
+  plain reactor runtime (routing/param/close/partial-body/explicit-stop/P4/P5), sanitized
+  reactor (postbody+P4+P5), and reactor TSan all PASS. The sanitized explicit-stop is wired
+  as a visible non-blocking report stage (WARN emitted on Defect C) until the scope decision.
+  Three reactor/exit defects (A/B/C) remain documented in the reactor scope review below.
 
 ## Reactor scope review (2026-10-13)
 
