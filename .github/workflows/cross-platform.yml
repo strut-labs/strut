@@ -144,6 +144,7 @@ jobs:
         shell: bash
         env:
           STRUT_HTTP_REACTOR: '1'
+          STRUT_REACTOR_DIAG: '1'
         run: |
           STRUT="build/Release/strut.exe"; [ -f build/strut ] && STRUT="build/strut"
           STRUT="$STRUT" python3 dogfood/reactor_saturation_diag.py
