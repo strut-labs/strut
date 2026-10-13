@@ -9,14 +9,20 @@ SHA listed below may satisfy release gates.
 
 | Field | Value |
 |---|---|
-| Candidate SHA | `83744237627893b9ee13a37df7429ed4cddddd27` |
+| Candidate SHA | production tree HEAD (see "Candidate lineage" below) |
 | Explicit compiler | `/home/nick/relgcc/strut` (release candidate build, authoritative) |
 | Branch | `main` |
 | Remote | in sync with `origin/main` |
 | Session start (UTC) | 2026-10-13 |
 
-Candidate promoted lineage: `0a27604` (previous verified HEAD) ->
-`2904d68` -> ... -> `8374423` (hardened ws_drain_probes drivers + gitignore).
+Candidate lineage: `0a27604` (previous verified HEAD) -> ... -> `8374423`
+(hardened ws_drain_probes drivers + gitignore) -> `a1736fb` (this evidence log).
+
+Certification infrastructure commits (8374423 harness hardening, a1736fb evidence
+log) do not alter production runtime/compiler/ABI behavior; functional gates are
+evidenced against the production tree, and the final candidate SHA is the last
+production-touching commit once gates complete. Each result row below quotes its
+own executed SHA.
 
 ## Recording format
 
