@@ -182,6 +182,7 @@ jobs:
           python3 dogfood/ws_drain_probes/run_ws_close_probe.py
           python3 dogfood/ws_drain_probes/run_reactor_postbody.py
           python3 dogfood/ws_drain_probes/run_reactor_explicit_stop.py
+          python3 dogfood/reactor_saturation_certification.py
           python3 dogfood/http_websocket_certification.py build/strut
           python3 dogfood/websocket_runtime_certification.py build/strut
       - name: Certify sanitized reactor HTTP runtime
