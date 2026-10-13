@@ -28,10 +28,19 @@ inferred from an earlier state or a different platform's results.
       cleanup, EOF-vs-timeout, no pkill).
 - [x] Legacy HTTP smoke: PASS (200/hello-asan, exit 0, 0 sanitizer bytes).
 - [x] Reactor HTTP smoke:  PASS (200/hello-asan, exit 0, 0 sanitizer bytes).
-- [ ] Partial-body regression under sanitizers: PENDING (execution sessions interrupted; not
-      observed as pass).
-- [ ] Explicit-stop regression under sanitizers: PENDING (interrupted; not observed).
-- [ ] Legacy/Reactor P4 and P5 under sanitizers: PENDING (not executed in-session).
+- [x] Partial-body regression under sanitizers: PASS both modes (7 consecutive driver runs,
+      empty stderr; evidence certification/v0.0.5/logs).
+- [x] Explicit-stop regression under sanitizers: PASS both modes (repeated runs; evidence
+      certification/v0.0.5/logs).
+- [x] Legacy/Reactor P4 and P5 under sanitizers: PASS both modes, detect_leaks=1 + quarantine
+      disabled (evidence logs/asan_ubsan_p{4,5}_{legacy,reactor}_v2_*.log).
+- [x] TLS/WSS lifecycle under sanitizers: PASS (covered by P4/P5 plaintext+TLS runs).
+- [x] DEFECT FOUND + FIXED during this campaign (commit 4b5e171): reactor WebSocket connection
+      reference cycle (conn->websocket_job self-captured ws_conn + run, never cleared) leaked
+      every reactor WebSocket connection + run_state; reactor_close also never freed conn->tls
+      (leaked OpenSSL session per reactor TLS connection). Legacy unaffected. Fixed by clearing
+      websocket_job after invocation and SSL_free in reactor_close. Verified leak-free under
+      detect_leaks=1; GCC -Werror CTest 44/44 default + 44/44 reactor.
 - [ ] Applicable TSan: PENDING (separate).
 
 ## WebSocket dogfood (admission-drain fix implemented; validation ongoing)
@@ -62,8 +71,9 @@ inferred from an earlier state or a different platform's results.
 - [x] Existing WebSocket certification post-fix: 45/45 consecutive runs (previously intermittent
       ~1/10); reuse-first/reuse-second finite-limit-one scenarios covered by the cert.
 - [x] Full default CTest 42/42; full reactor CTest 42/42.
-- [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
-      PASS locally under ASan+UBSan; CI sanitized dogfood step still pending.
+- [x] Sanitized certification PASS on the affected platform: partial-body/explicit-stop/P4/P5
+      PASS under ASan+UBSan in both legacy and reactor modes (2026-10-13 campaign, candidate
+      SHA 4b5e171). CI sanitized dogfood step still pending.
 - [x] No retries added solely to conceal the failure; gate intact.
 TRANSPORT PARITY (current runtime):
 - [x] TLS/WSS finite-admission parity: http_websocket_certification tls-ws uses listen_tls(...,1)
