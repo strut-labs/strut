@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/home/nick/Repositories/strut-labs/strut/dogfood/websocket_runtime_certification.py", line 603, in <module>
+    main()
+    ~~~~^^
+  File "/home/nick/Repositories/strut-labs/strut/dogfood/websocket_runtime_certification.py", line 489, in main
+    after = require_resources_return(server, baseline, peak)
+  File "/home/nick/Repositories/strut-labs/strut/dogfood/websocket_runtime_certification.py", line 330, in require_resources_return
+    raise RuntimeError(f"server RSS failed bounded return: {baseline[1]} KiB -> {peak[1]} KiB -> {after[1]} KiB")
+RuntimeError: server RSS failed bounded return: 238076 KiB -> 255212 KiB -> 286548 KiB

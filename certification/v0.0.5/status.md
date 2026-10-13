@@ -16,13 +16,17 @@ SHA listed below may satisfy release gates.
 | Session start (UTC) | 2026-10-13 |
 
 Candidate lineage: `0a27604` (previous verified HEAD) -> ... -> `8374423`
-(hardened ws_drain_probes drivers + gitignore) -> `a1736fb` (this evidence log).
+(hardened ws_drain_probes drivers + gitignore) -> `a1736fb` (this evidence log)
+-> `38a1616` (ASan recording). The sanitizer campaign then discovered and fixed a
+**production reactor runtime defect** (see "Defect found + fixed" section): the
+candidate production SHA moves to the new fix commit once committed.
 
-Certification infrastructure commits (8374423 harness hardening, a1736fb evidence
-log) do not alter production runtime/compiler/ABI behavior; functional gates are
-evidenced against the production tree, and the final candidate SHA is the last
-production-touching commit once gates complete. Each result row below quotes its
-own executed SHA.
+Certification infrastructure commits (8374423 harness hardening, a1736fb/b494b43
+evidence log, 38a1616 recording) do not alter production runtime/compiler/ABI
+behavior (except `src/generated_runtime.cpp`, which is a production fix described
+in its own section). Functional gates are evidenced against the production tree,
+and the final candidate SHA is the last production-touching commit once gates
+complete. Each result row below quotes its own executed SHA.
 
 ## Recording format
 
@@ -78,6 +82,54 @@ C++ server, not only the compiler).
 | PASS | run_reactor_explicit_stop.py | legacy | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_explicit_stop_20261013_163344.log |
 | PASS | run_reactor_explicit_stop.py | reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_explicit_stop_20261013_163344.log |
 
+### Defect found + fixed (sanitizer campaign)
+
+**Reactor WebSocket connection leak (deterministic, reference cycle).**
+`conn->websocket_job` is a `std::function` stored ON the connection whose lambda
+captures `ws_conn` (a `shared_ptr` to the connection itself) plus `run`
+(`shared_ptr<run_state>`). The stream worker invoked the job but never cleared it
+(src/generated_runtime.cpp:1825), so after `reactor_close` erased the connection
+from `run->reactor_data->connections` the only surviving reference was the
+connection's own self-capture -> the connection object AND the `run_state` were
+never freed. Every reactor WebSocket connection leaked. Legacy mode was clean
+(no stored lambda). Evidence:
+logs/asan_ubsan_p5_reactor_detleaks_20261013_164525.log (RSS-return failure) and
+logs/asan_ubsan_p5_reactor_noquar_20261013_164656.log (LSan: 1,182,464 bytes in
+1,771 allocations, all indirect, 143 reactor_connection roots).
+
+**Reactor TLS `SSL*` leak.** `reactor_close` never freed `conn->tls`, leaking the
+OpenSSL session for every reactor TLS connection. Legacy path already wrapped
+`SSL*` in `unique_ptr<SSL,SSL_free>`.
+
+Fix (smallest demonstrated cause, src/generated_runtime.cpp):
+- stream worker now clears `conn->websocket_job=nullptr` after invoking the job
+  (breaks the self-capture; the worker is the job's sole invoker, assignment happens
+  before the mutex-protected deque pop, so no race).
+- `reactor_close` now calls `SSL_free(conn->tls); conn->tls=nullptr;`.
+
+Verification after fix (same env flags as above but `detect_leaks=1` +
+`quarantine_size_mb=0` to make LSan authoritative and isolate quarantine):
+| Result | Test | Mode | Compiler | Exit | Evidence |
+|---|---|---|---|---|---|
+| PASS | websocket_runtime_certification P5 | legacy | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_p5_legacy_v2_*.log (100 cycles, TLS 20, sanitizer-empty) |
+| PASS | websocket_runtime_certification P5 | reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_p5_reactor_v2_*.log (100 cycles, TLS 20, sanitizer-empty) |
+| PASS | http_websocket_certification P4 | legacy | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_p4_legacy_v2_*.log |
+| PASS | http_websocket_certification P4 | reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_p4_reactor_v2_*.log |
+| PASS | run_reactor_postbody.py | legacy+reactor | /home/nick/relgcc/strut | 0 | 7 consecutive runs PASS 2026-10-13 |
+| PASS | run_reactor_explicit_stop.py | legacy+reactor | /home/nick/relgcc/strut | 0 | 3 consecutive runs PASS 2026-10-13 |
+| PASS | sanitized_http_smoke | legacy+reactor | /home/nick/relgcc/strut | 0 | mode=legacy/reactor 200/hello-asan exit 0 0 bytes |
+| PASS | run_reactor_probe.py | legacy+reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_reactor_probe_v2_*.log |
+| PASS | run_ws_close_probe.py | legacy+reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_ws_close_probe_v2_*.log |
+| PASS | run_reactor_param_probe.py | legacy+reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_param_probe_v2_*.log |
+| PASS | Default CTest (GCC -Werror) | - | relgcc build | 0 | 44/44 |
+| PASS | Reactor CTest | - | relgcc build, STRUT_HTTP_REACTOR=1 | 0 | 44/44 |
+
+NOTE on the harness `not stderr` assertion: empty stderr is required by the hardened
+drivers. Under normal and sanitized execution the generated server emits nothing on
+stderr, so a genuine sanitizer finding (which writes to stderr and usually aborts
+with a non-zero exit) fails the test. No benign stderr noise was observed in any
+passing run.
+
 ### Historical results (NOT candidate evidence)
 
 The following were recorded in prior sessions/commits and must not be
@@ -100,12 +152,15 @@ automatically attributed to the candidate SHA:
 
 | Result | Gate | SHA | Evidence / notes |
 |---|---|---|---|
-| PENDING | ASan/UBSan partial-body + explicit-stop (legacy+reactor) | candidate | DONE as 4/4 PASS (2026-10-13) |
-| PENDING | ASan/UBSan P4/P5 (legacy+reactor) | candidate | next |
-| PENDING | ASan/UBSan TLS/WSS lifecycle | candidate | where supported |
+| PASS | ASan/UBSan partial-body + explicit-stop (legacy+reactor) | candidate | 4/4 + repeated runs (2026-10-13) |
+| PASS | ASan/UBSan P4/P5 (legacy+reactor) | candidate | incl. TLS/WSS, detect_leaks=1 (2026-10-13) |
+| PASS | ASan/UBSan smoke + probes (legacy+reactor) | candidate | sanitized_http_smoke, ws_close/param/probe |
+| PASS | ASan/UBSan TLS/WSS lifecycle | candidate | covered by P4/P5 runs (plaintext+TLS) |
+| PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
 | PENDING | TSan | candidate | |
 | PENDING | PTY thread-count discrepancy | candidate | |
-| PENDING | GCC/Clang -Werror full CTest | candidate | |
+| PASS | GCC -Werror full CTest (default + reactor) | candidate | 44/44 + 44/44 |
+| PENDING | Clang -Werror full CTest | candidate | |
 | PENDING | FFI final-candidate ABI/embedding | candidate | |
 | PENDING | Five-platform CI matrix | candidate | |
 

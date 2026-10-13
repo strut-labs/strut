@@ -1,0 +1,1358 @@
+WebSocket resource counts after 100 cycles (FD/HANDLE, RSS KiB, threads): (18, 43852, 38) -> (19, 53012, 38) -> (18, 53024, 38)
+TLS WebSocket resource counts after 20 cycles (FD/HANDLE, RSS KiB, threads): (7, 50404, 39) -> (7, 55048, 39) -> (6, 54988, 38)
+Traceback (most recent call last):
+  File "/home/nick/Repositories/strut-labs/strut/dogfood/websocket_runtime_certification.py", line 603, in <module>
+    main()
+    ~~~~^^
+  File "/home/nick/Repositories/strut-labs/strut/dogfood/websocket_runtime_certification.py", line 550, in main
+    raise RuntimeError(f"TLS runtime server failed ({tls_server.returncode})\n{stdout}\n{stderr}")
+RuntimeError: TLS runtime server failed (1)
+
+
+=================================================================
+==900254==ERROR: LeakSanitizer: detected memory leaks
+
+Indirect leak of 685356 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f96673  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa7673) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f9723f  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa823f) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f958c9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa68c9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f8daf9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9eaf9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f1fce5  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x30ce5) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79f2efaa in SSL_read (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x3ffaa) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x6283fefdb2fe in strut_http_server::reactor_read_some(std::shared_ptr<strut_http_server::reactor_connection> const&, char*, unsigned long) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1820
+    #9 0x6283ff149f74 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2032
+    #10 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #12 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #15 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #17 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #20 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #21 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #22 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #23 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #24 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 679329 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f9641f  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa741f) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f98363  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa9363) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f98b61  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa9b61) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f95faf  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa6faf) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f8d0e1  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9e0e1) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fb5892  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xc6892) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79faa0de  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb0de) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #10 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #11 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #13 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #16 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #17 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #18 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #19 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #20 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #21 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #22 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #23 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #24 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #25 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 251904 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a844f2  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2844f2) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79c51103  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x451103) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a378cf  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2378cf) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a44aaa in EVP_PKEY_fromdata (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x244aaa) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79c52ae8  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452ae8) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #7 0x75ee79c52bee  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452bee) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #8 0x75ee79c53050  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x453050) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #9 0x75ee79a42571 in EVP_PKEY_set_octet_string_param (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x242571) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #10 0x75ee79fa42dc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52dc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #13 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #14 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #15 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #16 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #17 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #19 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #22 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #23 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #24 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #25 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #26 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #27 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #28 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #29 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #30 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #31 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 228616 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f38443  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x49443) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #5 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #6 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #7 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #8 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #9 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #10 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #12 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #15 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #16 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #17 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #18 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #19 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 181384 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f97cc7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa8cc7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f98139  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa9139) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #10 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #11 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #13 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #16 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #17 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #18 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #19 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #20 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #21 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #22 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #23 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #24 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #25 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 181384 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f97cc7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa8cc7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f98139  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa9139) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fbe633  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcf633) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79faa114  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb114) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #10 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #11 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #13 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #16 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #17 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #18 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #19 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #20 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #21 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #22 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #23 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #24 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #25 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 39360 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79bfe6a3  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3fe6a3) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a2c058  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x22c058) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a2c5a0 in EVP_CipherInit_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x22c5a0) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79f937e0  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa47e0) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #13 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #14 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #16 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #19 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #20 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #21 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #22 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #23 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #24 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #25 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #26 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #27 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #28 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 39360 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79bfe6a3  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3fe6a3) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a2c058  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x22c058) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a2c5a0 in EVP_CipherInit_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x22c5a0) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79f937e0  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa47e0) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x75ee79fbe633  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcf633) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79faa114  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb114) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #13 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #14 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #16 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #19 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #20 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #21 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #22 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #23 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #24 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #25 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #26 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #27 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #28 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 39360 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f22e3e  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x33e3e) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f3852d  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x4952d) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #6 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #7 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #8 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #9 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #10 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #11 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #13 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #16 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #17 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #18 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #19 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #20 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 38048 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f3e8a6  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x4f8a6) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f3ef4c  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x4ff4c) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fbcb20  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcdb20) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa449  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb449) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 12464 byte(s) in 82 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a3fd72 in EVP_PKEY_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x23fd72) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a44a7b in EVP_PKEY_fromdata (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x244a7b) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79c52ae8  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452ae8) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79c52bee  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452bee) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #7 0x75ee79c53050  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x453050) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #8 0x75ee79a42571 in EVP_PKEY_set_octet_string_param (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x242571) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #9 0x75ee79fa42dc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52dc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #13 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #14 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #15 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #16 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #17 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #18 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #19 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #20 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #21 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #22 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #23 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #24 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #25 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #26 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #27 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #28 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #29 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #30 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 11480 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12a6cf in realloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:81
+    #1 0x75ee79ba8e56  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3a8e56) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79ba9086 in OPENSSL_sk_insert (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3a9086) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f371dc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x481dc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fc01bd  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd11bd) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 8856 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a15602  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x215602) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f1cdbd  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x2ddbd) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fbae87  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcbe87) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa449  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb449) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 8856 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79c113e7  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x4113e7) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a15886 in EVP_MD_CTX_copy_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x215886) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79fba1f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb1f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fba4d0  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb4d0) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 7872 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a2818d in EVP_CIPHER_CTX_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x22818d) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f937a4  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa47a4) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79fbe633  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcf633) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79faa114  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb114) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #11 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #12 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #13 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #14 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #15 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #16 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #17 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #19 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #22 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #23 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #24 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #25 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #26 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 7872 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a2818d in EVP_CIPHER_CTX_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x22818d) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f937a4  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa47a4) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #11 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #12 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #13 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #14 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #15 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #16 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #17 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #19 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #22 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #23 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #24 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #25 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #26 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 7544 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a840af  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2840af) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79c517bc  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x4517bc) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a378b5  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2378b5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a44aaa in EVP_PKEY_fromdata (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x244aaa) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79c52ae8  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452ae8) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #7 0x75ee79c52bee  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452bee) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #8 0x75ee79c53050  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x453050) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #9 0x75ee79a42571 in EVP_PKEY_set_octet_string_param (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x242571) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #10 0x75ee79fa42dc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52dc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #13 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #14 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #15 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #16 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #17 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #19 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #22 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #23 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #24 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #25 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #26 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #27 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #28 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #29 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #30 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #31 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 7544 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f22e11  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x33e11) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f3852d  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x4952d) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #6 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #7 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #8 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #9 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #10 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #11 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #13 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #16 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #17 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #18 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #19 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #20 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 7216 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f48378  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x59378) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f48488  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x59488) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fc0867  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd1867) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 6232 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a3fd72 in EVP_PKEY_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x23fd72) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a446f4 in EVP_PKEY_generate (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2446f4) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79f20502  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x31502) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79fa42bf  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52bf) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #12 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #13 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #15 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #18 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #19 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #20 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #21 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #22 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #23 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #24 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #25 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #26 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #27 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 5248 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79925b6c in BIO_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x125b6c) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f8f024  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa0024) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #9 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #10 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #12 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #15 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #17 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #20 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #21 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #22 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #23 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #24 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 5248 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79925b6c in BIO_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x125b6c) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f2dc44 in SSL_set_fd (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x3ec44) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x6283ff1465ab in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #6 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #7 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #8 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #9 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #10 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #11 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #13 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #16 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #17 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #18 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #19 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #20 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 4920 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee7993452a  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x13452a) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79925bb9 in BIO_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x125bb9) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79f2dc44 in SSL_set_fd (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x3ec44) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283ff1465ab in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #7 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #8 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #9 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #10 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #11 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #12 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #13 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #14 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #15 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #16 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #17 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #18 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #19 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #20 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #21 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 4592 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79bea39d in X509_VERIFY_PARAM_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3ea39d) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f38613  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x49613) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #6 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #7 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #8 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #9 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #10 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #11 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #13 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #16 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #17 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #18 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #19 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #20 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 4592 byte(s) in 82 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a76f30 in CRYPTO_THREAD_lock_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x276f30) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a3fd92 in EVP_PKEY_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x23fd92) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a44a7b in EVP_PKEY_fromdata (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x244a7b) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79c52ae8  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452ae8) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #7 0x75ee79c52bee  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452bee) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #8 0x75ee79c53050  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x453050) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #9 0x75ee79a42571 in EVP_PKEY_set_octet_string_param (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x242571) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #10 0x75ee79fa42dc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52dc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #13 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #14 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #15 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #16 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #17 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #19 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #22 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #23 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #24 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #25 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #26 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #27 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #28 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #29 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #30 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #31 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 4264 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee799f45a3  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x1f45a3) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a378b5  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2378b5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a44aaa in EVP_PKEY_fromdata (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x244aaa) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79c52ae8  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452ae8) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #7 0x75ee79c52bee  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x452bee) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #8 0x75ee79c53050  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x453050) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #9 0x75ee79a42571 in EVP_PKEY_set_octet_string_param (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x242571) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #10 0x75ee79fa42dc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52dc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #13 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #14 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #15 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #16 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #17 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #19 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #22 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #23 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #24 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #25 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #26 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #27 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #28 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #29 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #30 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #31 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2952 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f1cd8b  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x2dd8b) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fbae87  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcbe87) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa449  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb449) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2952 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79fba1de  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb1de) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fba4d0  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb4d0) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2624 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f20cbb  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x31cbb) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79fa854c  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb954c) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f9d4fc  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae4fc) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fbae5d  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcbe5d) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa449  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb449) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2460 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a6377b in CRYPTO_memdup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x26377b) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f36e48  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x47e48) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fc0198  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd1198) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2296 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79c51df0  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x451df0) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79c528bc  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x4528bc) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a38b35  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x238b35) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a37d97  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x237d97) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79a4461a in EVP_PKEY_generate (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x24461a) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #7 0x75ee79f20502  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x31502) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79fa42bf  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52bf) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #13 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #14 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #15 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #17 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #20 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #21 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #22 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #23 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #24 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #25 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #26 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #27 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #28 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #29 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2296 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a76f30 in CRYPTO_THREAD_lock_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x276f30) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79a3fd92 in EVP_PKEY_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x23fd92) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79a446f4 in EVP_PKEY_generate (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x2446f4) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79f20502  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x31502) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fa42bf  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb52bf) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79fa5e4a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb6e4a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #11 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #12 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #13 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #14 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #16 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #19 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #20 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #21 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #22 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #23 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #24 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #25 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #26 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #27 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #28 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2296 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79a76f30 in CRYPTO_THREAD_lock_new (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x276f30) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f382f4  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x492f4) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f3846d  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x4946d) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #7 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #8 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #9 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #10 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #11 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #12 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #13 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #14 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #15 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #16 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #17 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #18 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #19 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #20 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #21 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 2132 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f47f77  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x58f77) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79fa4d2f  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb5d2f) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1968 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f485c0  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x595c0) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79fc0867  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd1867) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #7 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #8 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #9 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #10 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #11 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #12 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #13 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #14 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #15 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #16 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #17 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #18 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #19 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #20 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #21 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #22 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1312 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79ba95b1 in OPENSSL_sk_dup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3a95b1) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f38510  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x49510) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #5 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #6 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #7 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #8 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #9 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #10 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #12 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #15 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #16 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #17 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #18 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #19 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1312 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee7995d0f4 in BUF_MEM_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x15d0f4) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79933b9c  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x133b9c) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79925bb9 in BIO_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x125bb9) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #6 0x75ee79f8f024  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa0024) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #10 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #11 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #12 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #13 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #14 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #15 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #16 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #17 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #18 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #19 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #20 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #21 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #22 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #23 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #24 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #25 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #26 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1312 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a6377b in CRYPTO_memdup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x26377b) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f388e1  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x498e1) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #5 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #6 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #7 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #8 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #9 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #10 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #12 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #15 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #16 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #17 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #18 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #19 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1312 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79ba9543 in OPENSSL_sk_dup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3a9543) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f38510  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x49510) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #5 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #6 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #7 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #8 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #9 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #10 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #12 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #15 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #16 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #17 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #18 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #19 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1312 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79933bba  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x133bba) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79925bb9 in BIO_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x125bb9) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79f8f024  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa0024) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #10 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #11 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #13 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #16 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #17 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #18 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #19 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #20 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #21 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #22 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #23 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #24 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #25 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 1312 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79ba97a9 in OPENSSL_sk_new_reserve (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x3a97a9) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79f36fc3  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x47fc3) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fc01bd  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd11bd) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 656 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a6377b in CRYPTO_memdup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x26377b) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f38840  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x49840) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #5 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #6 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #7 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #8 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #9 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #10 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #12 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #15 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #16 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #17 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #18 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #19 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 656 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f47f77  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x58f77) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79fa68e4  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb78e4) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 656 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a61f74 in CRYPTO_zalloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261f74) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79933b88  (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x133b88) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #4 0x75ee79925bb9 in BIO_new_ex (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x125bb9) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #5 0x75ee79f8f024  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa0024) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #9 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #10 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #11 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #12 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #13 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #14 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #15 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #16 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #17 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #18 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #19 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #20 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #21 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #22 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #23 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #24 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #25 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 492 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f935ff  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa45ff) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #9 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #10 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #12 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #15 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #17 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #20 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #21 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #22 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #23 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #24 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 492 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f93623  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa4623) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79fbe633  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcf633) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79faa114  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb114) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #9 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #10 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #12 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #15 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #17 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #20 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #21 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #22 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #23 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #24 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 492 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f935ff  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa45ff) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79fbe633  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcf633) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79faa114  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb114) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #9 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #10 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #12 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #15 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #17 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #20 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #21 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #22 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #23 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #24 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 492 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79f93623  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa4623) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #3 0x75ee79f981b7  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xa91b7) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f8ea69  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x9fa69) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79f505ce  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x615ce) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79fba610  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xcb610) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x75ee79faa00a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb00a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #8 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #9 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #10 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #12 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #15 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #16 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #17 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #18 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #19 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #20 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #21 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #22 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #23 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #24 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 410 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a63843 in CRYPTO_strndup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x263843) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79fa469c  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xb569c) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x75ee79f9d2f9  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xae2f9) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #5 0x75ee79fbfb71  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xd0b71) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #6 0x75ee79faa39a  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0xbb39a) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #7 0x6283fef7168f in strut_http_server::reactor_tls_step(std::shared_ptr<strut_http_server::reactor_connection> const&) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1832
+    #8 0x6283ff1498bc in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2028
+    #9 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #10 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #11 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #12 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #13 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #14 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #15 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #16 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #17 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #18 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #19 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #20 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #21 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #22 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #23 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+Indirect leak of 164 byte(s) in 41 object(s) allocated from:
+    #0 0x75ee7a12b60f in malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:67
+    #1 0x75ee79a61de5 in CRYPTO_malloc (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x261de5) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #2 0x75ee79a6377b in CRYPTO_memdup (/usr/lib/x86_64-linux-gnu/libcrypto.so.3+0x26377b) (BuildId: 0ebcfeaee273dc860b29e067d255def704185b41)
+    #3 0x75ee79f38890  (/usr/lib/x86_64-linux-gnu/libssl.so.3+0x49890) (BuildId: 9512711d8b820c749301e4109ee03871a32a8404)
+    #4 0x6283ff145ef9 in strut_http_server::run_reactor_server(std::shared_ptr<strut_http_server::state> const&, strut_string const&, int, int, void*) /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:2020
+    #5 0x6283ff15707b in strut_http_server::listen_tls(strut_string const&, int, strut_string const&, strut_string const&, int) const /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:1588
+    #6 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.p:95
+    #7 0x6283fef43c98 in __invoke_impl<void, main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:63
+    #8 0x6283fef43c98 in __invoke<main(int, char**)::<lambda()>&> /usr/include/c++/15/bits/invoke.h:98
+    #9 0x6283fef43c98 in __apply_impl<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2920
+    #10 0x6283fef43c98 in apply<main(int, char**)::<lambda()>&, std::tuple<> > /usr/include/c++/15/tuple:2935
+    #11 0x6283fef43c98 in operator() /tmp/strut-websocket-runtime-antzhmjw/runtime-tls-server.strut.cpp:620
+    #12 0x6283fef43c98 in __invoke_impl<void, strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:63
+    #13 0x6283fef43c98 in __invoke<strut_thread::strut_thread<main(int, char**)::<lambda()> >(main(int, char**)::<lambda()>&&)::<lambda()> > /usr/include/c++/15/bits/invoke.h:98
+    #14 0x6283fef43c98 in _M_invoke<0> /usr/include/c++/15/bits/std_thread.h:303
+    #15 0x6283fef43c98 in operator() /usr/include/c++/15/bits/std_thread.h:310
+    #16 0x6283fef43c98 in _M_run /usr/include/c++/15/bits/std_thread.h:255
+    #17 0x75ee794f5ef8  (/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0xf5ef8) (BuildId: 3a7a8c6bd922e6314edb7a710fdc0293265c2c42)
+    #18 0x75ee7a063a80 in asan_thread_start ../../../../src/libsanitizer/asan/asan_interceptors.cpp:246
+    #19 0x75ee788a3df9 in start_thread nptl/pthread_create.c:454
+
+SUMMARY: AddressSanitizer: 2513259 byte(s) leaked in 2132 allocation(s).
+

@@ -1,0 +1,11 @@
+[legacy]
+  plain     HTTP/1.1 200 OK | Content-Type: text/plain; charset=utf-8 | Conten
+  ws_up     HTTP/1.1 101 Switching Protocols | Upgrade: websocket | Connection  [accept-key]
+  missing   HTTP/1.1 404 Not Found | Content-Type: text/plain; charset=utf-8
+  ws_noup   HTTP/1.1 400 Bad Request | Content-Type: text/plain; charset=utf-
+[reactor]
+  plain     HTTP/1.1 200 OK | Content-Type: text/plain; charset=utf-8 | Conten
+  ws_up     HTTP/1.1 101 Switching Protocols | Upgrade: websocket | Connection  [accept-key]
+  missing   HTTP/1.1 404 Not Found | Content-Type: text/plain; charset=utf-8
+  ws_noup   HTTP/1.1 400 Bad Request | Content-Type: text/plain; charset=utf-
+matrix assertions PASS (legacy + reactor: /plain 200, /ws-upgrade 101 + accept-key, /missing 404, /ws-no-upgrade 400)

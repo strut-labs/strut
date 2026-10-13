@@ -1,0 +1,2 @@
+[legacy] {'upgrade': '101+accept', 'server_close_op': (8, 1001), 'pong': True, 'eof_after_close': 'eof', 'tail_len': 0, 'case': 'reply', 'eof_seconds': 0.0}
+[reactor] {'upgrade': '101+accept', 'server_close_op': (8, 1001), 'pong': True, 'eof_after_close': 'eof', 'tail_len': 0, 'case': 'reply', 'eof_seconds': 0.0}
