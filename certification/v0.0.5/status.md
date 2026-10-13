@@ -572,6 +572,73 @@ invariant: `strut_websocket::write_data` rejects any payload larger than the con
 `out_limit + (max_frame + framing header)` per connection. Verified: single 1.5 MiB write
 (messages limit 4 MiB) completes; 8 MiB write rejected. Not a strict 1 MiB bound.
 
+## Defect C — ownership design review (deliverable, decision required)
+
+Bounded investigation performed against the current language/ownership model.
+
+Confirmed reference cycle:
+  `state -> routes -> handler closure -> captured http_server (by value) -> s_
+  (shared_ptr<state>) -> state`. A strong strong-reference cycle; LSan reports the whole
+  server-state tree as an indirect leak at exit. Handlers not referencing the server do not
+  leak. Identical in legacy and reactor.
+
+Existing Strut ownership semantics (documented in docs/memory.html and the API index):
+  - `T*` is the reference-counted owning pointer; copying shares ownership.
+  - `T&` is non-owning, non-null, non-rebindable.
+  - `weak_ptr<T>` exists for back-references; `weak(x)`; `.expired()`; `.lock()`.
+  - The docs state: "Reference counting cannot automatically collect strong cycles. Use
+    `weak_ptr<T>` for back-references. The compiler warns for obvious cycles." So the
+    language's model explicitly makes strong-cycle avoidance the user's responsibility via
+    `weak_ptr`.
+  - The HTTP server handle is a VALUE type: `app := http_server()` (the API index reports
+    `http_server() -> http_server`). The generated code is `strut_http_server app = ...`.
+
+Can explicit weak ownership solve the problem? **NO, not with current features.**
+  - `weak(app)` on the value handle fails to type-check: "weak(...) requires a T* safe
+    pointer".
+  - Heap-allocating the handle (`app := new(http_server())`; `w := weak(app)`) passes the
+    type-checker but FAILS native codegen: `strut_weak` is not declared for the native class,
+    and `.lock()` returns a `shared_ptr<strut_http_server>` with no method surface (e.g.
+    `srv.stop()` fails). So `weak_ptr`/`weak()`/`lock()` do not currently work for native
+    handle classes such as `http_server`.
+
+Would this change closure semantics? NO (the recommended approach does not).
+Would this change the public ABI? YES if a new weak handle surface is added.
+
+HTTP-specific alternative: provide explicit weak ownership of the server handle — e.g. make
+`weak(http_server*)` and `.lock()` (with method access on the locked handle) work for the
+native `http_server` class, or add an HTTP-specific weak-handle type. A handler would then
+capture the weak handle and `lock()` it when invoked; no strong server capture -> no cycle.
+
+Indirectly captured server handles: a handler capturing a struct/collection that contains the
+server handle strongly still cycles, and no capture-level fix covers it. The user must capture
+a weak handle (directly or inside the struct) — consistent with the language's documented
+"use weak_ptr for back-references" model.
+
+Restart and shutdown safety: with a weak handle, `lock()` succeeds while the server state is
+alive (it is, during request handling); after full shutdown the handler is not invoked. Safe.
+
+Recommended approach: DO NOT silently weaken captures in codegen (context-dependent lifetime
+semantics; does not cover indirect captures; changes general closure semantics). Instead make
+explicit weak ownership of the server handle expressible (smallest missing capability), and
+use it in the certification fixture. This matches the reviewer's preference and the language's
+existing cycle guidance.
+
+Alternatives rejected:
+  - Automatic weak capture of `http_server` in route lambdas (context-dependent capture
+    semantics; doesn't handle struct-wrapped handles; precedent risk).
+  - Clearing routes on stop (breaks documented restart/reconfiguration).
+  - Accepting the leak for v0.0.5 (a demonstrated leak under strict LSan).
+
+Implementation scope (if approved): a bounded language/runtime addition enabling
+`weak()`/`lock()` (and method access on the locked value) for the native `http_server` handle,
+plus using the weak handle in the retired/explicit-stop fixture. Not started; awaiting the
+design decision.
+
+Decision required: approve (a) explicit weak server-handle support (language/runtime), or
+(b) an HTTP-specific weak-handle API, or (c) accept the exit-time leak as a documented
+limitation (with the strict LSan gate then explicitly waived).
+
 ## Release assessment (2026-10-13)
 
 Candidate production SHA (last production-touching commit): `0b0e344`, with the
