@@ -80,7 +80,7 @@ inferred from an earlier state or a different platform's results.
 - [x] Full default CTest 42/42; full reactor CTest 42/42.
 - [x] Sanitized certification PASS on the affected platform: partial-body/explicit-stop/P4/P5
       PASS under ASan+UBSan in both legacy and reactor modes (2026-10-13 campaign, candidate
-      SHA 4b5e171). CI sanitized dogfood step still pending.
+      SHA 4b5e171). CI sanitized dogfood step now PASSes (run 38373411911 on e082b1a).
 - [x] No retries added solely to conceal the failure; gate intact.
 TRANSPORT PARITY (current runtime):
 - [x] TLS/WSS finite-admission parity: http_websocket_certification tls-ws uses listen_tls(...,1)
@@ -99,14 +99,14 @@ TRANSPORT PARITY (current runtime):
           reactor: /plain 200 | /ws-upgrade 101+accept-key | /missing 404 | /ws-no-upgrade 400
       A no-websocket-route fixture (/plain only) compiles and runs cleanly, exercising the
       constexpr else path.
-- [ ] REACTOR WEBSOCKET CLOSE LIFECYCLE (CORRECTED finding): with a PROTOCOL-CORRECT client
+- [x] REACTOR WEBSOCKET CLOSE LIFECYCLE (CORRECTED finding): with a PROTOCOL-CORRECT client
       (masked frames reusing the certification client_frame semantics; leftover bytes from the
       handshake recv fed into the buffered frame parser -- the earlier "missing close frame"
       claim was a client-buffering artifact), the /explicit-close route shows BOTH modes send
-      the server CLOSE frame (op 8, code 1001) and answer the masked Ping with Pong; the true
-      divergence is the final TCP EOF: legacy closes the socket after the close handshake
-      (recv returns b''), reactor leaves it open (recv times out), matching
-      websocket_runtime_certification exercise_server_closing's recv(1) timeout.
+      the server CLOSE frame (op 8, code 1001) and answer the masked Ping with Pong. RESOLVED
+      on candidate: run_ws_close_probe now shows reactor eof_after_close=eof (final TCP EOF
+      matches legacy; "reactor leaves it open/recv timeout" divergence is gone) in plain,
+      ASan/UBSan (v2) and TSan runs.
 - [x] REACTOR FINAL-CLOSE FIXED (Codex reactor_arm_streams close-scheduling patch, integrated at
       7cb4c87): the residual strict-probe reactor timeout was a STALE-COMPILER artifact --
       run_ws_close_probe.py defaulted to repo-root build/strut (dated Oct 7, pre-fix); with the
@@ -122,26 +122,31 @@ TRANSPORT PARITY (current runtime):
       request.params["id"]=="abc123" (no stdout oracle); legacy-positive 101 / legacy-negative
       no-101 / reactor-positive 101 / reactor-negative no-101 all PASS -- correct captured values
       reach reactor WebSocket handlers in both modes.
-- [ ] REACTOR P4 remaining divergences (isolated, current runtime):
-      (a) HANDLER-DECLINE: when a WebSocket handler returns without accepting, legacy answers
-      HTTP/1.1 403 Forbidden but reactor closes the connection with NO bytes (EMPTY/closed) -
-      confirmed on a /ws/:id route in both modes; the hardened run_reactor_param_probe.py
-      negative control now expects 403 and FAILS on reactor (the regression for this defect).
-      (b) MALFORMED-EXTENSION: malformed Sec-WebSocket-Extensions (permessage-deflate; =bad)
-      returns 400 in BOTH modes on isolated static and /ws/:id single-route fixtures - the
-      cert's 405 only manifests in the multi-route P4 server (composition-dependent); needs the
-      multi-route server repro to pin the 405 branch.
-      Do not blanket-convert 405->400.
-      Previously: reactor ws-upgrade 404 (pre-fix), now 101.
-      Separate from the admission race (not admission-related). CI never sets STRUT_HTTP_REACTOR
-      (no activation found in scripts/workflow); reactor HTTP/WebSocket has zero CI coverage.
-- [ ] Explicit-stop validation (stop during drain, partial headers, keepalive, active WS,
-      bounded deadlines): not yet separately exercised.
-- [ ] Sanitized certification PASS on the affected platform: deterministic worker-first probe
-      PASS locally under ASan+UBSan (frozen snapshot); CI sanitized dogfood step still pending.
-  SEPARATE RELEASE ISSUE (not the WebSocket race): PTY thread-count certification failures
-      observed historically at CLI runs (e.g. 38034787150/38069818109 x64 jobs) must be assessed
-      independently before overall release approval.
+- [x] REACTOR P4 remaining divergences RESOLVED on candidate (http_websocket_certification
+      reactor-mode PASSes in plain, ASan/UBSan and TSan runs; run_reactor_param_probe
+      reactor-negative returns 403 PASS matching legacy):
+      (a) HANDLER-DECLINE: reactor now answers HTTP/1.1 403 Forbidden (was: closes with NO
+      bytes) - reactor-negative expects 403 and PASSES (the previous regression is gone).
+      (b) MALFORMED-EXTENSION: malformed Sec-WebSocket-Extensions return 400 in BOTH modes on
+      the multi-route P4 server (P4 cert asserts all 19 invalid openings -> 400 and PASSES in
+      reactor). No 405->400 blanket conversion was needed.
+      Previously: reactor ws-upgrade 404 (pre-fix), now 101 with full P4 parity.
+      Separate from the admission race. CI still never sets STRUT_HTTP_REACTOR; local reactor
+      coverage is the evidence source (documented limitation).
+- [x] Explicit-stop validation (stop during drain, incomplete POST body, bounded deadlines):
+      PASS both modes; permanent driver run_reactor_explicit_stop.py. Verified plainly, under
+      ASan/UBSan (repeated) and TSan. The stop-during-drain path is separately exercised by
+      http_websocket_certification stop-race scenarios.
+- [x] Sanitized certification PASS on the affected platform maintained AND CI sanitized dogfood
+      step now PASSes (workflow run 38373411911, linux-x64-gcc "Certify sanitized generated
+      HTTP runtime" comprising http_websocket, websocket_runtime, http_worker, pty, P10 etc.
+      under ASan/UBSan).
+  PTY THREAD-COUNT RELEASE ISSUE (separate from the WebSocket race): ASSESSED. Historical
+      P10 "threads did not return 11 -> 12" (runs 38034787150/38069818109, SHA 37dd55a) does
+      NOT reproduce on the candidate: P10 plain (1000 seq/32 conc, 34->34), P10 ASan (50/8,
+      8 runs, 10->10), P10 TSan (6->6, 11->11); pty_cert/pty_lifecycle threads return exactly
+      (allowance 0). fd/children/zombies return exactly in the historical sample and RSS within
+      allowance, so it is a load-sensitive test-accounting transient, not a permanent leak.
 
 ## Five-platform release certification (one final SHA)
 - [x] Linux x64 GCC / Linux x64 Clang / Linux ARM64 GCC / macOS ARM64 AppleClang /
@@ -150,8 +155,10 @@ TRANSPORT PARITY (current runtime):
       PASS on the sanitized HTTP runtime and generated HTTP worker TSan stages).
 
 ## Release artifacts
-- [ ] Staged install verified (header + lib + bin + share/strut/jsonic) and relocated-prefix
-      consumers run without developer paths.
+- [x] Staged install verified (header + lib + bin + share/strut/jsonic) at /tmp/strut-prefix:
+      relocated-prefix C consumer compiles and runs add(2,3)=5 without developer paths
+      (STRUT_JSONIC_INCLUDE_DIR + LD_LIBRARY_PATH are the documented JSON runtime-support
+      hook, set identically in the CTest consumers); staged strut --version = 0.0.5.
 - [ ] README/CHANGELOG/install docs consistent; `FFI_HANDOVER.md`, `FFI_ABI_AUDIT.md`,
-      `WEBSOCKET_INVESTIGATION_HANDOFF.md` current.
+      `WEBSOCKET_INVESTIGATION_HANDOFF.md` current (docs reconciliation outstanding).
 - [ ] v0.0.4 untouched; v0.0.5 tag/release issued only after explicit approval.

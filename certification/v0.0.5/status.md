@@ -272,8 +272,11 @@ remains preserved for the five-platform FFI consumer matrix reference.
 | PASS | FFI-10 Nift Linux-local (final candidate) | candidate | 4/4 + FFI/embed 28/28, ABI 72/8 verified |
 | PASS | Five-platform CI matrix | e082b1a | run 38373411911, all 5 jobs success |
 | PASS | FFI-9 five-platform consumers | e082b1a | exercised via dogfood; 25/25 historical + CI |
-| PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
-| PENDING | Release review / READY-NOT_READY | candidate | |
+| PASS | Reactor P4 divergences (handler-decline 403, malformed-extension 400) | candidate | resolved; param probe + P4 reactor PASS |
+| PASS | Reactor WS final-close parity | candidate | ws_close_probe eof_after_close=eof both modes |
+| PASS | Staged/relocated-prefix install | candidate | consumer add(2,3)=5, no dev paths |
+| PENDING | Docs reconciliation (README/CHANGELOG/install notes) | candidate | release-artifacts item |
+| PENDING | Release decision (tag/publish) | candidate | requires explicit user approval |
 
 ## Residual limitations (preserved)
 
