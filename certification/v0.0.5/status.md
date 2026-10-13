@@ -342,6 +342,33 @@ contract and are NOT fixed in this pass (report-first, per release-review instru
 - Recommendation: supported-behaviour correctness defect (explicit documented contract).
   Minimal fix (write 503 then close on reactor saturation) proposed pending scope approval.
 
+**Defect C — generated-server exit-time state retention (explicit-stop path), found by the
+new sanitized reactor CI stage (run 38384978723, linux-x64-gcc).**
+- Contract: a leak-free generated server at process exit is the implicit expectation of
+  `detect_leaks=1` sanitized certification (the CI sanitized stage enforces it).
+- Observed: with `ASAN_OPTIONS=detect_leaks=1` (default quarantine), the explicit-stop
+  server leaks 2508 B / 13 allocations (minimal /stop) and 5024 B / 24 allocations
+  (two-route driver); LSan reports ALL of it as indirect with no direct root = a
+  shared_ptr cycle retained at exit. Both legacy and reactor modes leak identically.
+  The postbody/natural-exit (max_requests=1) server is clean, and P4/P5/P10 resource
+  counts return exactly (no runtime growth).
+- Root cause: `frame.http_server` holds `s_` (`shared_ptr<state>`), and `state->current`
+  is the `run_state` whose worker/reactor lambdas capture `shared_ptr<state> s` and
+  `shared_ptr<run_state> run`; at shutdown the worker threads are detached, so the
+  `run->…->s` cycle keeps the whole server-state tree alive after `main` returns.
+  Exit-time-only; no per-request or long-run leak.
+- Evidence: /tmp/opencode/stopexit_out and exstop_detleaks.log (local repro), CI step 21
+  log run 38384978723.
+- Prior local discrete evidence note: the drain-driver ASan PASS rows earlier in the
+  sanitized section used `ASAN_OPTIONS=detect_leaks=0`; they did not assert the exit
+  leak. Under `detect_leaks=1`, explicit-stop is FAIL and postbody is PASS. This is now
+  stated exactly; the sanitized networking table is superseded by this finding for the
+  explicit-stop row.
+- Recommendation: supported-behaviour correctness defect (leak-free exit). Minimal fix
+  (break the worker-captured cycle / release `s_->current` on shutdown) proposed once the
+  scope decision approves it. Until fixed, the sanitized-reactor CI stage must be treated
+  as RED for the explicit-stop row; it must not be silently skipped or weakened.
+
 Both are classified as **defects within the intended v0.0.5 reactor contract**, not as
 acceptable de-scoped limitations. CI reactor stages added at fc3d780 deliberately exclude
 these two scenarios until the fixes land (a failing required test must not be silently

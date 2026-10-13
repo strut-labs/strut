@@ -36,9 +36,12 @@ inferred from an earlier state or a different platform's results.
 - [x] Legacy HTTP smoke: PASS (200/hello-asan, exit 0, 0 sanitizer bytes).
 - [x] Reactor HTTP smoke:  PASS (200/hello-asan, exit 0, 0 sanitizer bytes).
 - [x] Partial-body regression under sanitizers: PASS both modes (7 consecutive driver runs,
-      empty stderr; evidence certification/v0.0.5/logs).
-- [x] Explicit-stop regression under sanitizers: PASS both modes (repeated runs; evidence
-      certification/v0.0.5/logs).
+      empty stderr; evidence certification/v0.0.5/logs; also under detect_leaks=1).
+- [ ] Explicit-stop regression under sanitizers: PASS under `ASAN_OPTIONS=detect_leaks=0`
+      (both modes, repeated). Under `detect_leaks=1` the generated server retains its state
+      at exit (2508-5024 B indirect shared_ptr cycle, legacy AND reactor) -> FAIL. This exit
+      leak is Defect C (cert log); fix pending scope decision. Not counted as a pass under
+      leak detection.
 - [x] Legacy/Reactor P4 and P5 under sanitizers: PASS both modes, detect_leaks=1 + quarantine
       disabled (evidence logs/asan_ubsan_p{4,5}_{legacy,reactor}_v2_*.log).
 - [x] TLS/WSS lifecycle under sanitizers: PASS (covered by P4/P5 plaintext+TLS runs).
