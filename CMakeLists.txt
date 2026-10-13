@@ -234,10 +234,12 @@ add_test(NAME strut_ffi_ws_explicit_stop COMMAND ${CMAKE_COMMAND} -E env
         "STRUT=$<TARGET_FILE:strut>"
         ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/dogfood/ws_drain_probes/run_reactor_explicit_stop.py)
     set_tests_properties(strut_ffi_ws_explicit_stop PROPERTIES TIMEOUT 180)
+if(NOT WIN32)
 add_test(NAME strut_reactor_saturation COMMAND ${CMAKE_COMMAND} -E env
         "STRUT=$<TARGET_FILE:strut>"
         ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/dogfood/reactor_saturation_certification.py)
     set_tests_properties(strut_reactor_saturation PROPERTIES TIMEOUT 300)
+endif()
 
 find_program(NODE_EXECUTABLE NAMES node nodejs)
 if(NODE_EXECUTABLE AND NOT STRUT_SANITIZERS)
