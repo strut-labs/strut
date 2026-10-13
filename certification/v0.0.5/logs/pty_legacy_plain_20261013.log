@@ -1,0 +1,3 @@
+P10 Linux resources after 1000 sessions: {'fd': 4, 'children': 0, 'zombies': 0, 'rss_kib': 8012, 'threads': 5} -> {'fd': 4, 'children': 0, 'zombies': 0, 'rss_kib': 8060, 'threads': 5}
+P10 Linux resources after 50 sessions: {'fd': 4, 'children': 0, 'zombies': 0, 'rss_kib': 9604, 'threads': 34} -> {'fd': 4, 'children': 0, 'zombies': 0, 'rss_kib': 9724, 'threads': 34}
+P10 WebSocket-PTY certification passed: public binary/control pumps, plaintext/TLS, coalesced upgrade input, policy-before-101, shell/executable, final drain, validated controls, slow peers, 1000 sequential and 32 bounded concurrent sessions, disconnect and cancellation-driven shutdown cleanup

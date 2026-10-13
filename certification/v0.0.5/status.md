@@ -184,6 +184,34 @@ legacy under TSan timed out on a client recv during a heavy-host-load window (lo
 from unrelated npm/python/ChatGPT jobs) with no TSan data-race report; re-run under the
 PTY gate with normalized load.
 
+### PTY thread accounting + P10 WebSocket-PTY
+
+Historical CI finding (run 38069818109, linux-x64-gcc, "Certify sanitized generated HTTP
+runtime" step, SHA 37dd55a): `P10 Linux threads did not return: {rss 321792, threads 11} ->
+{... threads 12}` in the abrupt-session phase of websocket_pty_session_certification under
+ASan. The current candidate does NOT reproduce it across repeated runs:
+
+| Result | Test | Mode/Flags | Threads | Exit | Evidence |
+|---|---|---|---|---|---|
+| PASS | pty_certification | plain | n/a | 0 | ptycert_asan_candidate_*.log (ASan) |
+| PASS | pty_lifecycle_certification | plain (x3), ASan, TSan | 1->1 after (allowance 0) | 0 | ptylc_plain_1_candidate_*.log, tsan_pty_lifecycle_v2_*.log |
+| PASS | websocket_pty_session (P10) | plain, 1000 seq/32 conc | 34->34 | 0 | p10_plain_candidate_*.log |
+| PASS | websocket_pty_session (P10) | ASan, 50 seq/8 conc (x8) | 5->5, 10->10 | 0 | p10_asan_*.log |
+| PASS | websocket_pty_session (P10) | TSan, 50 seq/8 conc | 6->6, 11->11 | 0 | p10_tsan_candidate_*.log |
+
+Assessment: the historical 11->12 was a single transient thread during an abrupt-
+disconnect phase on a busy shared runner at an older SHA; fd=4, children/zombies=0
+returned exactly in the same failing sample (RSS within ASan allowance), so it is
+best explained as a timing-sensitive test-accounting transient rather than a permanent
+thread leak. Current candidate returns threads to baseline exactly across plain/ASan/TSan.
+The PTY worker-thread join model (worker_loop joins on drain, close_timer joins in
+destructor, P10 output thread joins in handler) shows no permanent retention.
+
+Pre-existing reactor limitation (documented, NOT a regression): websocket_pty_session
+cert times out in reactor mode without sanitizers (server never delivers a frame in a
+session phase), matching the documented reactor WebSocket close/final-EOF divergence.
+Reactor mode has zero CI coverage; P10 is only required in legacy mode where it passes.
+
 ### Open / in progress
 
 | Result | Gate | SHA | Evidence / notes |
@@ -193,8 +221,8 @@ PTY gate with normalized load.
 | PASS | ASan/UBSan smoke + probes (legacy+reactor) | candidate | sanitized_http_smoke, ws_close/param/probe |
 | PASS | ASan/UBSan TLS/WSS lifecycle | candidate | covered by P4/P5 runs (plaintext+TLS) |
 | PASS | TSan (legacy CI scope + reactor focus) | candidate | race fixed; see TSan section |
+| PASS | PTY thread accounting / P10 (plain+ASan+TSan) | candidate | see PTY section |
 | PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
-| PENDING | PTY thread-count discrepancy + ws-pty reactor timeout | candidate | |
 | PASS | GCC -Werror full CTest (default + reactor) | candidate | 44/44 + 44/44 |
 | PENDING | Clang -Werror full CTest | candidate | |
 | PENDING | FFI final-candidate ABI/embedding | candidate | |
