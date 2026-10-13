@@ -61,6 +61,23 @@ Evidence        - path to detailed log (kept out of /tmp when persistent)
 | PASS | run_reactor_postbody.py (legacy + reactor) | 8374423 | this session, empty stderr, exit 0 |
 | PASS | run_reactor_explicit_stop.py (legacy + reactor) | 8374423 | this session, empty stderr, exit 0 |
 
+### Sanitized networking (ASan/UBSan, candidate SHA 8374423 production tree;
+`STRUT_CXXFLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -O1`,
+`STRUT_LDFLAGS=-fsanitize=address,undefined`, `ASAN_OPTIONS=detect_leaks=0:halt_on_error=1`,
+`UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`)
+
+Generated-server instrumentation independently confirmed: `nm` reports 32 `__asan`
+symbols and `ldd` resolves `libasan.so.8` in an -O1-instrumented fixture built by the
+candidate compiler with the same env flags (so the sanitizers reach the generated
+C++ server, not only the compiler).
+
+| Result | Test | Mode | Compiler | Exit | Evidence |
+|---|---|---|---|---|---|
+| PASS | run_reactor_postbody.py | legacy | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_postbody_20261013_163249.log |
+| PASS | run_reactor_postbody.py | reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_postbody_20261013_163249.log |
+| PASS | run_reactor_explicit_stop.py | legacy | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_explicit_stop_20261013_163344.log |
+| PASS | run_reactor_explicit_stop.py | reactor | /home/nick/relgcc/strut | 0 | logs/asan_ubsan_explicit_stop_20261013_163344.log |
+
 ### Historical results (NOT candidate evidence)
 
 The following were recorded in prior sessions/commits and must not be
@@ -83,8 +100,8 @@ automatically attributed to the candidate SHA:
 
 | Result | Gate | SHA | Evidence / notes |
 |---|---|---|---|
-| PENDING | ASan/UBSan partial-body + explicit-stop (legacy+reactor) | candidate | |
-| PENDING | ASan/UBSan P4/P5 (legacy+reactor) | candidate | |
+| PENDING | ASan/UBSan partial-body + explicit-stop (legacy+reactor) | candidate | DONE as 4/4 PASS (2026-10-13) |
+| PENDING | ASan/UBSan P4/P5 (legacy+reactor) | candidate | next |
 | PENDING | ASan/UBSan TLS/WSS lifecycle | candidate | where supported |
 | PENDING | TSan | candidate | |
 | PENDING | PTY thread-count discrepancy | candidate | |

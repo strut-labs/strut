@@ -1,0 +1,2 @@
+[legacy] partial-body drained + full response + exit=0 -> PASS
+[reactor] partial-body drained + full response + exit=0 -> PASS

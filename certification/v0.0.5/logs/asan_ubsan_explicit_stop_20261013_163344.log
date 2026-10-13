@@ -1,0 +1,2 @@
+[legacy] shutdown-200+EOF, partial-first-EOF, exit0 -> PASS
+[reactor] shutdown-200+EOF, partial-first-EOF, exit0 -> PASS
