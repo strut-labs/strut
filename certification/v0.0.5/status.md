@@ -486,6 +486,19 @@ partial-body. The sanitized explicit-stop stage remains a visible non-blocking W
 Defect C (the codegen handler self-capture exit leak, pending a capture/ownership design
 decision).
 
+**Five-platform CI (fix pass 2).** Run **38451838048** on SHA **ec36b2a**: all five jobs
+PASS. linux-x64-gcc reactor stages all PASS — "Certify reactor HTTP/WebSocket runtime"
+(now includes the P10 WebSocket-PTY certificate: 32 MiB flood + 1000 sequential + 32
+concurrent + TLS, and the saturation accounting regression), "Certify sanitized reactor
+HTTP runtime" (P10 + P4 + P5 under ASan/UBSan detect_leaks=1), "Certify reactor HTTP
+concurrency (TSan)" (P10 + P4 + P5), and the non-blocking explicit-stop WARN (Defect C).
+macOS Test now PASS after making the saturation regression retry-robust (macOS reactor runs
+the poll backend); Windows reactor saturation is gated off (recorded as an unverified
+Windows poll-backend limitation, non-blocking).
+
+Local wall on the fix (GCC 45/45 + 45/45 reactor; Clang 41/41 + 41/41; regression 307/307 +
+307/307; P4/P5/P10 + saturation both modes; P10 reactor under ASan/UBSan detect_leaks=1).
+
 ## Release assessment (2026-10-13)
 
 Candidate production SHA (last production-touching commit): `0b0e344`, with the
