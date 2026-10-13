@@ -183,6 +183,7 @@ jobs:
           python3 dogfood/ws_drain_probes/run_reactor_postbody.py
           python3 dogfood/ws_drain_probes/run_reactor_explicit_stop.py
           python3 dogfood/reactor_saturation_certification.py
+          python3 dogfood/http_worker_certification.py build/strut
           python3 dogfood/http_websocket_certification.py build/strut
           python3 dogfood/websocket_runtime_certification.py build/strut
           python3 dogfood/websocket_pty_session_certification.py build/strut
