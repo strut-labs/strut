@@ -424,6 +424,68 @@ acceptable de-scoped limitations. CI reactor stages added at fc3d780 deliberatel
 these two scenarios until the fixes land (a failing required test must not be silently
 skipped; equally, a knowingly-failing stage should not be committed as a required pass).
 
+## Reactor fix pass 2 (2026-10-13, reviewer-authorised)
+
+Following the reviewer's `fd9d45a` review, the following were investigated and corrected.
+
+**Priority 1 — rejection-only in_flight accounting (FIXED, 81e18c2).**
+The Defect-B reject connection was inserted into the connection map without
+incrementing `run->in_flight`, but `reactor_close` decremented it unconditionally
+(`if(in_flight>0)--in_flight`) — so completing a rejected 503 wrongly freed an admitted
+slot, allowing the reactor to exceed `max_connections` and corrupting drain accounting.
+Fix: explicit ownership flag `reactor_connection.in_flight_counted` (set only where
+`++run->in_flight` happens); `reactor_close` decrements only when counted. Added an
+independent pending-rejection bound (`reactor_state.rejections`, capped at
+`max_connections`; over-bound saturated sockets closed immediately).
+Regression `dogfood/reactor_saturation_certification.py` (CTest `strut_reactor_saturation`
++ reactor CI): verifies r3=503, r4=503 (does NOT free a slot), r5=200 after releasing one
+slot, slow-reader reject does not stall the reactor, 40 cycles do not leak fd/threads.
+PROVEN to FAIL on the pre-fix compiler (reactor r4=200) and PASS on the fix, both modes.
+
+**Priority 2 — bounded output for oversized individual writes (VERIFIED, no change).**
+`strut_websocket::write_data` rejects a payload larger than the configured
+`max_frame`/`max_message` before it reaches `reactor_push_output`, so a single append is
+bounded by the configured max message + framing header; the output queue is bounded by
+`out_limit + max_message`. Empirically: a reactor server with 4 MiB message limit wrote a
+single 1.5 MiB message (> the 1 MiB watermark) completely and cleanly; an 8 MiB write was
+rejected with a WebSocketError (close frame). Small repeated writes / slow reader /
+cancellation are covered by the existing P4/P5/P10 suites.
+
+**Priority 3 — reactor P10 32-concurrent-session failure (FIXED, 7b14157).**
+Root cause (demonstrated, not assumed): an abrupt WebSocket TCP close (client FIN without a
+WS close frame) was not treated as a close. The WebSocket readable path called
+`reactor_request_feed`, which set `body_closed` on EOF but never closed the connection;
+`interest()` does not request `EPOLLRDHUP`, so `event.closed` stays false for a half-close
+and the fd remains level-triggered readable -> the reactor busy-spins and the connection is
+never reaped (its `in_flight` slot + map entry leak). Leaked slots accumulated over the
+P10 session phases and exhausted `max_connections` (32) at the concurrent phase, which then
+returned 503. Fix: `reactor_request_feed` returns whether it saw peer EOF, and the event
+loop closes websocket-mode connections on that EOF (request_stream EOF unchanged).
+Verified: abrupt WS connect/close cycles no longer leak a slot; reactor P10 PASSES fully
+(1000 sequential + 32 concurrent + TLS, resources return exactly); P4/P5 both modes PASS.
+
+**Priority 4 — retired-handler lifecycle (PARTIAL fix, 1ba918b; residual reported).**
+Root cause: reactor `force_shutdown_locked` zeroed `run->in_flight` in its reactor branch,
+so `wait_for_drain`/`publish_lifecycle` reported the server fully drained (running()=false)
+the instant the shutdown deadline expired, even while a dispatched handler was still
+retiring. Legacy's force path leaves `in_flight` intact and lets the retiring worker
+publish 'stopped' later, so `running()` stays true during drain. Fix: removed the blanket
+`run->in_flight=0`; `in_flight` now decrements via `reactor_close` as force-cancelled
+connections retire, so `running()` reflects true drain state (matches legacy).
+Residual (architectural, reported for a decision): the fixture then calls `listener.join()`
+and expects `running()` true afterwards. Legacy's `join` returns while a detached worker
+retires; the reactor's event loop is the only response writer and must run to full drain, so
+its `join` returns with `running()` false. The reactor cannot mirror legacy's early join
+without keeping the event loop running detached; classified as a reactor lifecycle-semantics
+difference, not silently waived or test-inverted.
+
+**Priority 6 — strict CI restored for the fixed scenarios.**
+Reactor CI (linux-x64-gcc) now makes mandatory: the 32 MiB WebSocket flood (via the P10
+certificate, plain + ASan/UBSan + TSan), the saturation accounting regression, P4/P5, and
+partial-body. The sanitized explicit-stop stage remains a visible non-blocking WARN only for
+Defect C (the codegen handler self-capture exit leak, pending a capture/ownership design
+decision).
+
 ## Release assessment (2026-10-13)
 
 Candidate production SHA (last production-touching commit): `0b0e344`, with the

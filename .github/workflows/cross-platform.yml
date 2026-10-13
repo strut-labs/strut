@@ -185,6 +185,7 @@ jobs:
           python3 dogfood/reactor_saturation_certification.py
           python3 dogfood/http_websocket_certification.py build/strut
           python3 dogfood/websocket_runtime_certification.py build/strut
+          python3 dogfood/websocket_pty_session_certification.py build/strut
       - name: Certify sanitized reactor HTTP runtime
         if: matrix.name == 'linux-x64-gcc'
         env:
@@ -198,6 +199,7 @@ jobs:
           python3 dogfood/ws_drain_probes/run_reactor_postbody.py
           python3 dogfood/http_websocket_certification.py build/strut
           python3 dogfood/websocket_runtime_certification.py build/strut
+          python3 dogfood/websocket_pty_session_certification.py build/strut
       - name: Report sanitized reactor explicit-stop (known Defect C)
         if: matrix.name == 'linux-x64-gcc'
         continue-on-error: true
@@ -224,6 +226,7 @@ jobs:
           python3 dogfood/ws_drain_probes/run_reactor_explicit_stop.py
           python3 dogfood/http_websocket_certification.py build/strut
           python3 dogfood/websocket_runtime_certification.py build/strut
+          python3 dogfood/websocket_pty_session_certification.py build/strut
       - name: Certify sanitized generated HTTP runtime
         if: matrix.name == 'linux-x64-gcc'
         env:
