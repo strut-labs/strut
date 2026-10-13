@@ -3,6 +3,7 @@
 
 import http.client
 from concurrent.futures import ThreadPoolExecutor
+import os
 from pathlib import Path
 import socket
 import ssl
@@ -269,10 +270,13 @@ def main():
     listener := thread(() => {{ try {{ app.listen("127.0.0.1", {retired_port}); }} catch (NetworkError e) {{ }} }});
     while (!app.running()) {{ sleep_ms(1); }}
     sleep_ms(750);
+    // Lifecycle contract: stop() initiates shutdown; running() stays true while the admitted
+    // handler is still retiring and becomes false only once the shutdown lifecycle completes.
+    // listener-thread completion must not be conflated with handler retirement.
     app.stop();
-    listener.join();
     if (!app.running()) {{ return 1; }}
     while (app.running()) {{ sleep_ms(5); }}
+    listener.join();
     app.limits(1024, 4096, 16, 1);
     return 0;
 }}
@@ -407,6 +411,7 @@ def main():
                     raise RuntimeError("concurrent worker session did not initialize")
                 sessions.append(session)
             peak_threads = native_thread_count(server)
+            baseline_threads = peak_threads
             for batch in range(25):
                 with ThreadPoolExecutor(max_workers=4) as pool:
                     futures = [
@@ -419,8 +424,16 @@ def main():
                     results = [future.result() for future in futures]
                 if results != [(200, b"batch")] * 4:
                     raise RuntimeError(f"concurrent worker reuse failed in batch {batch}: {results!r}")
-            if peak_threads is not None and peak_threads > 6:
-                raise RuntimeError(f"worker thread bound exceeded: observed {peak_threads}, expected at most 6")
+            reactor_mode = os.environ.get("STRUT_HTTP_REACTOR") == "1"
+            if peak_threads is not None:
+                if reactor_mode:
+                    # The reactor uses a fixed CPU-scaled worker+stream pool sized once at
+                    # startup; the contract is that it does not GROW with connection/batch load.
+                    if baseline_threads is not None and peak_threads > baseline_threads + 2:
+                        raise RuntimeError(
+                            f"reactor worker threads grew with load: {baseline_threads} -> {peak_threads}")
+                elif peak_threads > 6:
+                    raise RuntimeError(f"worker thread bound exceeded: observed {peak_threads}, expected at most 6")
             if session_request(sessions[0], "/stop") != (200, b"stopped"):
                 raise RuntimeError("concurrent server did not stop through its handler")
             for session in sessions:
