@@ -299,7 +299,9 @@ separate historical evidence and is NOT claimed to have been rerun on the final 
 | PASS | Reactor WS final-close parity | candidate | ws_close_probe eof_after_close=eof both modes |
 | PASS | Staged/relocated-prefix install | candidate | consumer add(2,3)=5, no dev paths |
 | PASS | Permanent reactor CI (plain+ASan+TSan) | 2c91435 | run 38388562113, linux-x64-gcc reactor stages green |
-| OPEN | Reactor defects A/B/C (WS-flood watermark deadlock, saturation 503, exit-time state retention) | candidate | scope review below; NOT fixed (report-first) |
+| FIXED | Reactor Defect A (WS output-watermark deadlock) | 465910f | 32 MiB reactor flood 100%; P4/P5/partial-body/explicit-stop both modes PASS |
+| FIXED | Reactor Defect B (saturation 503) | b647e7d | reactor 503 matches legacy; slow-reader bounded; legacy worker cert PASS |
+| OPEN | Defect C (codegen handler self-capture cycle, exit-time) | b647e7d | conclusively classified; needs capture/ownership design decision |
 | PENDING | Docs reconciliation (README/CHANGELOG/install notes; reactor limitations) | candidate | deferred until scope decision; RELEASE_NOTES stays Unreleased |
 | PENDING | Release decision (tag/publish) | candidate | requires explicit user approval |
 
@@ -309,69 +311,76 @@ separate historical evidence and is NOT claimed to have been rerun on the final 
   They demonstrate the original admission race and its correction but do not provide
   deterministic scheduling coverage of subsequent live-runtime changes. Current-runtime
   integration suites provide separate executable coverage. Not restarted for v0.0.5.
-- Reactor HTTP/WebSocket: dedicated permanent CI stages added at fc3d780 and reorganized
-  at 2c91435 (linux-x64-gcc). Verified GREEN in run 38388562113 (SHA 2c91435):
-  plain reactor runtime (routing/param/close/partial-body/explicit-stop/P4/P5), sanitized
-  reactor (postbody+P4+P5), and reactor TSan all PASS. The sanitized explicit-stop is wired
-  as a visible non-blocking report stage (WARN emitted on Defect C) until the scope decision.
-  Three reactor/exit defects (A/B/C) remain documented in the reactor scope review below.
+- Reactor HTTP/WebSocket: dedicated permanent CI stages at fc3d780/2c91435 (linux-x64-gcc),
+  verified green in run 38388562113. Defects A (WS-flood deadlock) and B (saturation 503)
+  are FIXED (465910f, b647e7d). Defect C (codegen handler self-capture cycle) is conclusively
+  classified and pending a capture/ownership design decision (see the reactor scope review).
 
-## Reactor scope review (2026-10-13)
+## Reactor scope review — authorise-and-fix pass (2026-10-13)
 
-Scope decision under review. Two reactor-only behaviours diverge from the legacy/public
-contract and are NOT fixed in this pass (report-first, per release-review instruction).
+The reviewer authorised fixing Defects A, B and C. Status:
 
-**Defect A — reactor WebSocket output-watermark deadlock (P10 flood).**
-- Contract: public docs (websitesource docs/websockets.html) promise WebSocket-PTY
-  composition on the built-in server; HTTP_REACTOR_DESIGN.md says the reactor preserves
-  the public API unchanged and all certified scenarios.
-- Observed: reactor P10 WebSocket-PTY cert times out reading the 32 MiB flood. Isolated
-  repro: reactor 32 MiB WS write stalls at ~10,981,376 bytes (32%) and the server hangs;
-  8 MiB passes (drain keeps up within the read window). Root cause: `reactor_push_output`
-  blocks the WS writer in `conn->out_cv.wait` when `out_stream.size() > out_limit` (1 MiB),
-  but `reactor_drain_stream` never calls `conn->out_cv.notify_all()` after draining, so a
-  producer that saturates the 1 MiB watermark permanently blocks. Pre-existing at the
-  candidate start SHA 0a27604 (not introduced by the sanitizer fixes 4b5e171/65eefb1).
-- Recommendation: this is a supported-behaviour correctness defect. A minimal fix (notify
-  `out_cv` after draining) is proposed once the scope decision approves it.
+**Defect A — reactor WebSocket output-watermark deadlock. FIXED (commit 465910f).**
+- Root cause (confirmed in isolation): `reactor_push_output` blocks the WS writer in
+  `conn->out_cv.wait` while `out_stream.size() > out_limit` (1 MiB), but
+  `reactor_drain_stream` drained bytes without notifying `out_cv`, so a producer that
+  saturated the watermark deadlocked permanently (32 MiB flood stalled at ~10.98 MiB).
+- Fix: `conn->out_cv.notify_all()` in `reactor_drain_stream` after freeing capacity, and
+  the wait predicate tightened to `>=` so the buffer cannot exceed the limit by one write.
+  Error/close/interrupt paths already notified. Pre-existing at 0a27604.
+- Verified: reactor 32 MiB WS flood delivers 100% (payload + close frame, 8193 frames,
+  clean exit, both server modes); P4/P5 and partial-body/explicit-stop unchanged (both modes).
 
-**Defect B — reactor saturation drops the connection instead of 503.**
-- Contract: public docs (docs/http-server.html) explicitly state "Saturated plaintext
-  admission receives 503."
-- Observed: with `app.limits(...,2)` and two blocked connections, the third reactor
-  connection is closed with an EMPTY response (`b''`); legacy writes HTTP/1.1 503.
-  Root cause: reactor accept loop does `if(saturated){socket.close();continue;}` — no
-  503 reject path, unlike legacy `run_server`'s `reject(...) -> send_error(503)`.
-  Pre-existing at candidate start SHA 0a27604.
-- Recommendation: supported-behaviour correctness defect (explicit documented contract).
-  Minimal fix (write 503 then close on reactor saturation) proposed pending scope approval.
+**Defect B — reactor saturation returned no response. FIXED (commit b647e7d).**
+- Root cause: reactor accept loop `if(saturated){socket.close();continue;}` closed the
+  saturated connection with no response; public docs promise "Saturated plaintext admission
+  receives 503" and legacy honours it. Pre-existing at 0a27604.
+- Fix: `reactor_reject_saturated` builds a throwaway `reactor_connection` carrying the 503
+  head/body, arms writable readiness, and lets the ordinary nonblocking flush path drain it
+  (partial-write/EAGAIN handling) and close on `close_after_write`. No application-worker
+  slot; the accept loop never blocks on the peer; a non-reading peer is retired by the
+  deadline scan (new `rejection` flag included in the expired-connection scan).
+- Verified: reactor returns the full HTTP/1.1 503 (matches legacy); the reactor stays
+  responsive under a slow-reader-rejecting peer (fresh connections still served after a
+  slot frees). legacy worker cert still PASS; reactor worker cert now passes the saturation
+  step.
 
-**Defect C — generated-server exit-time state retention (explicit-stop path), found by the
-new sanitized reactor CI stage (run 38384978723, linux-x64-gcc).**
-- Contract: a leak-free generated server at process exit is the implicit expectation of
-  `detect_leaks=1` sanitized certification (the CI sanitized stage enforces it).
-- Observed: with `ASAN_OPTIONS=detect_leaks=1` (default quarantine), the explicit-stop
-  server leaks 2508 B / 13 allocations (minimal /stop) and 5024 B / 24 allocations
-  (two-route driver); LSan reports ALL of it as indirect with no direct root = a
-  shared_ptr cycle retained at exit. Both legacy and reactor modes leak identically.
-  The postbody/natural-exit (max_requests=1) server is clean, and P4/P5/P10 resource
-  counts return exactly (no runtime growth).
-- Root cause: `frame.http_server` holds `s_` (`shared_ptr<state>`), and `state->current`
-  is the `run_state` whose worker/reactor lambdas capture `shared_ptr<state> s` and
-  `shared_ptr<run_state> run`; at shutdown the worker threads are detached, so the
-  `run->…->s` cycle keeps the whole server-state tree alive after `main` returns.
-  Exit-time-only; no per-request or long-run leak.
-- Evidence: /tmp/opencode/stopexit_out and exstop_detleaks.log (local repro), CI step 21
-  log run 38384978723.
-- Prior local discrete evidence note: the drain-driver ASan PASS rows earlier in the
-  sanitized section used `ASAN_OPTIONS=detect_leaks=0`; they did not assert the exit
-  leak. Under `detect_leaks=1`, explicit-stop is FAIL and postbody is PASS. This is now
-  stated exactly; the sanitized networking table is superseded by this finding for the
-  explicit-stop row.
-- Recommendation: supported-behaviour correctness defect (leak-free exit). Minimal fix
-  (break the worker-captured cycle / release `s_->current` on shutdown) proposed once the
-  scope decision approves it. Until fixed, the sanitized-reactor CI stage must be treated
-  as RED for the explicit-stop row; it must not be silently skipped or weakened.
+**Defect C — generated-server exit-time handler self-capture cycle. ROOT CAUSE CONCLUSIVELY
+ESTABLISHED (not fixed; needs a capture/ownership design decision).**
+- Corrected diagnosis (supersedes the earlier detached-worker hypothesis): the leak is a
+  **strong shared_ptr reference cycle created by the C++ codegen's `[=]` capture of the
+  server handle**. A route handler that references `app` (e.g. `app.stop()`) is emitted as
+  `[=](...){... app ...}` (src/codegen.cpp strut_capture_spec => "[=]"), capturing a COPY
+  of `strut_http_server app`, which owns `s_` (shared_ptr<state>). `add_route` stores that
+  handler in `s_->routes`. The result is `state -> routes -> handler-lambda -> captured
+  app copy -> s_ -> state`, an unbreakable strong cycle; at process exit the whole server
+  state tree (state/run_state/connections/listener/routes) is unreachable-but-retained.
+- Proof (controlled experiment, legacy and reactor identical):
+  - handler that references `app` (`app.get("/", r => { app.stop(); return ...; })`) -> LEAK.
+  - handler that does NOT reference `app` (`app.get("/", r => http_text("ok"))`) -> CLEAN.
+  - natural max_requests exit with an app-referencing handler -> LEAK; without -> CLEAN.
+  So it is not worker detachment, not shutdown timing, and not `s->current` retention
+  (both were tested: joining workers and resetting `s->current`/routes do NOT fix it).
+- Bounded: exit-time only, no runtime growth (P4/P5/P10 resource counts return exactly);
+  magnitude ~2.5-5 KB per process (one cycle over the fixed route set).
+- Why a small runtime patch is insufficient: the cycle is closed by the closure's captured
+  `shared_ptr<state>`; state cannot release a closure that strongly holds it. Clearing
+  `state.routes` at shutdown would break restart (the worker cert registers routes once and
+  restarts `listen` many times, relying on routes persisting), so it is not a valid fix.
+- Recommended fix (design decision — needs approval): make the emitted route/handler
+  closures not own the server state strongly, e.g. capture the server handle by a weak
+  reference (codegen change), or route the handler storage through a weakly-owned route
+  table that the `http_server` handle owns. This is a capture/ownership change in
+  `src/codegen.cpp`/`src/generated_runtime.cpp` (and needs the same validation wall).
+  It is NOT implemented in this pass because it is a substantial design decision and the
+  reviewer asked to be consulted for such cases rather than risk destabilising the release
+  candidate.
+- Regression status: the sanitized explicit-stop CI stage remains a visible NON-BLOCKING
+  report (WARN) — it is not marked passing and not silently skipped. It cannot become a
+  mandatory gate until C is fixed by the approved design.
+
+Two prior hypotheses for C (a permanent cycle vs a detached-worker shutdown race) were both
+disproved by the controlled experiment above; the true cause is the codegen capture cycle.
 
 Both are classified as **defects within the intended v0.0.5 reactor contract**, not as
 acceptable de-scoped limitations. CI reactor stages added at fc3d780 deliberately exclude
