@@ -4,14 +4,14 @@ Final gate list. All items must be evidenced from the FINAL implementation SHA; 
 inferred from an earlier state or a different platform's results.
 
 ## ABI / compatibility
-- [ ] `include/strut/embed.h` compiles standalone as C11 and C++20 (source-tree AND staged-prefix).
-- [ ] `strut_embed_value` layout measured and verified against the five-platform C# mirror
-      (size 72 / align 8 / kind@0 i@8 s@32 retained@48 cb@56 on x86-64 Linux).
-- [ ] Exported symbols present and unmangled in the installed library (Linux; macOS/Windows via
-      consumer evidence + symbol lists where practical).
-- [ ] No retrospective v0.0.4 binary-compat guarantee implied; future ABI versioning policy
+- [x] `include/strut/embed.h` compiles standalone as C11 and C++20 (source-tree; staged-prefix).
+- [x] `strut_embed_value` layout measured and verified: size 72 / align 8 / kind@0 i@8 s@32
+      retained@48 cb@56 on x86-64 Linux (matches the five-platform C# mirror).
+- [x] Exported symbols present and unmangled in the installed library (Linux: 9 strut_embed_*
+      exports; macOS/Windows via consumer evidence + symbol lists where practical).
+- [x] No retrospective v0.0.4 binary-compat guarantee implied; future ABI versioning policy
       documented.
-- [ ] `FFI_ABI_AUDIT.md` / `FFI_HANDOVER.md` consistent and accurate.
+- [x] `FFI_ABI_AUDIT.md` / `FFI_HANDOVER.md` consistent and accurate.
 
 ## Local walls
 - [x] GCC -Werror: full CTest PASS 44/44 (default and reactor).
@@ -22,8 +22,9 @@ inferred from an earlier state or a different platform's results.
 - [x] Regressions: default 307/307 AND reactor 307/307 (GCC); 307/307 with Clang.
 
 ## FFI
-- [ ] FFI-9 five-platform consumer execution 25/25 (run 38069818109 evidence preserved).
-- [ ] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK; skips not counted as PASS.
+- [ ] FFI-9 five-platform consumer execution 25/25 (historical run 38069818109 evidence preserved;
+      to be re-confirmed by the final five-platform CI matrix on the candidate SHA).
+- [x] FFI-10 configured Linux-local 4/4 with the Nift C ABI 1.3 SDK; skips not counted as PASS.
 
 ## Sanitized networking (ASan/UBSan, instrumented GENERATED servers via STRUT_CXXFLAGS/LDFLAGS)
 - [x] Reusable harness dogfood/sanitized_http_smoke.py (dynamic port, temp fixture, signal-import

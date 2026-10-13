@@ -224,6 +224,18 @@ Reactor mode has zero CI coverage; P10 is only required in legacy mode where it 
 | PASS | Independent regression suite reactor | /home/nick/relgcc/strut | 0 | 307/307 |
 | PASS | Independent regression suite (Clang) | /tmp/opencode/clangbuild/strut | 0 | 307/307 |
 
+### FFI / embedding (final candidate after reactor fixes)
+
+- `include/strut/embed.h` compiles standalone as C11 and C++20 (source tree).
+- `strut_embed_value` layout measured: sizeof=72, alignof=8, kind@0 i@8 s@32 retained@48
+  cb_fn@56 cb_ctx@64 — matches FFI_ABI_AUDIT.md / FFI-9 C# mirror.
+- Exported symbols present and unmangled in libstrut_embed.so (9 strut_embed_* exports).
+- FFI/embed CTest suite 28/28 PASS (final GCC candidate), including ffi_abi_identity,
+  aggregate, pointer, callback, error, retained, node/csharp/python/go consumers, embed_host.
+- FFI-10 Nift interop 4/4 PASS (strut_ffi_nift_strut, from_strut, to_strut, bytes_rt).
+- FFI-9 five-platform 25/25 remains historical evidence (run 38069818109, SHA 37dd55a),
+  to be re-confirmed by the final five-platform CI matrix on the candidate SHA.
+
 ### Open / in progress
 
 | Result | Gate | SHA | Evidence / notes |
@@ -237,8 +249,9 @@ Reactor mode has zero CI coverage; P10 is only required in legacy mode where it 
 | PASS | GCC -Werror CTest (default+reactor) | candidate | 44/44 + 44/44 (final) |
 | PASS | Clang -Werror CTest (default+reactor) | candidate | 40/40 + 40/40 (final) |
 | PASS | Regression suite (default+reactor+Clang) | candidate | 307/307 x3 |
+| PASS | FFI-10 Nift Linux-local (final candidate) | candidate | 4/4 + FFI/embed 28/28, ABI 72/8 verified |
 | PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
-| PENDING | FFI final-candidate ABI/embedding | candidate | |
+| PENDING | FFI-9 five-platform matrix on candidate SHA | candidate | re-confirm via final CI matrix |
 | PENDING | Five-platform CI matrix | candidate | |
 
 ## Residual limitations (preserved)
