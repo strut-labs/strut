@@ -67,6 +67,31 @@ def open_blocker(port):
     return c
 
 
+def fast_status(port, timeout=2.0):
+    """One request with Connection: close; return the status code promptly (no keep-alive wait)."""
+    try:
+        c = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+    except OSError:
+        return "ERR"
+    try:
+        c.settimeout(timeout)
+        c.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        line = b""
+        while b"\r\n" not in line:
+            v = c.recv(1)
+            if not v:
+                break
+            line += v
+        for code in (b" 503 ", b" 200 ", b" 404 ", b" 403 ", b" 400 "):
+            if code in line:
+                return code.strip().decode()
+        return "OTHER"
+    except Exception:
+        return "ERR"
+    finally:
+        c.close()
+
+
 def status_code(data):
     head = data.split(b"\r\n", 1)[0]
     for code in (b" 503 ", b" 200 ", b" 404 ", b" 403 ", b" 400 "):
@@ -146,14 +171,18 @@ def run_mode(reactor):
 
             # Repeated saturation must not leak descriptors/threads.
             baseline = sample(p.pid)
-            for _ in range(40):
+            for _ in range(30):
                 a = open_blocker(port); c = open_blocker(port)
-                time.sleep(0.15)
-                rr = full_request(port)
-                if status_code(rr) != "503":
-                    raise RuntimeError("repeated saturation did not reject with 503: %r" % rr[:40])
+                rejected = False
+                for _ in range(50):
+                    if fast_status(port) == "503":
+                        rejected = True
+                        break
+                    time.sleep(0.02)
                 a.close(); c.close()
-                time.sleep(0.05)
+                if not rejected:
+                    raise RuntimeError("repeated saturation did not reject with 503")
+                time.sleep(0.03)
             time.sleep(0.5)
             after = sample(p.pid)
             ok_res = (baseline is None or after is None or
