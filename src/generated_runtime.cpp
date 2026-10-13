@@ -1424,7 +1424,7 @@ private:
         SSL* tls=nullptr;bool tls_handshake=false,tls_want_write=false;
 #endif
         std::chrono::steady_clock::time_point deadline;bool deadline_set=false;reactor_phase phase=reactor_phase::reading;
-        std::shared_ptr<strut_cancellation_source> cancellation;bool is_stream=false,stream_counted=false;
+        std::shared_ptr<strut_cancellation_source> cancellation;bool is_stream=false,stream_counted=false,rejection=false;
     };
     struct reactor_state{std::mutex mutex;std::condition_variable stream_cv;std::unordered_map<strut_socket_handle,std::shared_ptr<reactor_connection>> connections;std::deque<std::shared_ptr<reactor_connection>> ready,stream_ready,completed;std::size_t in_flight=0,streaming=0;std::uint64_t next_id=1;};
     struct run_state{std::mutex mutex;std::condition_variable work_cv,drain_cv;std::deque<std::shared_ptr<connection>> queue,connections;std::shared_ptr<connection> rejecting;strut_tcp_listener listener;std::size_t in_flight=0;bool accepting=true,cancellation_requested=false,startup_complete=false,was_running=false,workers_stopping=false,forced=false,deadline_set=false;std::chrono::steady_clock::time_point deadline;std::int32_t shutdown_timeout_ms=0;std::shared_ptr<strut_reactor> reactor;std::shared_ptr<reactor_state> reactor_data;bool reactor_mode=false;void* tls_ctx=nullptr;};
@@ -1545,6 +1545,22 @@ private:
         bool ok=false;try{ok=reactor_build_response(conn,response,true);}catch(...){ok=false;}
         if(!ok)reactor_hard_error(conn,status,message);
         conn->phase=reactor_phase::writing;const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->modify(handle,false,true);
+    }
+    static void reactor_reject_saturated(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,strut_tcp_socket& socket){
+        // Bounded nonblocking saturation rejection: build a throwaway reactor_connection carrying
+        // the 503 head/body, arm writable readiness, and let reactor_flush/reactor_finish_write
+        // drain it (with partial-write/EAGAIN handling) and close on close_after_write. No
+        // application-worker slot is consumed and the accept loop never blocks on the peer. A peer
+        // that refuses to read is retired by the bounded rejection deadline (rejection flag; see the
+        // expired-connection scan), never stalling the reactor loop.
+        auto conn=std::make_shared<reactor_connection>(std::move(socket));
+        conn->close_after_write=true;conn->keep_alive=false;conn->rejection=true;
+        conn->deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(2000);conn->deadline_set=true;
+        {std::lock_guard<std::mutex> lock(run->mutex);if(run->reactor_data){conn->id=run->reactor_data->next_id++;run->reactor_data->connections.emplace(conn->socket.native_handle(),conn);}}
+        if(conn->socket.native_handle()!=strut_invalid_socket)reactor->add(conn->socket.native_handle(),false,true);
+        // reactor_send_status internally arms writable via modify(); add() above must precede it
+        // because modify() on an unregistered fd would fail (EPOLL_CTL_MOD -> ENOENT).
+        reactor_send_status(run,reactor,conn,503,"Service Unavailable");
     }
     static int reactor_accumulate_chunked(const std::string& in,std::size_t start,std::size_t max_body,std::string& body,std::size_t& consumed){std::size_t pos=start;for(;;){auto eol=in.find("\r\n",pos);if(eol==std::string::npos)return 0;const std::string line=in.substr(pos,eol-pos);std::size_t size=0,value=0,digits=0,p=0;while(p<line.size()&&std::isxdigit(static_cast<unsigned char>(line[p]))){const unsigned char c=static_cast<unsigned char>(line[p++]);const std::size_t d=c>='0'&&c<='9'?c-'0':static_cast<std::size_t>(std::tolower(c)-'a'+10);if(value>(std::numeric_limits<std::size_t>::max()-d)/16)return -1;value=value*16+d;++digits;}if(digits==0)return -1;size=value;while(p<line.size()){if(line[p++]!=';')return -1;const std::size_t name=p;while(p<line.size()&&strut_http_token_char(static_cast<unsigned char>(line[p])))++p;if(name==p)return -1;if(p<line.size()&&line[p]=='='){++p;if(p<line.size()&&line[p]=='"'){++p;bool closed=false;while(p<line.size()){const unsigned char c=static_cast<unsigned char>(line[p++]);if(c=='"'){closed=true;break;}if(c=='\\'){if(p>=line.size())return -1;++p;}}if(!closed)return -1;}else{const std::size_t token=p;while(p<line.size()&&strut_http_token_char(static_cast<unsigned char>(line[p])))++p;if(token==p)return -1;}}}pos=eol+2;if(size>max_body||body.size()>max_body-size)return -1;if(size==0){auto end=in.find("\r\n",pos);if(end==std::string::npos)return 0;if(end!=pos)return -1;consumed=end+2;return 1;}if(in.size()<pos+size+2)return 0;if(in.compare(pos+size,2,"\r\n")!=0)return -1;body.append(in,pos,size);pos+=size+2;}}
     static void reactor_close(const std::shared_ptr<run_state>& run,const std::shared_ptr<strut_reactor>& reactor,const std::shared_ptr<reactor_connection>& conn){const auto handle=conn->socket.native_handle();if(handle!=strut_invalid_socket)reactor->remove(handle);{std::lock_guard<std::mutex> lock(conn->out_mutex);conn->out_closed=true;conn->out_error=true;}conn->out_cv.notify_all();{std::lock_guard<std::mutex> lock(conn->body_mutex);conn->body_closed=true;}conn->body_cv.notify_all();
@@ -1852,7 +1868,7 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
             try{reactor->wait(events,stopping?25:50);}catch(...){break;}
             for(const auto& event:events){
                 if(event.wakeup)continue;
-                if(event.handle==listener_handle){if(event.readable||event.closed){for(;;){strut_tcp_socket socket;try{socket=run->listener.try_accept();}catch(...){break;}if(!socket.is_open())break;socket.set_nonblocking(true);if(max_requests>0&&admitted>=static_cast<std::uint64_t>(max_requests)){if(!stop_requested){stop_requested=true;request_stop(run,true);}socket.close();break;}bool saturated=false;{std::lock_guard<std::mutex> lock(run->mutex);saturated=run->in_flight>=static_cast<std::size_t>(s->max_connections);}if(saturated){socket.close();continue;}auto conn=std::make_shared<reactor_connection>(std::move(socket));
+                if(event.handle==listener_handle){if(event.readable||event.closed){for(;;){strut_tcp_socket socket;try{socket=run->listener.try_accept();}catch(...){break;}if(!socket.is_open())break;socket.set_nonblocking(true);if(max_requests>0&&admitted>=static_cast<std::uint64_t>(max_requests)){if(!stop_requested){stop_requested=true;request_stop(run,true);}socket.close();break;}bool saturated=false;{std::lock_guard<std::mutex> lock(run->mutex);saturated=run->in_flight>=static_cast<std::size_t>(s->max_connections);}if(saturated){reactor_reject_saturated(run,reactor,socket);continue;}auto conn=std::make_shared<reactor_connection>(std::move(socket));
 #ifdef STRUT_USE_SERVER_TLS
                 if(run->tls_ctx){SSL* ssl=SSL_new(static_cast<SSL_CTX*>(run->tls_ctx));if(!ssl){conn->socket.close();continue;}if(SSL_set_fd(ssl,static_cast<int>(conn->socket.native_handle()))!=1){SSL_free(ssl);conn->socket.close();continue;}conn->tls=ssl;conn->tls_handshake=true;}
 #endif
@@ -1873,7 +1889,7 @@ if(conn->request_stream_fn!=nullptr||conn->websocket_mode){std::lock_guard<std::
 #endif
                 if(conn_phase==reactor_phase::writing)reactor_flush(s,run,reactor,conn);else if(conn_phase==reactor_phase::streaming||conn_phase==reactor_phase::request_stream||conn_phase==reactor_phase::websocket||conn->is_stream)reactor_drain_stream(s,run,reactor,conn);}
             }
-            const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&!c->websocket_mode&&c->phase!=reactor_phase::dispatched&&c->phase!=reactor_phase::writing&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
+            const auto now=steady_clock::now();std::vector<std::shared_ptr<reactor_connection>> expired;{std::lock_guard<std::mutex> lock(run->mutex);for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->deadline_set&&!c->websocket_mode&&(c->phase!=reactor_phase::dispatched&&(c->phase!=reactor_phase::writing||c->rejection))&&now>=c->deadline)expired.push_back(c);}}for(auto& c:expired)reactor_close(run,reactor,c);
             if(stopping){std::vector<std::shared_ptr<reactor_connection>> idle;{std::lock_guard<std::mutex> lock(run->mutex);const bool cancel=run->cancellation_requested;for(auto& kv:run->reactor_data->connections){auto& c=kv.second;if(c->phase==reactor_phase::reading||c->phase==reactor_phase::waiting_body||c->phase==reactor_phase::closing){if(cancel||c->first_request_done)idle.push_back(c);}}}for(auto& c:idle)reactor_close(run,reactor,c);}
             if(stopping&&run->reactor_data){bool drained=false;{std::lock_guard<std::mutex> lock(run->mutex);drained=run->in_flight==0;if(drained){run->workers_stopping=true;run->work_cv.notify_all();break;}}}
         }
