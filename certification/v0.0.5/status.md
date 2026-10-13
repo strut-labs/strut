@@ -212,6 +212,18 @@ cert times out in reactor mode without sanitizers (server never delivers a frame
 session phase), matching the documented reactor WebSocket close/final-EOF divergence.
 Reactor mode has zero CI coverage; P10 is only required in legacy mode where it passes.
 
+### Compiler validation (final candidate after reactor fixes)
+
+| Result | Gate | Compiler | Exit | Evidence |
+|---|---|---|---|---|
+| PASS | GCC -Werror full CTest | /home/nick/relgcc/strut | 0 | 44/44 |
+| PASS | GCC -Werror full CTest (reactor) | /home/nick/relgcc/strut | 0 | 44/44 |
+| PASS | Clang -Werror full CTest | /tmp/opencode/clangbuild/strut (clang++ 21) | 0 | 40/40 (Nift-FFI 4 tests absent: libnift_c not in Clang config) |
+| PASS | Clang -Werror full CTest (reactor) | /tmp/opencode/clangbuild/strut | 0 | 40/40 |
+| PASS | Independent regression suite default | /home/nick/relgcc/strut | 0 | 307/307 |
+| PASS | Independent regression suite reactor | /home/nick/relgcc/strut | 0 | 307/307 |
+| PASS | Independent regression suite (Clang) | /tmp/opencode/clangbuild/strut | 0 | 307/307 |
+
 ### Open / in progress
 
 | Result | Gate | SHA | Evidence / notes |
@@ -222,9 +234,10 @@ Reactor mode has zero CI coverage; P10 is only required in legacy mode where it 
 | PASS | ASan/UBSan TLS/WSS lifecycle | candidate | covered by P4/P5 runs (plaintext+TLS) |
 | PASS | TSan (legacy CI scope + reactor focus) | candidate | race fixed; see TSan section |
 | PASS | PTY thread accounting / P10 (plain+ASan+TSan) | candidate | see PTY section |
+| PASS | GCC -Werror CTest (default+reactor) | candidate | 44/44 + 44/44 (final) |
+| PASS | Clang -Werror CTest (default+reactor) | candidate | 40/40 + 40/40 (final) |
+| PASS | Regression suite (default+reactor+Clang) | candidate | 307/307 x3 |
 | PENDING | Full TLS/WSS standalone lifecycle gate | candidate | explicit dedicated row if required |
-| PASS | GCC -Werror full CTest (default + reactor) | candidate | 44/44 + 44/44 |
-| PENDING | Clang -Werror full CTest | candidate | |
 | PENDING | FFI final-candidate ABI/embedding | candidate | |
 | PENDING | Five-platform CI matrix | candidate | |
 

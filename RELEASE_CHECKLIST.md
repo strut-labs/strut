@@ -14,10 +14,12 @@ inferred from an earlier state or a different platform's results.
 - [ ] `FFI_ABI_AUDIT.md` / `FFI_HANDOVER.md` consistent and accurate.
 
 ## Local walls
-- [ ] GCC -Werror: full CTest PASS (enumerate count; current baseline 42/42).
-- [ ] Clang -Werror: full CTest PASS.
-- [ ] ASan/UBSan: applicable native CTest PASS (interpreter-hosted consumers excluded, documented).
-- [ ] Regressions: default 307/307 AND reactor (`STRUT_HTTP_REACTOR=1`) 307/307.
+- [x] GCC -Werror: full CTest PASS 44/44 (default and reactor).
+- [x] Clang -Werror: full CTest PASS 40/40 default and reactor (Nift-FFI 4 tests not
+      configured in the Clang build: libnift_c absent; GCC covers them).
+- [x] ASan/UBSan: applicable native CTest PASS (interpreter-hosted consumers excluded, documented);
+      sanitized generated-server matrix PASS (see Sanitized networking section).
+- [x] Regressions: default 307/307 AND reactor 307/307 (GCC); 307/307 with Clang.
 
 ## FFI
 - [ ] FFI-9 five-platform consumer execution 25/25 (run 38069818109 evidence preserved).
@@ -41,7 +43,10 @@ inferred from an earlier state or a different platform's results.
       (leaked OpenSSL session per reactor TLS connection). Legacy unaffected. Fixed by clearing
       websocket_job after invocation and SSL_free in reactor_close. Verified leak-free under
       detect_leaks=1; GCC -Werror CTest 44/44 default + 44/44 reactor.
-- [ ] Applicable TSan: PENDING (separate).
+- [x] Applicable TSan: PASS. Legacy CI scope (http_worker, http_client_streaming,
+      websocket_runtime, process_lifecycle, pty, pty_lifecycle, websocket_pty_session) PASS
+      under -fsanitize=thread, plus reactor-mode focus (P4/P5 + drain probes). TSan found a
+      reactor `workers_stopping` data race fixed at 65eefb1.
 
 ## WebSocket dogfood (admission-drain fix implemented; validation ongoing)
 - [x] Root cause (independent Codex review): finite-admission shutdown interrupts an admitted
