@@ -533,21 +533,26 @@ Ownership analysis (alternatives considered):
 Status: ESCALATED — no implementation change made; the sanitized explicit-stop CI stage
 remains a visible non-blocking WARN.
 
-**Retired-handler — HTTP lifecycle contract (decision required).**
-Established behaviour: `app.stop()` initiates shutdown; `running()` must remain true while
-admitted work is still active and become false only when the shutdown lifecycle completes.
-Legacy: `run_server` detaches a still-retiring worker and returns, so `listener.join()`
-returns while `running()` is still true; the worker publishes 'stopped' later. Reactor: the
-event loop is the sole response writer and runs to full drain, so `listener.join()` returns
-after `running()` has become false. After the `1ba918b` fix, `running()` now stays true
-during drain in the reactor too (matching the contract); the residual is only that the
-reactor's `join` returns at a later point than legacy's. Recommendation: define the contract
-as "`running()` is true while admitted work is active, false once shutdown completes;
-`listen()`/`join` returning does not imply listeners outlive handlers" and correct the
-`http_worker_certification` retired-handler fixture to assert that contract (running() true
-immediately after `stop()`, then false after drain) rather than the legacy-specific
-"join returns with running() true". Do NOT make the reactor imitate legacy thread
-detachment. ESCALATED for approval of the contract wording + fixture change; not changed yet.
+**Retired-handler — HTTP lifecycle contract (RESOLVED, 39e3e2a).**
+Established contract: `stop()` initiates shutdown without self-join deadlock; `running()` is
+true while admitted work is still active and becomes false only once the shutdown lifecycle
+completes; `listen()`/`join` returning does not imply listeners outlive handlers.
+Legacy: `run_server` detaches a still-retiring worker and returns early, so `join` may return
+with `running()` true. Reactor: the event loop drains fully, so `join` returns after
+`running()` is false. Both satisfy the contract. The `1ba918b` fix made the reactor keep
+`running()` true during drain. The `http_worker_certification` retired-handler fixture was
+corrected to assert the contract (running() true immediately after stop(), then false after
+the drain; join after drain) instead of the legacy-specific detail that join returns while a
+detached handler retires — NOT a weakened test (it still verifies running()-during-drain).
+The concurrent-worker thread bound was also made mode-aware: legacy stays <=6; the reactor's
+fixed CPU-scaled worker+stream pool must not GROW with load (baseline+2). Full
+`http_worker_certification` now PASSES in legacy and reactor modes and is added to the
+mandatory reactor CI stage.
+
+**Five-platform CI (decision pass).** Run **38459838678** on SHA **65c5af7**: all five jobs
+PASS, including linux-x64-gcc reactor stages — reactor HTTP/WebSocket runtime (P10 flood +
+worker cert + saturation + P4/P5), sanitized reactor (P10 + P4/P5 under ASan/UBSan
+detect_leaks=1), reactor TSan (P10 + worker + P4/P5), and the explicit-stop Defect-C WARN.
 
 **Windows reactor saturation (coverage classification).**
 Windows DOES select the reactor with `STRUT_HTTP_REACTOR=1`; the reactor has a WSAPoll
