@@ -382,6 +382,43 @@ ESTABLISHED (not fixed; needs a capture/ownership design decision).**
 Two prior hypotheses for C (a permanent cycle vs a detached-worker shutdown race) were both
 disproved by the controlled experiment above; the true cause is the codegen capture cycle.
 
+### A/B fix validation wall (commit b647e7d)
+
+| Area | Result |
+|---|---|
+| GCC -Werror CTest (default / reactor) | 44/44 / 44/44 PASS |
+| Clang -Werror CTest (default / reactor) | 40/40 / 40/40 PASS |
+| Regression suite (default / reactor) | 307/307 / 307/307 PASS |
+| P4 legacy / reactor (plain) | PASS / PASS |
+| P5 legacy / reactor (plain) | PASS / PASS |
+| P4 legacy / reactor (ASan/UBSan) | PASS / PASS |
+| P5 legacy / reactor (ASan/UBSan) | PASS / PASS |
+| P4 reactor (TSan) / P5 reactor (TSan) | PASS / PASS |
+| partial-body + explicit-stop (legacy/reactor, plain + TSan) | PASS |
+| Reactor 32 MiB WS flood (plain + ASan/UBSan) | 100% delivered, clean exit, no sanitizer output |
+| Reactor saturation 503 (plain + ASan/UBSan) | PASS, matches legacy, no sanitizer output |
+| legacy http_worker_certification | PASS |
+
+### Newly-reachable pre-existing reactor divergences (surfaced by fixing A/B; NOT part of A/B/C)
+
+Fixing A/B lets the certs advance deeper and exposes two further pre-existing reactor
+divergences (both reproduce on the pre-fix compiler once the earlier blocker is removed;
+both are outside the A/B/C authorisation):
+
+1. **P10 WebSocket-PTY 32-concurrent interactive phase.** After the 32 MiB flood (now PASS)
+   and 1000 sequential sessions (now PASS, resource counts return exactly), the 32-concurrent
+   interactive session phase fails: a connection gets no HTTP/1.1 101 (recv transport ends
+   before the upgrade response). Legacy passes this phase. Deterministic on the candidate.
+2. **http_worker_certification retired-handler scenario (reactor).** After the saturation step
+   (now PASS), the reactor worker cert fails at the retired-handler fixture: a server whose
+   `/slow` handler sleeps 1500 ms and which is stopped from the main thread returns 1 from the
+   `if(!app.running())` check where legacy returns 0 (an `app.stop()`/`running()` lifecycle
+   divergence under reactor). Legacy PASSes the scenario.
+
+These need a scope decision: fix for v0.0.5 or classify as a documented reactor limitation.
+They are reported, not silently skipped; the reactor CI stages that exercise the passing
+scenarios remain green, and the two known-failing scenarios remain out of the required set.
+
 Both are classified as **defects within the intended v0.0.5 reactor contract**, not as
 acceptable de-scoped limitations. CI reactor stages added at fc3d780 deliberately exclude
 these two scenarios until the fixes land (a failing required test must not be silently
