@@ -217,10 +217,24 @@ def run_mode(reactor):
                     print("  mode=%s attempt=%d/30 probes=%d" % (mode, attempt, len(observed)), flush=True)
                     print("  observed=%r" % (observed,), flush=True)
                     print("  last_raw=%r" % (_LAST_RAW,), flush=True)
-                    print("  category=%s" % category, flush=True)
+                    # Client-side re-check: can two fresh blockers establish saturation right now?
+                    try:
+                        p1 = open_blocker(port); p2 = open_blocker(port)
+                        re_est = False
+                        for _ in range(200):  # up to ~4s
+                            if fast_status(port) == "503":
+                                re_est = True
+                                break
+                            time.sleep(0.02)
+                        p1.close(); p2.close()
+                    except Exception as exc:
+                        re_est = False
+                        print("  re-establish error: %r" % (exc,), flush=True)
+                    print("  re-establish established=%s last_raw=%r" % (re_est, _LAST_RAW), flush=True)
+                    print("  category=%s%s" % (category, "" if re_est else "/NOT-REESTABLISHED"), flush=True)
                     raise RuntimeError(
-                        "repeated saturation did not reject with 503 [mode=%s %s probes=%d observed=%r]"
-                        % (mode, category, len(observed), observed))
+                        "repeated saturation did not reject with 503 [mode=%s %s probes=%d observed=%r re-established=%s]"
+                        % (mode, category, len(observed), observed, re_est))
                 time.sleep(0.03)
             time.sleep(0.5)
             after = sample(p.pid)
