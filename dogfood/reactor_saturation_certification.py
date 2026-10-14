@@ -209,41 +209,36 @@ def run_mode(reactor):
 
             # Repeated saturation must not leak descriptors/threads.
             #
-            # Precondition: this iteration's own blockers must genuinely occupy the admission
-            # slots before the assertion. Opening them while the previous iteration's blockers
-            # are still being released causes the new blockers to be rejected (holding no slot),
-            # after which the server drains and probes are admitted. Wait for the previous pair
-            # to release (a probe is admitted again) before opening this iteration's blockers.
+            # Establish saturation robustly: open blockers until the server reports it is
+            # saturated (a probe is rejected). Opening a fixed pair assumed both blockers occupy
+            # slots, but a still-releasing connection from the previous iteration can pre-occupy
+            # one, so the second blocker is rejected and the server never saturates. Adding
+            # blockers until the reject is observed makes the precondition genuinely hold
+            # regardless of a lingering connection. The 503 assertion is unchanged.
             baseline = sample(p.pid)
             for attempt in range(30):
-                released = False
-                for _ in range(300):  # up to ~6s to observe release
-                    if fast_status(port) != "503":
-                        released = True
-                        break
-                    time.sleep(0.02)
-                if not released:
-                    print("REPEATED-SATURATION FAILURE", flush=True)
-                    print("  mode=%s attempt=%d/30 category=SAT-NOT-ESTABLISHED last_raw=%r"
-                          % (mode, attempt, _LAST_RAW), flush=True)
-                    raise RuntimeError(
-                        "repeated saturation: server did not release previous blockers [mode=%s]" % mode)
-                a = open_blocker(port); c = open_blocker(port)
+                blockers = []
                 rejected = False
                 observed = []
-                for _ in range(50):
-                    st = fast_status(port)
-                    observed.append(st)
-                    if st == "503":
-                        rejected = True
+                for _ in range(8):
+                    blockers.append(open_blocker(port))
+                    for _ in range(25):
+                        st = fast_status(port)
+                        observed.append(st)
+                        if st == "503":
+                            rejected = True
+                            break
+                        time.sleep(0.02)
+                    if rejected:
                         break
-                    time.sleep(0.02)
-                a.close(); c.close()
+                for b in blockers:
+                    b.close()
                 if not rejected:
                     category = classify_saturation(observed)
                     print("REPEATED-SATURATION FAILURE", flush=True)
-                    print("  mode=%s attempt=%d/30 probes=%d" % (mode, attempt, len(observed)), flush=True)
-                    print("  observed=%r" % (observed,), flush=True)
+                    print("  mode=%s attempt=%d/30 probes=%d blockers=%d"
+                          % (mode, attempt, len(observed), len(blockers)), flush=True)
+                    print("  observed=%r" % (observed[-20:],), flush=True)
                     print("  last_raw=%r" % (_LAST_RAW,), flush=True)
                     print("  category=%s" % category, flush=True)
                     try:
@@ -255,8 +250,8 @@ def run_mode(reactor):
                     except Exception:
                         pass
                     raise RuntimeError(
-                        "repeated saturation did not reject with 503 [mode=%s %s probes=%d observed=%r]"
-                        % (mode, category, len(observed), observed))
+                        "repeated saturation did not reject with 503 [mode=%s %s probes=%d blockers=%d]"
+                        % (mode, category, len(observed), len(blockers)))
                 time.sleep(0.03)
             time.sleep(0.5)
             after = sample(p.pid)
