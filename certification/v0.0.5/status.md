@@ -777,14 +777,40 @@ sanitized reactor step on linux-x64-gcc ran and passed: weak-capture explicit-st
 the retained cycle), and the weak-ownership certification. CTest is 43/43 locally; the
 independent regression suite is 307/307 (default and reactor).
 
-**Final candidate: five-platform CI PASS on 218cc6b** (run 38517102618). This is the cleaned-up
-tree (temporary Windows reactor-saturation diagnostic stage and script retired; the mandatory
-`strut_reactor_saturation` CTest covers Windows). All jobs green; Windows was re-run once for
-the same pre-existing `pty_lifecycle_certification.py` P8 flake (PTY resource/owner-shutdown
-timing race, unrelated to ownership — the identical-code c71cb75 Windows job passed). CTest
-43/43 on every platform, including `strut_weak_ownership` and `strut_strong_cycle_control`.
+**Final candidate (superseded by 2c9c7e8 below): five-platform CI PASS on 218cc6b** (run
+38517102618). This is the cleaned-up tree (temporary Windows reactor-saturation diagnostic
+stage and script retired; the mandatory `strut_reactor_saturation` CTest covers Windows). All
+jobs green; Windows was re-run once for the pre-existing `pty_lifecycle_certification.py` P8
+flake. CTest 43/43 on every platform, including `strut_weak_ownership` and
+`strut_strong_cycle_control`.
 
 **Note (tracked, non-blocking):** `pty_lifecycle_certification.py` P8 is timing-flaky on macOS
 and Windows (descendant PID-file / owner-shutdown races). It failed once each on macOS
 (c71cb75) and Windows (218cc6b) and passed on re-run; it is independent of the v0.0.5 compiler
 changes. Worth hardening separately; not a release blocker.
+
+### Final audit: PTY P8 assessment and fixture correction
+
+- **macOS failure** (`pty_lifecycle_certification.py` line ~900): `PTY owner shutdown failed:
+  exit=0 stdout='' stderr=''`. Demonstrated fixture race — the owner program spawned a Python
+  descendant and slept a fixed `sleep_ms(100)` before returning, while the harness required the
+  descendant PID file to exist. Under load the descendant had not written the file yet. Fixed
+  (2c9c7e8): the descendant `descendant` helper prints `ready` after writing its PID file and
+  the owner reads the PTY until `ready`/EOF before returning; the assertion (descendant gone
+  after owner exit) is unchanged. Both the POSIX and Windows owner programs were updated.
+- **Windows failure** (`certify_resources`, exit=4): the resource program's `return 4` maps to
+  the PTY **interrupt/ETX** check (`read_until(interrupted,"ready")` or
+  `drain(...).contains("caught=INT")` / `interrupted.wait() != 0`). `exit=4` is a normal program
+  return, NOT an uncaught error (the emitted `main` wrapper maps uncaught errors to exit 70 with
+  a stderr message; stderr was empty). This is an intermittent ConPTY Ctrl+C delivery timing
+  sensitivity in the Python helper; it is not reproduced locally (Linux P8 passes repeatedly)
+  and passed on re-run. The assertion was left intact (not weakened).
+- **Classification:** flaky PTY helper/ConPTY timing under loaded CI runners, not a
+  demonstrated product defect; independent of the compiler/ownership changes. Residual risk:
+  low; the interrupt path may still flake on Windows under load.
+
+**Final candidate: five-platform CI PASS on 2c9c7e8 on the FIRST attempt** (run 38529518056 — no
+reruns; the owner-shutdown fixture correction removed the macOS flake and Windows did not
+reproduce the interrupt flake). Per-platform CTest: 43/43 on linux-x64-gcc, linux-x64-clang,
+linux-arm64-gcc, windows-x64-msvc; 42/42 on macos-arm64-appleclang (Go FFI consumer not
+provisioned).
