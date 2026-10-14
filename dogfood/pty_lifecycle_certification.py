@@ -518,9 +518,18 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
     invalid_resize.close();
 
     interrupted := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "interrupt"]);
-    if (!read_until(interrupted, "ready").contains("ready")) {{ return 4; }}
+    int_ready := read_until(interrupted, "ready");
+    if (!int_ready.contains("ready")) {{ print("P8-INT-READY"); out.flush(); return 4; }}
     interrupted.interrupt();
-    if (!drain(interrupted).contains("caught=INT") || interrupted.wait() != 0) {{ return 4; }}
+    int_out := drain(interrupted);
+    int_status := interrupted.wait();
+    if (!int_out.contains("caught=INT") || int_status != 0) {{
+        if (!int_out.contains("caught=INT")) {{ print("P8-INT-DELIVERY"); }}
+        else {{ print("P8-INT-EXIT"); }}
+        print("P8-INT-OUT-BEGIN"); print(int_out); print("P8-INT-OUT-END");
+        print("P8-INT-STATUS"); print(int_status); out.flush();
+        return 4;
+    }}
 
     hung_up := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "hangup"]);
     if (!read_until(hung_up, "ready").contains("ready")) {{ return 5; }}
