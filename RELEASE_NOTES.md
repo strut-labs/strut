@@ -2,6 +2,14 @@
 
 Development in progress.
 
+## Certification
+
+- **Windows ConPTY PTY certification.** The intermittent Windows P8 PTY-lifecycle failure was
+  the certification fixture's interrupt helper intermittently returning process exit status 1
+  after acknowledging the ConPTY Ctrl+C; interrupt delivery itself was correct. The helper now
+  terminates deterministically from its signal handler, and the delivery/exit/cleanup assertions
+  are unchanged. This is a test-helper correction only — no runtime behaviour changed.
+
 # Strut 0.0.5
 
 Strut 0.0.5 is a two-way FFI/embedding, interoperability, and runtime-correctness

@@ -125,6 +125,39 @@ Strut is cross-platform by design. Linux is the initial development host, but co
 
 Server-side/Nift-style templating has been removed from the active roadmap for now. Revisit it later only if the core language and web/backend story make it clearly worthwhile.
 
+## v0.0.6 development and follow-ups
+
+Development version 0.0.6 (latest released: v0.0.5). See the v0.0.6 section of `RELEASE_NOTES.md`.
+
+Resolved — Windows ConPTY P8 interrupt fixture (certification helper only):
+- The intermittent Windows P8 failure (`exit=4`) was classified as `P8-INT-EXIT`: the ConPTY
+  Ctrl+C was delivered and observed (`caught=INT`), but the fixture helper's `raise SystemExit(0)`
+  path intermittently produced process exit status 1, failing the unchanged `wait()==0`
+  assertion.
+- Reproduction (preserved run IDs): exit-code-capture run **38606492279** observed **54/2000**
+  `P8-INT-EXIT` failures, all with child exit code **1**; an earlier diagnostic run
+  **38603366306** also produced `P8-INT-EXIT` failures (unclassified count). Post-fix run
+  **38611845362**: 3200 focused attempts and 3 complete P8 runs, 0 failures.
+- Fix: the Windows `interrupt` helper terminates directly from the signal handler (`os._exit(0)`);
+  delivery/exit/cleanup assertions unchanged. No production PTY runtime change.
+- Remaining uncertainty: the precise reason Python intermittently exited 1 after acknowledging
+  SIGINT is **not** conclusively established (a finalization / console-control interaction is
+  plausible). The observed helper behaviour and the effectiveness of the correction are
+  supported.
+- Permanent failure-only `P8-INT-*` markers remain in `dogfood/pty_lifecycle_certification.py`.
+
+Open — macOS reactor saturation (separate v0.0.6 correctness follow-up):
+- `strut_reactor_saturation` (`dogfood/reactor_saturation_certification.py`) failed intermittently
+  on macos-arm64 in CI run **38618013023** (`RuntimeError: repeated saturation did not reject with
+  503`), then passed on rerun.
+- The failing assertion is the repeated-saturation loop's requirement that a request over the
+  admission budget receive HTTP 503 within the bounded `fast_status` poll. The available evidence
+  establishes intermittent failure, not its cause; it is **not** classified as a harmless flake.
+- Do not weaken the assertion, add retries/timeouts, or change saturation semantics without
+  evidence. Entry points: `dogfood/reactor_saturation_certification.py` (`fast_status`, the
+  repeated-saturation loop) and the reactor rejection/admission path in the generated runtime
+  (`reactor_reject_saturated`, rejection accounting).
+
 ## Performance implementation rule
 
 Prefer allocation-light standard-library conversion primitives such as `std::from_chars` / `std::to_chars` where they fit, following the performance lessons from JSONIC, rather than stream-based or exception-heavy conversions. Preserve correctness and useful diagnostics first, then benchmark.
