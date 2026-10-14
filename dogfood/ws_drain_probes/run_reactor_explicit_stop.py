@@ -11,10 +11,11 @@ from pathlib import Path
 STRUT = os.environ.get("STRUT") or ("/home/nick/relgcc/strut"
                                     if not Path("build/strut").exists() else "build/strut")
 SRC = r'''function main() -> int : NetworkError {
-    app := http_server();
-    app.post("/upload", (http_request request) => { b := request.body; return http_text("ok"); });
-    app.get("/shutdown", (http_request request) => { app.stop(); return http_text("bye"); });
-    app.listen("127.0.0.1", %PORT%, 2);
+    app := new(http_server());
+    w := weak(app);
+    app->post("/upload", (http_request request) => { b := request.body; return http_text("ok"); });
+    app->get("/shutdown", (http_request request) => { locked := w.lock(); if (locked != null) { locked->stop(); } return http_text("bye"); });
+    app->listen("127.0.0.1", %PORT%, 2);
     return 0;
 }
 '''
