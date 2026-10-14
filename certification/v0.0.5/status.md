@@ -769,3 +769,10 @@ LeakSanitizer is now a mandatory, failure-propagating gate.
 **Release status:** all identified defects (A, B, C) are resolved and the five-platform CI is
 being re-certified on the Defect C fix. No tag, package, or publication of v0.0.5 has been
 performed; v0.0.4 is untouched; the Nift core is unmodified.
+
+**Five-platform CI PASS on c71cb75** (run 38511045480; macOS re-run once for a known PTY
+timing flake in `pty_lifecycle_certification.py` P8, unrelated to ownership). The mandatory
+sanitized reactor step on linux-x64-gcc ran and passed: weak-capture explicit-stop
+(`detect_leaks=1`, legacy + reactor, exit 0), the strong-cycle negative control (LSan detects
+the retained cycle), and the weak-ownership certification. CTest is 43/43 locally; the
+independent regression suite is 307/307 (default and reactor).
