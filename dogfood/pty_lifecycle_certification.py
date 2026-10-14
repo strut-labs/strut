@@ -444,8 +444,8 @@ if mode == 'resize':
     raise SystemExit(2)
 elif mode == 'interrupt':
     def interrupted(signum, frame):
-        print('caught=INT', flush=True)
-        raise SystemExit(0)
+        os.write(1, b'caught=INT')
+        os._exit(0)
     signal.signal(signal.SIGINT, interrupted)
     print('ready', flush=True)
     while True: time.sleep(1)
