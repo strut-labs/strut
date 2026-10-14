@@ -32,6 +32,7 @@ jobs:
       - name: Repeat saturation fixture under load
         run: |
           set +e
+          export STRUT_HTTP_DIAG=1
           n="${{ github.event.inputs.load }}"
           pids=""
           for i in $(seq 1 "$n"); do yes > /dev/null & pids="$pids $!"; done

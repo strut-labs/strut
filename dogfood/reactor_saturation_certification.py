@@ -36,6 +36,14 @@ SRC = '''function main() -> void : NetworkError {
 '''
 
 
+def server_err_tail(err_path, n=40):
+    try:
+        with open(err_path, "r", errors="replace") as f:
+            return f.read().splitlines()[-n:]
+    except Exception:
+        return []
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -145,8 +153,10 @@ def run_mode(reactor):
         env.pop("STRUT_HTTP_REACTOR", None)
         if reactor:
             env["STRUT_HTTP_REACTOR"] = "1"
+        err_path = td / "server.err"
+        err_handle = open(err_path, "w")
         p = subprocess.Popen([str(exe)], env=env, start_new_session=True,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdout=subprocess.PIPE, stderr=err_handle)
         mode = "reactor" if reactor else "legacy"
         try:
             # Wait for the listener to come up without leaving a counted probe connection:
@@ -236,6 +246,14 @@ def run_mode(reactor):
                     print("  observed=%r" % (observed,), flush=True)
                     print("  last_raw=%r" % (_LAST_RAW,), flush=True)
                     print("  category=%s" % category, flush=True)
+                    try:
+                        err_handle.flush()
+                        tail = server_err_tail(err_path)
+                        print("  server stderr tail (%d lines):" % len(tail), flush=True)
+                        for ln in tail:
+                            print("   | " + ln, flush=True)
+                    except Exception:
+                        pass
                     raise RuntimeError(
                         "repeated saturation did not reject with 503 [mode=%s %s probes=%d observed=%r]"
                         % (mode, category, len(observed), observed))
@@ -253,6 +271,10 @@ def run_mode(reactor):
                 print("  detail: baseline=%s after=%s r6=%s" % (baseline, after, r6[:40]))
             return ok
         finally:
+            try:
+                err_handle.close()
+            except Exception:
+                pass
             if p.poll() is None:
                 try:
                     if os.name == "posix":
