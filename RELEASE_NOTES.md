@@ -1,3 +1,7 @@
+# Unreleased (0.0.6 development)
+
+Development in progress.
+
 # Strut 0.0.5
 
 Strut 0.0.5 is a two-way FFI/embedding, interoperability, and runtime-correctness
