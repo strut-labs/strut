@@ -129,15 +129,6 @@ jobs:
         run: cmake -S . -B build -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
-      - name: Certify executable documentation (POSIX)
-        if: runner.os != 'Windows'
-        run: python3 tools/certify_docs.py build/strut --website-root website-source
-      - name: Certify executable documentation (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: python tools/certify_docs.py build/Release/strut.exe --website-root website-source
-      - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
       - name: Diagnose reactor saturation (non-blocking)
         if: runner.os == 'Windows'
         continue-on-error: true
@@ -148,6 +139,15 @@ jobs:
         run: |
           STRUT="build/Release/strut.exe"; [ -f build/strut ] && STRUT="build/strut"
           STRUT="$STRUT" python3 dogfood/reactor_saturation_diag.py
+      - name: Certify executable documentation (POSIX)
+        if: runner.os != 'Windows'
+        run: python3 tools/certify_docs.py build/strut --website-root website-source
+      - name: Certify executable documentation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python tools/certify_docs.py build/Release/strut.exe --website-root website-source
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
       - name: Certify generated C++ and dogfood
         if: runner.os != 'Windows'
         env:
