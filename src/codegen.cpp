@@ -707,7 +707,7 @@ void collect_minimal_expr_features(const IRExpr* e,MinimalRuntimeFeatures& f){
     if(e->kind==IRExpr::Kind::binary&&e->text=="??")f.nullable=true;
     if(e->kind==IRExpr::Kind::array_literal)f.vector=true;
     if(e->kind==IRExpr::Kind::map_literal)f.hash_map=true;
-    if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::identifier&&(e->left->text=="ptr"||e->left->text=="ref"))f.pointers=true;
+    if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::identifier&&(e->left->text=="ptr"||e->left->text=="ref"||e->left->text=="weak"))f.pointers=true;
     if(e->kind==IRExpr::Kind::call&&e->left&&e->left->kind==IRExpr::Kind::member){
         const auto& m=e->left->text;
         const std::string base_type=e->left->left?e->left->left->type_name:std::string();
@@ -766,6 +766,8 @@ private:T* p_;
 };
 template<class T> strut_ref<T> strut_make_ref(T& value){return strut_ref<T>(value);}
 template<class T> std::shared_ptr<typename std::decay<T>::type> strut_ptr(T&& value){using U=typename std::decay<T>::type;return std::make_shared<U>(std::forward<T>(value));}
+template<class T> std::weak_ptr<T> strut_weak(const std::shared_ptr<T>& value){return std::weak_ptr<T>(value);}
+template<class T> T* strut_raw(const std::shared_ptr<T>& value){return value.get();}
 inline void strut_print_stack_trace(){
 #ifdef _WIN32
     void* frames[48];const auto n=CaptureStackBackTrace(0,48,frames,nullptr);std::cerr<<"stack trace:\n";for(unsigned short i=0;i<n;++i)std::cerr<<"  "<<frames[i]<<"\n";
@@ -800,17 +802,24 @@ namespace std { template<> struct hash<strut_string>{size_t operator()(const str
     if(f.cancellation)generated_runtime::emit_cancellation(o);
     if(f.encoding)generated_runtime::emit_encoding(o);
     if(f.crypto)generated_runtime::emit_crypto(o);
-    if(f.nullable){o << R"CPP(
+    if(f.nullable||f.pointers){o << R"CPP(
 struct strut_null_t {
-    template<class T> operator std::optional<T>() const{return std::nullopt;}
-)CPP"; if(f.pointers)o << "    template<class T> operator std::shared_ptr<T>() const{return {};}\n"; o << R"CPP(
+)CPP"; if(f.nullable)o << "    template<class T> operator std::optional<T>() const{return std::nullopt;}\n"; if(f.pointers)o << "    template<class T> operator std::shared_ptr<T>() const{return {};}\n"; o << R"CPP(
 };
 [[maybe_unused]] constexpr strut_null_t strut_null{};
+)CPP";}
+    if(f.nullable)o << R"CPP(
 template<class T> bool operator==(const std::optional<T>& value,strut_null_t){return !value;}
 template<class T> bool operator!=(const std::optional<T>& value,strut_null_t){return static_cast<bool>(value);}
 template<class T> bool operator==(strut_null_t,const std::optional<T>& value){return !value;}
 template<class T> bool operator!=(strut_null_t,const std::optional<T>& value){return static_cast<bool>(value);}
-)CPP";}
+)CPP";
+    if(f.pointers)o << R"CPP(
+template<class T> bool operator==(const std::shared_ptr<T>& value,strut_null_t){return !value;}
+template<class T> bool operator!=(const std::shared_ptr<T>& value,strut_null_t){return static_cast<bool>(value);}
+template<class T> bool operator==(strut_null_t,const std::shared_ptr<T>& value){return !value;}
+template<class T> bool operator!=(strut_null_t,const std::shared_ptr<T>& value){return static_cast<bool>(value);}
+)CPP";
     if(f.nullable)o << R"CPP(
 template<class T> struct strut_optional_result{using type=std::optional<T>;};
 template<class T> struct strut_optional_result<std::optional<T>>{using type=std::optional<T>;};
