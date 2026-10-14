@@ -54,7 +54,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {
                 code := terminal.wait();
                 terminal.close();
                 if (!out.contains("caught=INT")) { print("FAIL P8-INT-DELIVERY"); }
-                else if (code != 0) { print("FAIL P8-INT-EXIT"); }
+                else if (code != 0) { print("FAIL P8-INT-EXIT"); print(code); }
             }
         } catch (PtyError e) {
             print("FAIL P8-INT-EXCEPTION");
@@ -111,17 +111,25 @@ def main():
         total_fails = 0
         total_expected = attempts * max(1, parallel)
         done_runs = 0
+        exit_codes = {}
         for idx, (rc, out, err) in enumerate(runs):
-            fails = [ln for ln in out.splitlines() if ln.startswith("FAIL")]
-            done = "DONE" in out.splitlines()
+            lines = out.splitlines()
+            fails = [ln for ln in lines if ln.startswith("FAIL")]
+            done = "DONE" in lines
             total_fails += len(fails)
             if done:
                 done_runs += 1
             print(f"run[{idx}] exit={rc} done={done} failures={len(fails)}")
-            for f in fails[:10]:
-                print("   ", f)
+            for j, f in enumerate(lines):
+                if f.startswith("FAIL"):
+                    extra = lines[j + 1] if f == "FAIL P8-INT-EXIT" and j + 1 < len(lines) else ""
+                    print("   ", f, extra)
+                    if f == "FAIL P8-INT-EXIT":
+                        exit_codes[extra] = exit_codes.get(extra, 0) + 1
             if err.strip():
                 print("    stderr:", err[-200:])
+        if exit_codes:
+            print("P8-INT-EXIT observed child exit codes:", exit_codes)
         print(f"SUMMARY attempts={total_expected} parallel={parallel} elapsed={elapsed:.1f}s done_runs={done_runs}/{len(runs)} failures={total_fails}")
         ok = all(rc == 0 and "DONE" in out for rc, out, _ in runs) and total_fails == 0
         return 0 if ok else 1
