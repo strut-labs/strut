@@ -459,6 +459,7 @@ elif mode == 'sleep':
 elif mode == 'descendant':
     child = subprocess.Popen([sys.executable, __file__, 'sleep'])
     pathlib.Path(sys.argv[2]).write_text(str(child.pid), encoding='ascii')
+    print('ready', flush=True)
     time.sleep(30)
 elif mode == 'leader-exit-descendant':
     child = subprocess.Popen([sys.executable, __file__, 'sleep'])
@@ -593,7 +594,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
             owner_source = root / "conpty-owner-shutdown.p"
             owner_executable = root / "conpty-owner-shutdown.exe"
             owner_source.write_text(
-                f'''function main() -> int : (PtyError, TimeError) {{ terminal := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "descendant", "{escaped(descendant_pid_file)}"]); escaped_terminal := terminal; sleep_ms(250); return 0; }}\n''',
+                f'''function main() -> int : (PtyError, TimeError) {{ terminal := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "descendant", "{escaped(descendant_pid_file)}"]); escaped_terminal := terminal; string seen := ""; while (!seen.contains("ready") && !terminal.eof()) {{ seen = seen + terminal.read_bytes(4096).to_string(); }} return 0; }}\n''',
                 encoding="utf-8",
             )
             subprocess.run([compiler, owner_source, "-o", owner_executable, *compile_flags], cwd=root, check=True)
@@ -682,6 +683,7 @@ elif mode == 'descendant':
         while True: time.sleep(1)
     with open(sys.argv[2], 'w', encoding='utf-8') as output:
         output.write(str(descendant))
+    print('ready', flush=True)
     time.sleep(30)
 """,
             encoding="utf-8",
@@ -891,7 +893,7 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {{
         owner_source = root / "pty-owner-shutdown.p"
         owner_executable = root / "pty-owner-shutdown"
         owner_source.write_text(
-            f'''function main() -> int : (PtyError, TimeError) {{ terminal := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "descendant", "{escaped(descendant_pid_file)}"]); escaped_terminal := terminal; sleep_ms(100); return 0; }}\n''',
+            f'''function main() -> int : (PtyError, TimeError) {{ terminal := pty_spawn("{escaped(sys.executable)}", ["{escaped(helper)}", "descendant", "{escaped(descendant_pid_file)}"]); escaped_terminal := terminal; string seen := ""; while (!seen.contains("ready") && !terminal.eof()) {{ seen = seen + terminal.read_bytes(4096).to_string(); }} return 0; }}\n''',
             encoding="utf-8",
         )
         subprocess.run([compiler, owner_source, "-o", owner_executable, *compile_flags], cwd=root, check=True)
