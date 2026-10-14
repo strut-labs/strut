@@ -65,6 +65,10 @@ function main() -> int : (PtyError, ThreadError, TimeError, StreamError) {
 '''
 
 
+def escaped(value):
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: pty_interrupt_repro.py <compiler> [attempts] [timeout_seconds]")
@@ -79,8 +83,8 @@ def main():
         source = td / "p.p"
         program = (PROGRAM
                    .replace("__ATTEMPTS__", str(attempts))
-                   .replace("__PYTHON__", sys.executable)
-                   .replace("__HELPER__", str(helper)))
+                   .replace("__PYTHON__", escaped(sys.executable))
+                   .replace("__HELPER__", escaped(str(helper))))
         source.write_text(program, encoding="utf-8")
         exe = td / "p"
         b = subprocess.run([compiler, str(source), "-o", str(exe)], capture_output=True, text=True, timeout=180)
