@@ -776,3 +776,15 @@ sanitized reactor step on linux-x64-gcc ran and passed: weak-capture explicit-st
 (`detect_leaks=1`, legacy + reactor, exit 0), the strong-cycle negative control (LSan detects
 the retained cycle), and the weak-ownership certification. CTest is 43/43 locally; the
 independent regression suite is 307/307 (default and reactor).
+
+**Final candidate: five-platform CI PASS on 218cc6b** (run 38517102618). This is the cleaned-up
+tree (temporary Windows reactor-saturation diagnostic stage and script retired; the mandatory
+`strut_reactor_saturation` CTest covers Windows). All jobs green; Windows was re-run once for
+the same pre-existing `pty_lifecycle_certification.py` P8 flake (PTY resource/owner-shutdown
+timing race, unrelated to ownership — the identical-code c71cb75 Windows job passed). CTest
+43/43 on every platform, including `strut_weak_ownership` and `strut_strong_cycle_control`.
+
+**Note (tracked, non-blocking):** `pty_lifecycle_certification.py` P8 is timing-flaky on macOS
+and Windows (descendant PID-file / owner-shutdown races). It failed once each on macOS
+(c71cb75) and Windows (218cc6b) and passed on re-run; it is independent of the v0.0.5 compiler
+changes. Worth hardening separately; not a release blocker.
