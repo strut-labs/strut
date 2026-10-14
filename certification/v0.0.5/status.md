@@ -720,8 +720,10 @@ state on the final candidate (HEAD 9eaf14c and its successor adding the Windows 
   docs example; the vcpkg include/lib/PATH are now re-exposed after the dev-environment step
   (using `VCPKG_INSTALLATION_ROOT`).
 
-**Five-platform CI PASS on 9eaf14c** (all jobs green), including the Windows reactor saturation
-diagnostic delivering the 503.
+**Five-platform CI PASS on b534312** (all jobs green), including the Windows reactor saturation
+diagnostic delivering the 503 and the `strut_reactor_saturation` CTest now enabled and passing
+on windows-x64-msvc (16.5 s; 41/41 tests). The saturation certification script's cleanup was
+made portable (`p.kill()` + bounded wait off POSIX) so it no longer hangs on Windows.
 
 ### Open blocker: Defect C (route-handler ownership cycle / exit-time leak)
 
