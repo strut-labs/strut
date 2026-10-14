@@ -636,14 +636,16 @@ Alternatives rejected:
   - Clearing routes on stop (breaks documented restart/reconfiguration).
   - Accepting the leak for v0.0.5 (a demonstrated leak under strict LSan).
 
-Implementation scope (if approved): a bounded language/runtime addition enabling
-`weak()`/`lock()` (and method access on the locked value) for the native `http_server` handle,
-plus using the weak handle in the retired/explicit-stop fixture. Not started; awaiting the
-design decision.
+Implementation (done): the generic weak-ownership path was completed rather than adding an
+HTTP-specific API — `strut_weak`/`strut_raw` and the `shared_ptr`-vs-null operators are now
+emitted by the focused runtime slices (fix 1b0560b), so `weak()`/`lock()`/`expired()` and
+member access on the locked value work for the native `http_server` handle, directly and via a
+struct containing it. The explicit-stop fixture now uses explicit weak capture. See
+"RESOLVED: Defect C" below for the verification and permanent gates.
 
-Decision required: approve (a) explicit weak server-handle support (language/runtime), or
-(b) an HTTP-specific weak-handle API, or (c) accept the exit-time leak as a documented
-limitation (with the strict LSan gate then explicitly waived).
+Decision taken: option (a), with the reviewer's interpretation — finish the existing generic
+weak-pointer capability rather than invent an HTTP-only workaround. No automatic weak capture;
+by-value capture semantics unchanged.
 
 ## Release assessment (2026-10-13)
 
@@ -725,17 +727,45 @@ diagnostic delivering the 503 and the `strut_reactor_saturation` CTest now enabl
 on windows-x64-msvc (16.5 s; 41/41 tests). The saturation certification script's cleanup was
 made portable (`p.kill()` + bounded wait off POSIX) so it no longer hangs on Windows.
 
-### Open blocker: Defect C (route-handler ownership cycle / exit-time leak)
+### RESOLVED: Defect C (route-handler ownership cycle / exit-time leak)
 
-Under strict `--leak-check`/`detect_leaks=1`, a route handler that captures its own
-`http_server` by value forms a strong reference cycle (`state -> routes -> closure ->
-http_server -> s_ -> state`) that is not reclaimed at exit. Explicit weak ownership is NOT
-currently expressible: `weak()` on the native handle fails type-checking, and weakly
-referencing the handle (directly or wrapped in a user struct) fails native codegen
-(`strut_weak` not emitted). `weak_ptr` works for plain user structs only. Resolving this
-requires a small language/runtime capability (weak support for the native `http_server`
-handle) or an HTTP-specific weak-handle API, or accepting the leak. This is a design decision
-for the reviewer; capture/ownership semantics are not changed unilaterally.
+Under strict `detect_leaks=1`, a route handler that captures its own `http_server` by value
+forms a strong reference cycle (`state -> routes -> closure -> http_server -> s_ -> state`)
+that is not reclaimed at exit. This is correct reference-counting behavior for a deliberate
+strong cycle; the defect was that Strut's documented explicit weak ownership could not be
+used to avoid it.
 
-**Release status: NOT READY** — one material design decision (Defect C) outstanding. No tag,
-package, or publication of v0.0.5; v0.0.4 untouched; Nift core unmodified.
+**Root cause (compiler, not HTTP runtime):** the focused runtime slices emitted by
+`emit_minimal_runtime` (used by the minimal, light-thread/json/sqlite/async/http-client/http,
+and filesystem slices) emitted `strut_ptr` but omitted `strut_weak`/`strut_raw` and the
+`operator==/!=(std::shared_ptr<T>, strut_null_t)` overloads that the full prelude provides.
+So a program using `weak_ptr<T>` together with `http_server` failed native codegen
+(`strut_weak was not declared`; `no match for operator!= ... strut_null_t`) even though
+`--check` passed. `weak_ptr` worked for plain user structs only because those programs took
+the full-runtime path.
+
+**Fix (1b0560b):** emit `strut_weak`/`strut_raw` and the `shared_ptr`-vs-null operators in the
+`f.pointers` prelude of `emit_minimal_runtime`, and treat a `weak(...)` call as requiring the
+pointers prelude. By-value lambda capture semantics are unchanged; no automatic weak capture;
+no HTTP-specific weak API was added.
+
+**Verified:**
+- `weak_ptr<user struct>`, `weak_ptr<http_server>`, and `weak_ptr<struct containing
+  http_server>` all compile and run; `lock()`/`expired()` and member access through the locked
+  pointer behave correctly; a temporary strong promotion keeps the object valid, and dropping
+  both the owner and the promotion expires the weak reference.
+- A route handler that captures `weak(app)` and `locked->stop()`s serves correctly and exits 0.
+- The explicit-stop fixture now uses explicit weak capture and passes strict
+  `detect_leaks=1` (ASan/UBSan) in BOTH legacy and reactor modes (no exit-time retention).
+- The strong self-capture negative control (`run_strong_cycle_control.py`) still serves and,
+  under LeakSanitizer, is reported as leaked — the documented strong cycle is retained, not
+  magically collected.
+
+**Permanent gates:** `strut_weak_ownership` and `strut_strong_cycle_control` CTests added;
+the weak-capture explicit-stop runs in the mandatory sanitized reactor CI step; the
+non-blocking "known Defect C" CI exception has been removed. Strict explicit-stop
+LeakSanitizer is now a mandatory, failure-propagating gate.
+
+**Release status:** all identified defects (A, B, C) are resolved and the five-platform CI is
+being re-certified on the Defect C fix. No tag, package, or publication of v0.0.5 has been
+performed; v0.0.4 is untouched; the Nift core is unmodified.
