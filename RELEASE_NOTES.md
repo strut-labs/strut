@@ -1,10 +1,129 @@
-# Unreleased (0.0.5 development)
+# Strut 0.0.5
+
+Strut 0.0.5 is a two-way FFI/embedding, interoperability, and runtime-correctness
+release. It does not change the core language syntax contract established by
+0.0.2/0.0.3. The HTTP/reactor backend introduced in 0.0.4 keeps its language-level
+semantics and gains correctness, lifecycle, and cross-platform fixes.
 
 ## Highlights
 
-- (in progress) Two-way FFI / embedding campaign: stable C ABI, native->Strut calls,
-  callbacks, ownership/lifetime rules, checked-error propagation, cross-platform ABI
-  correctness (GCC/Clang/AppleClang/MSVC).
+- **Two-way foreign-function interface.** Strut programs can export a stable C ABI
+  surface and be called from native code, and native code can call back into Strut.
+  Delivered incrementally and certified across GCC, Clang, AppleClang, and MSVC:
+  - **FFI-1** exports / shared-library Strut (`--shared`, `--emit-c-header`) and
+    primitive round-trips (native -> Strut and Strut -> native).
+  - **FFI-2** `string`/`bytes` across the ABI with explicit ownership and release
+    (borrowed input, owned output, module-owned release functions).
+  - **FFI-3** one plain-layout POD aggregate ABI in both directions.
+  - **FFI-4** borrowed primitive pointers/references (`ptr<T>`/`ref<T>`) with an
+    ABI-safe rule.
+  - **FFI-5** synchronous borrowed callbacks (function pointer + context), both
+    directions.
+  - **FFI-6** checked-error propagation across the ABI in both directions, with a
+    module-owned opaque error handle carrying type/message/code.
+  - **FFI-7** retained / cross-thread callbacks: `retained_callback<sig[:E]>` and
+    `native_callback<sig[:E]>` with an explicit retain/release/context contract,
+    exact-once destruction, and certified cross-thread/reentrant invocation.
+
+- **C embedding API (FFI-8).** An opaque `stru_embed_context` with
+  `load_source`/`load_file`, stable logical module identity, dynamic by-name
+  invocation, and a per-context native compile/load lifecycle. Values (bool/int/
+  float/string/bytes), retained values (single owner, module lease held while live,
+  survives a successful reload, must be released before destroy), and typed
+  borrowed callbacks are supported. `destroy` reports BUSY while an invocation or a
+  retained lease is outstanding and succeeds once released; reload/destroy during an
+  in-flight invocation is deterministically BUSY and the invocation completes.
+  Diagnostics are machine-readable, and checked Strut errors keep their
+  type/message/code.
+
+- **Independent language consumers (FFI-9).** A shared embedding library
+  (`libstrut_embed`) with executable, permanently-gated consumers for **C, C++,
+  Python (ctypes), Go (cgo), Node.js (N-API, dependency-free), and C# (P/Invoke)**,
+  each building and running under CTest on the platforms where its toolchain is
+  present. Relocated-prefix installation/staging is certified. (Go is not
+  provisioned on the macOS certification path.)
+
+- **Nift interoperability (FFI-10, Linux-local).** Bidirectional in-process
+  interoperability with the Nift C ABI 1.3: Nift-origin calls into a Strut export
+  (dynamic argument marshalling, UTF-8 strings, and byte payloads with an
+  explicit pointer+length contract) and Strut-origin calls driven through a Nift
+  engine, each covered by a permanent gated CTest. Not claimed as a five-platform
+  feature; the Nift core is unmodified.
+
+- **HTTP / reactor correctness and lifecycle.** The 0.0.4 reactor and shared HTTP
+  runtime gained correctness and robustness fixes, now permanently covered by CI:
+  - WebSocket finite-admission shutdown no longer interrupts an admitted first
+    request before its HTTP 101 is sent (admission-drain correction).
+  - Reactor WebSocket route dispatch now recognises WebSocket routes (previously
+    404 in reactor mode); reactor WebSocket teardown performs the final socket
+    close; a WebSocket handler that declines now returns HTTP 403 with parity to
+    the classic backend; captured request parameters reach reactor handlers.
+  - Reactor connection saturation now returns HTTP 503 with correct admission
+    accounting; the rejection path is bounded and non-blocking, and delivers the
+    503 on Windows (the reject socket half-closes and drains the peer's request
+    instead of resetting the connection).
+  - Reactor WebSocket output-watermark deadlock and abrupt peer-close (EOF) leaks
+    were fixed; a premature-drain-on-shutdown defect was fixed.
+  - A graceful-shutdown race that could drop the final accepted request was fixed.
+
+- **Runtime ownership.** Explicit weak ownership (`weak_ptr<T>`: `weak(x)`,
+  `.lock()`, `.expired()`) now works for ordinary structs, native handles such as
+  `http_server`, and structs containing native handles, so a handler can hold a
+  weak back-reference to its own server and break the reference cycle that the
+  language documents. By-value capture semantics are unchanged, and the compiler
+  does not silently weaken captures. A strong self-capture still forms the
+  documented (non-collected) reference cycle.
+
+- **Cross-platform certification.** Linux x64/ARM64 (GCC), Linux x64 (Clang),
+  macOS ARM64 (AppleClang), and Windows x64 (MSVC) build, CTest, and dogfood
+  certification. The reactor HTTP/WebSocket runtime is now covered in CI —
+  plain, AddressSanitizer/UndefinedBehaviorSanitizer with leak detection, and
+  ThreadSanitizer — instead of local-only.
+
+## Ownership and lifetime contracts
+
+- Safe ownership remains deterministic reference counting: owning `T*`, non-owning
+  `T&`, and non-owning `weak_ptr<T>`. `weak_ptr<T>.lock()` is the only upgrade path
+  and may yield an empty `T*` after expiry; reference-count cycles are not
+  collected.
+- Across the FFI, strings/bytes/errors owned by the embedding host are released
+  exactly once with the correct release function and before context destroy when
+  module-owned; borrowed callbacks are synchronous and direct-callee only and must
+  not escape the native call; retained callbacks are single-owner and keep their
+  module callable until released.
+
+## Compatibility
+
+- No core language syntax changes relative to 0.0.4.
+- The reactor HTTP server backend remains opt-in (`STRUT_HTTP_REACTOR=1`); the
+  classic backend remains the default.
+- The FFI/embedding surface is additive. The embedding ABI (`STRUT_EMBED_*`) is new
+  in 0.0.5; no 0.0.4 binary-compatibility promise is implied. Strut guarantees its
+  syntax and safety boundary, not binary compatibility between arbitrary C++ ABIs.
+- The request-header map (`map<string,string>`) keeps its language-level semantics.
+
+## Performance
+
+The 0.0.4 HTTP hot-path and router work is retained. A bounded 0.0.5 benchmark
+detour against a comparable Rust server was closed without reaching the target
+(occupying roughly 14% behind on throughput in that specific campaign); the
+harness now mandates `--release` and records the effective flags. Results remain
+environment-specific and are not universal claims; see `strut-benchmarks/` and
+`investigation/http-campfire-transfer/`.
+
+## Known limitations
+
+- FFI: `bool` is not a typed exportable ABI type (an embedding value kind BOOL
+  exists); hex integer literals are not supported by this parser version (decimal
+  bytes are used); Nift scripts do not decode `\uXXXX` escapes (embed real UTF-8
+  bytes); UTF-8 string lengths are byte lengths.
+- Embedding consumers hosted by interpreters/runtimes (Python/Go/Node/C#) execute
+  in ordinary builds; they are not themselves ASan/UBSan-certified (the native C
+  embedding surface is).
+- FFI-10 (Nift) is Linux-local only.
+- The Windows ConPTY interrupt/ETX path in the PTY lifecycle certification is
+  intermittently timing-sensitive under load; it is a tracked follow-up and not a
+  release blocker (see `certification/v0.0.5/status.md`).
 
 # Strut 0.0.4
 

@@ -169,6 +169,18 @@ TRANSPORT PARITY (current runtime):
       threads return exactly, allowance 0). Assertions not weakened. Permanent reactor/legacy
       CI now re-runs P10 under ASan/TSan on every push, which will provide the ongoing evidence
       to accept or retire the residual risk.
+  PTY P8 INTERRUPT/ETX RESIDUAL (tracked follow-up; NOT release-blocking): an intermittent
+      Windows-only failure in the P8 PTY resource program's interrupt/ETX check
+      (`pty_lifecycle_certification.py` -> `certify_resources` return 4;
+      exit=4 seen_done=False stdout=['RESOURCE_BASELINE']). exit=4 is a normal program return
+      (the emitted `main` wrapper maps uncaught errors to exit 70 + stderr; stderr was empty),
+      i.e. the interrupt helper did not report readiness/`caught=INT` before termination. Root
+      cause NOT conclusively established; classification: intermittent ConPTY Ctrl+C delivery
+      timing. The assertion was left intact (not weakened); the last clean candidate passed and
+      reproduced no failure. The macOS P8 owner-shutdown failure was a separate, DEMONSTRATED
+      fixture race (a fixed `sleep_ms(100)` before requiring the descendant PID file) corrected
+      at 2c9c7e8. Follow-up: investigate the Windows interrupt/ETX path after v0.0.5 with
+      server-side evidence; do not reduce it to a dismissed test flake.
 
 ## Five-platform release certification (one final SHA)
 - [x] Linux x64 GCC / Linux x64 Clang / Linux ARM64 GCC / macOS ARM64 AppleClang /

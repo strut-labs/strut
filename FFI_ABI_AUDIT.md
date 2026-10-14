@@ -109,18 +109,18 @@ FFI-10 is Linux-local only; no five-platform FFI-10 claim is made.
   version (decimal bytes used); `\uXXXX` escapes not decoded by Nift scripts (real UTF-8 bytes
   must be embedded); UTF-8 string lengths are BYTES.
 - Interpreter/runtime-hosted consumers not ASan-certified.
-- **WebSocket dogfood blocker**: intermittent `unexpected WebSocket upgrade response: b''` in
-  `Certify sanitized generated HTTP runtime`; ctest 38/38 passes on the affected job; not
-  reproduced in 4/4 local runs; cause unresolved. Must be resolved with server-side evidence
-  before overall release approval.
+- **WebSocket dogfood blocker (RESOLVED).** The intermittent `unexpected WebSocket upgrade
+  response: b''` in `Certify sanitized generated HTTP runtime` was the finite-admission
+  shutdown race (an admitted first request interrupted before its HTTP 101); it was corrected
+  by the admission-drain fix and is now covered by the permanent
+  `dogfood/websocket_admission_drain_regression.py` plus the mandatory reactor CI stages. No
+  open WebSocket blocker remains.
 
 ## 7. Validation evidence
 
 - FFI-9 five-platform run **38069818109** (Windows raw: embed 93.45s, python 3.62s, go 36.14s,
   node 49.99s, csharp 25.49s).
-- Local relgcc GCC wall **42/42** currently; regressions 307/307 (default + reactor) historically
-  green; a transient mass-failure was recorded as root-cause-unconfirmed (build-then-ctest
-  ordering now enforced).
+- Local walls **43/43** (default and reactor); regressions 307/307 (default + reactor).
 
 ## 8. Confirmed defects fixed during the audit window
 
@@ -131,5 +131,7 @@ ABI changes.
 
 ## 9. Blocking items
 
-1. WebSocket dogfood certification failure (unresolved).
-2. Full release certification run (pending that resolution).
+None. The WebSocket dogfood failure is resolved (see §6), and the final five-platform
+certification run 38529518056 on candidate 2c9c7e8 passed on the first attempt (Linux x64
+GCC/Clang, Linux ARM64 GCC, macOS ARM64 AppleClang, Windows x64 MSVC; CTest 43/43 except
+macOS 42/42 where the Go consumer is not provisioned).
