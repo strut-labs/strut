@@ -86,7 +86,7 @@ updates for review:
 
 - Bump the displayed version and the download/release links to 0.0.5.
 - Add a "Two-way FFI and embedding" guide summarizing FFI-1…FFI-10 and the FFI-8 embedding API
-  (`stru_embed_context`, `load_source`/`load_file`, invocation, value/retained/callback kinds,
+  (`strut_embed_context`, `load_source`/`load_file`, invocation, value/retained/callback kinds,
   release rules, BUSY destroy), with the five-platform consumer matrix.
 - Add an explicit weak-reference ownership example showing a handler capturing `weak(server)`,
   promoting with `.lock()`, and breaking the server/handler reference cycle (the compiler fix in

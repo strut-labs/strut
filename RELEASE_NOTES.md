@@ -25,7 +25,7 @@ semantics and gains correctness, lifecycle, and cross-platform fixes.
     `native_callback<sig[:E]>` with an explicit retain/release/context contract,
     exact-once destruction, and certified cross-thread/reentrant invocation.
 
-- **C embedding API (FFI-8).** An opaque `stru_embed_context` with
+- **C embedding API (FFI-8).** An opaque `strut_embed_context` with
   `load_source`/`load_file`, stable logical module identity, dynamic by-name
   invocation, and a per-context native compile/load lifecycle. Values (bool/int/
   float/string/bytes), retained values (single owner, module lease held while live,

@@ -526,7 +526,7 @@ Representation (extends the FFI-5 fn-ptr+context model; ONE consistent model):
 Semantics recorded; implementation + tests + five-platform gate as the immediate FFI-7 work.
 
 ## FFI-8 COMPLETE / CERTIFIED (C embedding API)
-Opaque C embedding-surface: `stru_embed_context` create/destroy (destroy returns int;
+Opaque C embedding-surface: `strut_embed_context` create/destroy (destroy returns int;
 BUSy whenever an invocation is in flight OR retained leases exist; context stays intact and
 usable; succeeds after releases), load_source/load_file with STABLE logical module identity,
 dynamic by-name invocation, and per-context native compile/dlopen lifecycle (no CLI spawn; no
