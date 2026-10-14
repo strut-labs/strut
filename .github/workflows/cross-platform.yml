@@ -135,15 +135,6 @@ jobs:
         run: cmake -S . -B build -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
-      - name: Diagnose reactor saturation (non-blocking)
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        shell: bash
-        env:
-          STRUT_HTTP_REACTOR: '1'
-        run: |
-          STRUT="build/Release/strut.exe"; [ -f build/strut ] && STRUT="build/strut"
-          STRUT="$STRUT" python3 dogfood/reactor_saturation_diag.py
       - name: Certify executable documentation (POSIX)
         if: runner.os != 'Windows'
         run: python3 tools/certify_docs.py build/strut --website-root website-source
