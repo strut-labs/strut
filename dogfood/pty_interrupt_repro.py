@@ -8,11 +8,12 @@ interrupt events without running the full P8 scenarios:
   -> parent interrupt() -> child prints 'caught=INT' -> child exits 0 -> parent drains EOF and
   waits -> terminal closed.
 
-Each attempt uses a fresh PTY child. Any attempt that fails prints a 'FAIL P8-INT-*' marker and
-the process exits nonzero (after completing all attempts). Lifecycle/cleanup assertions are the
-same as the certification fixture; nothing is weakened.
+The program is compiled once, then run `--parallel N` times concurrently to add self-generated
+load (without recompiling concurrently). Each attempt uses a fresh PTY child. Any failure prints
+a 'FAIL P8-INT-*' marker; the driver exits nonzero if any attempt or run failed. Lifecycle and
+cleanup assertions match the certification fixture; nothing is weakened.
 
-Usage: python3 dogfood/pty_interrupt_repro.py <compiler> [attempts] [timeout_seconds]
+Usage: python3 dogfood/pty_interrupt_repro.py <compiler> [attempts] [timeout_seconds] [parallel]
 """
 import subprocess
 import sys
@@ -71,11 +72,12 @@ def escaped(value):
 
 def main():
     if len(sys.argv) < 2:
-        print("usage: pty_interrupt_repro.py <compiler> [attempts] [timeout_seconds]")
+        print("usage: pty_interrupt_repro.py <compiler> [attempts] [timeout_seconds] [parallel]")
         return 2
     compiler = sys.argv[1]
     attempts = int(sys.argv[2]) if len(sys.argv) > 2 else 100
     timeout = float(sys.argv[3]) if len(sys.argv) > 3 else 300.0
+    parallel = int(sys.argv[4]) if len(sys.argv) > 4 else 1
     with tempfile.TemporaryDirectory(prefix="pty-int-repro-") as td:
         td = Path(td)
         helper = td / "helper.py"
@@ -89,23 +91,40 @@ def main():
         exe = td / "p"
         b = subprocess.run([compiler, str(source), "-o", str(exe)], capture_output=True, text=True, timeout=180)
         if b.returncode:
-            print("COMPILE FAILED:", b.stdout, b.stderr)
+            print("COMPILE FAILED:", b.stdout[-500:], b.stderr[-500:])
             return 2
         t0 = time.monotonic()
         try:
-            r = subprocess.run([str(exe)], capture_output=True, text=True, timeout=timeout)
+            if parallel <= 1:
+                r = subprocess.run([str(exe)], capture_output=True, text=True, timeout=timeout)
+                runs = [(r.returncode, r.stdout, r.stderr)]
+            else:
+                procs = [subprocess.Popen([str(exe)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(parallel)]
+                runs = []
+                for p in procs:
+                    out, err = p.communicate(timeout=timeout)
+                    runs.append((p.returncode, out, err))
         except subprocess.TimeoutExpired:
-            print(f"TIMEOUT after {timeout}s (attempts={attempts})")
+            print(f"TIMEOUT after {timeout}s (attempts={attempts}, parallel={parallel})")
             return 1
         elapsed = time.monotonic() - t0
-        fails = [ln for ln in r.stdout.splitlines() if ln.startswith("FAIL")]
-        done = "DONE" in r.stdout.splitlines()
-        print(f"attempts={attempts} elapsed={elapsed:.1f}s exit={r.returncode} done={done} failures={len(fails)}")
-        for f in fails[:20]:
-            print("  ", f)
-        if r.stderr.strip():
-            print("stderr:", r.stderr[-400:])
-        return 0 if (r.returncode == 0 and done and not fails) else 1
+        total_fails = 0
+        total_expected = attempts * max(1, parallel)
+        done_runs = 0
+        for idx, (rc, out, err) in enumerate(runs):
+            fails = [ln for ln in out.splitlines() if ln.startswith("FAIL")]
+            done = "DONE" in out.splitlines()
+            total_fails += len(fails)
+            if done:
+                done_runs += 1
+            print(f"run[{idx}] exit={rc} done={done} failures={len(fails)}")
+            for f in fails[:10]:
+                print("   ", f)
+            if err.strip():
+                print("    stderr:", err[-200:])
+        print(f"SUMMARY attempts={total_expected} parallel={parallel} elapsed={elapsed:.1f}s done_runs={done_runs}/{len(runs)} failures={total_fails}")
+        ok = all(rc == 0 and "DONE" in out for rc, out, _ in runs) and total_fails == 0
+        return 0 if ok else 1
 
 
 if __name__ == "__main__":

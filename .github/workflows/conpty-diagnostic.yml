@@ -1,9 +1,9 @@
 name: ConPTY interrupt diagnostic (temporary)
 
 # TEMPORARY v0.0.6 investigation for the intermittent Windows P8 PTY interrupt/ETX failure.
-# Runs (1) the focused interrupt reproducer and (2) the P8 lifecycle fixture, each under
-# self-generated parallel load, and fails the job if any attempt/iteration fails so the marker
-# is preserved. Not a certification gate; remove when the investigation concludes.
+# Compiles the focused reproducer once and runs it N-way in parallel, then runs the P8
+# lifecycle fixture sequentially. The job fails (preserving the P8-INT-* marker) if any
+# attempt/run fails. Not a certification gate; remove when the investigation concludes.
 
 on:
   workflow_dispatch:
@@ -13,13 +13,13 @@ on:
         required: false
         default: "500"
       parallel:
-        description: Parallel reprocesses (load)
+        description: Concurrent reproducer runs (load)
         required: false
         default: "4"
       p8_iterations:
-        description: Parallel P8 lifecycle runs
+        description: Sequential P8 lifecycle runs
         required: false
-        default: "4"
+        default: "3"
 
 permissions:
   contents: read
@@ -39,30 +39,22 @@ jobs:
         run: cmake -S . -B build -DSTRUT_WARNINGS_AS_ERRORS=ON
       - name: Build compiler
         run: cmake --build build --config Release --target strut --parallel
-      - name: Focused interrupt reproducer under load
+      - name: Focused interrupt reproducer (parallel)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $par = [int]"${{ github.event.inputs.parallel }}"
-          $att = [int]"${{ github.event.inputs.focused_attempts }}"
-          $procs = @()
-          1..$par | ForEach-Object {
-            $procs += Start-Process -FilePath "python" -ArgumentList "dogfood/pty_interrupt_repro.py","build/Release/strut.exe","$att","600" -PassThru -NoNewWindow
-          }
-          $fail = 0
-          foreach ($p in $procs) { $p.WaitForExit(); if ($p.ExitCode -ne 0) { $fail++ } }
-          Write-Host "focused: parallel=$par attempts_each=$att failing_processes=$fail"
-          if ($fail -gt 0) { exit 1 }
-      - name: P8 lifecycle under load
+          python dogfood/pty_interrupt_repro.py build/Release/strut.exe "${{ github.event.inputs.focused_attempts }}" 600 "${{ github.event.inputs.parallel }}"
+          exit $LASTEXITCODE
+      - name: P8 lifecycle (sequential)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $par = [int]"${{ github.event.inputs.parallel }}"
-          $procs = @()
-          1..$par | ForEach-Object {
-            $procs += Start-Process -FilePath "python" -ArgumentList "dogfood/pty_lifecycle_certification.py","build/Release/strut.exe" -PassThru -NoNewWindow
-          }
           $fail = 0
-          foreach ($p in $procs) { $p.WaitForExit(); if ($p.ExitCode -ne 0) { $fail++ } }
-          Write-Host "p8: parallel=$par failing_runs=$fail"
+          for ($i = 0; $i -lt [int]"${{ github.event.inputs.p8_iterations }}"; $i++) {
+            Write-Host "==== P8 iteration $i ===="
+            python dogfood/pty_lifecycle_certification.py build/Release/strut.exe
+            if ($LASTEXITCODE -ne 0) { $fail++; Write-Host "==== P8 iteration $i FAILED exit=$LASTEXITCODE ====" }
+            else { Write-Host "==== P8 iteration $i ok ====" }
+          }
+          Write-Host "p8 failing_runs=$fail"
           if ($fail -gt 0) { exit 1 }
