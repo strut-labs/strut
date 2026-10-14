@@ -93,14 +93,20 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           vcpkg install curl:x64-windows sqlite3:x64-windows openssl:x64-windows
-          $vcpkgRoot = Split-Path -Parent (Get-Command vcpkg).Source
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { Split-Path -Parent (Get-Command vcpkg).Source }
           $installed = "$vcpkgRoot\installed\x64-windows"
-          "INCLUDE=$env:INCLUDE;$installed\include" >> $env:GITHUB_ENV
-          "LIB=$env:LIB;$installed\lib" >> $env:GITHUB_ENV
-          "$installed\bin" >> $env:GITHUB_PATH
+          "STRUT_VCPKG_INSTALLED=$installed" >> $env:GITHUB_ENV
       - name: Enable MSVC developer environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Expose vcpkg packages to MSVC (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installed = $env:STRUT_VCPKG_INSTALLED
+          "INCLUDE=$installed\include;$env:INCLUDE" >> $env:GITHUB_ENV
+          "LIB=$installed\lib;$env:LIB" >> $env:GITHUB_ENV
+          "$installed\bin" >> $env:GITHUB_PATH
       - name: Install arm64 .NET SDK (macOS)
         if: runner.os == 'macOS'
         uses: actions/setup-dotnet@v4
@@ -135,7 +141,6 @@ jobs:
         shell: bash
         env:
           STRUT_HTTP_REACTOR: '1'
-          STRUT_REACTOR_DIAG: '1'
         run: |
           STRUT="build/Release/strut.exe"; [ -f build/strut ] && STRUT="build/strut"
           STRUT="$STRUT" python3 dogfood/reactor_saturation_diag.py
