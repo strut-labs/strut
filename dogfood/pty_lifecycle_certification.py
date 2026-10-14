@@ -443,6 +443,10 @@ if mode == 'resize':
         time.sleep(0.01)
     raise SystemExit(2)
 elif mode == 'interrupt':
+    # Terminate directly from the handler. On Windows ConPTY, a post-Ctrl+C
+    # 'raise SystemExit(0)' intermittently yields process exit code 1 (~2.7% under load),
+    # failing the unchanged wait()==0 assertion; os._exit(0) makes the clean exit
+    # deterministic. Delivery/exit assertions are unchanged.
     def interrupted(signum, frame):
         os.write(1, b'caught=INT')
         os._exit(0)
