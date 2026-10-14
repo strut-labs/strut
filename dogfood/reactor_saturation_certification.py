@@ -207,10 +207,19 @@ def run_mode(reactor):
         finally:
             if p.poll() is None:
                 try:
-                    os.killpg(p.pid, signal.SIGKILL)
+                    if os.name == "posix":
+                        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                    else:
+                        p.kill()
                 except Exception:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+                try:
+                    p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
                     pass
-                p.wait()
 
 
 def main():
