@@ -21,12 +21,12 @@ import tempfile
 import time
 from pathlib import Path
 
-HELPER = """import signal, sys, time
+HELPER = """import os, signal, sys, time
 def interrupted(signum, frame):
-    print('caught=INT', flush=True)
-    raise SystemExit(0)
+    os.write(1, b'caught=INT\\n')
+    os._exit(0)
 signal.signal(signal.SIGINT, interrupted)
-print('ready', flush=True)
+os.write(1, b'ready\\n')
 while True: time.sleep(1)
 """
 
