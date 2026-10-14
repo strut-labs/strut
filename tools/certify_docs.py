@@ -16,7 +16,7 @@ EXAMPLES = ROOT / "examples" / "docs"
 START = "<!-- strut-example:{name}:start -->"
 END = "<!-- strut-example:{name}:end -->"
 SITE_REQUIREMENTS = {
-    "content/docs/status.html": ("v0.0.4", "v0.0.5 release candidate", "Windows ConPTY", "WebSocket-to-PTY"),
+    "content/docs/status.html": ("v0.0.4", "v0.0.5", "Windows ConPTY", "WebSocket-to-PTY"),
     "content/docs/ffi.html": ("strut_embed_context", "export \"C\"", "retained_callback", "P/Invoke"),
     "content/docs/crypto.html": ("secure_random_bytes", "hmac_sha256", "base64url_decode", "does not provide SHA-1"),
     "content/docs/http.html": ("http_request_stream", "request_body_length", "cancellation_token", "Unix-domain sockets"),
@@ -26,7 +26,7 @@ SITE_REQUIREMENTS = {
     "content/docs/pty.html": ("pty_spawn", "terminal.resize", "glibc 2.34", "Windows 10 version 1809", "Windows Server 2019", "bridge API"),
     "content/docs/architecture.html": ("libcurl", "libcrypto", "WebSocket server route", "third-party terminal library"),
     "content/docs/security.html": ("SSRF", "process supervisor", "Windows PTY"),
-    "llms.txt": ("v0.0.5 release candidate", "docs/crypto.html", "docs/websockets.html", "docs/pty.html", "docs/ffi.html"),
+    "llms.txt": ("v0.0.5", "docs/crypto.html", "docs/websockets.html", "docs/pty.html", "docs/ffi.html"),
     "sitemap.xml": ("docs/http-server.html", "docs/websockets.html", "docs/processes.html", "docs/pty.html", "docs/ffi.html"),
     "templates/docs-nav.html": ("docs/crypto", "docs/http-server", "docs/websockets", "docs/processes", "docs/pty", "docs/ffi"),
 }
