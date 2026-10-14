@@ -67,8 +67,13 @@ def open_blocker(port):
     return c
 
 
+_LAST_RAW = ""
+
+
 def fast_status(port, timeout=2.0):
     """One request with Connection: close; return the status code promptly (no keep-alive wait)."""
+    global _LAST_RAW
+    _LAST_RAW = ""
     try:
         c = socket.create_connection(("127.0.0.1", port), timeout=timeout)
     except OSError:
@@ -82,6 +87,7 @@ def fast_status(port, timeout=2.0):
             if not v:
                 break
             line += v
+        _LAST_RAW = line.decode("utf-8", "replace")
         for code in (b" 503 ", b" 200 ", b" 404 ", b" 403 ", b" 400 "):
             if code in line:
                 return code.strip().decode()
@@ -90,6 +96,17 @@ def fast_status(port, timeout=2.0):
         return "ERR"
     finally:
         c.close()
+
+
+def classify_saturation(observed):
+    """Classify a failed repeated-saturation probe sequence from the observed statuses."""
+    if observed and all(s == "ERR" for s in observed):
+        return "SAT-NO-RESPONSE"
+    if observed and all(s == "200" for s in observed):
+        return "SAT-ADMITTED"
+    if any(s == "503" for s in observed):
+        return "SAT-MIXED"
+    return "SAT-UNEXPECTED-STATUS"
 
 
 def status_code(data):
@@ -156,7 +173,9 @@ def run_mode(reactor):
                     break
                 time.sleep(0.02)
             if not established:
-                raise RuntimeError("neither admission slot reached the saturated state")
+                print("PRECONDITION FAILURE", flush=True)
+                print("  mode=%s category=SAT-NOT-ESTABLISHED last_raw=%r" % (mode, _LAST_RAW), flush=True)
+                raise RuntimeError("neither admission slot reached the saturated state [mode=%s SAT-NOT-ESTABLISHED]" % mode)
             r3 = full_request(port)          # over budget -> 503
             r4 = full_request(port)          # reject close must NOT free a slot -> 503
             blk1.close(); time.sleep(0.4)    # release one admitted slot
@@ -180,17 +199,28 @@ def run_mode(reactor):
 
             # Repeated saturation must not leak descriptors/threads.
             baseline = sample(p.pid)
-            for _ in range(30):
+            for attempt in range(30):
                 a = open_blocker(port); c = open_blocker(port)
                 rejected = False
+                observed = []
                 for _ in range(50):
-                    if fast_status(port) == "503":
+                    st = fast_status(port)
+                    observed.append(st)
+                    if st == "503":
                         rejected = True
                         break
                     time.sleep(0.02)
                 a.close(); c.close()
                 if not rejected:
-                    raise RuntimeError("repeated saturation did not reject with 503")
+                    category = classify_saturation(observed)
+                    print("REPEATED-SATURATION FAILURE", flush=True)
+                    print("  mode=%s attempt=%d/30 probes=%d" % (mode, attempt, len(observed)), flush=True)
+                    print("  observed=%r" % (observed,), flush=True)
+                    print("  last_raw=%r" % (_LAST_RAW,), flush=True)
+                    print("  category=%s" % category, flush=True)
+                    raise RuntimeError(
+                        "repeated saturation did not reject with 503 [mode=%s %s probes=%d observed=%r]"
+                        % (mode, category, len(observed), observed))
                 time.sleep(0.03)
             time.sleep(0.5)
             after = sample(p.pid)
