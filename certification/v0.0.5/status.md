@@ -681,3 +681,59 @@ Outstanding NON-blocking / release-authorization items (not performed, per bound
   saturation behave differently in reactor mode (P10 reactor cert times out even unsanitized);
   reactor has zero CI coverage. These are documented platform/scope limitations, not
   regressions from v0.0.4 (reactor existed with the same scope).
+
+---
+
+## Reactor certification update (supersedes the reactor-coverage note above)
+
+The reactor limitation described in the final bullet above has been worked through. Current
+state on the final candidate (HEAD 9eaf14c and its successor adding the Windows gate):
+
+- **Defect A (reactor WS output-watermark deadlock)** — FIXED (465910f): `reactor_drain_stream`
+  now notifies `out_cv`; a 32 MiB reactor flood delivers 100%.
+- **Defect B (reactor saturation returned no 503)** — FIXED (b647e7d) with a bounded,
+  non-blocking `reactor_reject_saturated`; rejection accounting bug fixed (81e18c2). New
+  regression `dogfood/reactor_saturation_certification.py` (CTest `strut_reactor_saturation`)
+  fails pre-fix and passes post-fix.
+- **Reactor WS abrupt-close leak** — FIXED (7b14157): peer EOF is now treated as close, so the
+  level-triggered read no longer busy-spins and leaks `in_flight`/map slots. This was the root
+  cause of the reactor P10 32-concurrent failure; reactor P10 now PASSES fully.
+- **Premature drain** — FIXED (1ba918b): removed the reactor `run->in_flight=0` in
+  `force_shutdown_locked`.
+- **Retired-handler lifecycle contract** — RESOLVED (39e3e2a): contract-based fixture
+  (`running()` stays true from `stop()` until the drain completes) plus a mode-aware thread
+  bound; `http_worker_certification` PASSES legacy AND reactor.
+- **Windows reactor saturation** — FIXED (08118c4): root cause was `strut_socket_close`
+  performing `shutdown(SD_BOTH)` (SD_BOTH includes SD_RECEIVE), which on Windows resets the
+  connection (RST / WinError 10053) when the peer's request is still unread, discarding the
+  buffered 503. The reject connection now half-closes the send side
+  (`shutdown(SD_SEND)`/`SHUT_WR`) after writing the 503 and drains the peer's request in a new
+  reactor `draining` phase until EOF (bounded by the existing 2 s rejection deadline) before
+  closing. Verified on windows-x64-msvc: all six saturated probes receive `HTTP/1.1 503` with
+  zero error. The `strut_reactor_saturation` CTest is now enabled on Windows (gate removed).
+- **Reactor CI coverage** — MANDATORY on linux-x64-gcc (plain: P10 flood + worker cert +
+  saturation + P4/P5; sanitized: P10+P4+P5 ASan/UBSan `detect_leaks=1`; TSan: P10+worker+
+  P4/P5). The sanitized reactor explicit-stop stage remains a non-blocking WARN pending the
+  Defect C decision.
+- **Windows CI dependency plumbing** — FIXED (9eaf14c): `ilammy/msvc-dev-cmd` resets
+  INCLUDE/LIB, discarding the vcpkg include/lib paths and breaking the `sqlite-http-service`
+  docs example; the vcpkg include/lib/PATH are now re-exposed after the dev-environment step
+  (using `VCPKG_INSTALLATION_ROOT`).
+
+**Five-platform CI PASS on 9eaf14c** (all jobs green), including the Windows reactor saturation
+diagnostic delivering the 503.
+
+### Open blocker: Defect C (route-handler ownership cycle / exit-time leak)
+
+Under strict `--leak-check`/`detect_leaks=1`, a route handler that captures its own
+`http_server` by value forms a strong reference cycle (`state -> routes -> closure ->
+http_server -> s_ -> state`) that is not reclaimed at exit. Explicit weak ownership is NOT
+currently expressible: `weak()` on the native handle fails type-checking, and weakly
+referencing the handle (directly or wrapped in a user struct) fails native codegen
+(`strut_weak` not emitted). `weak_ptr` works for plain user structs only. Resolving this
+requires a small language/runtime capability (weak support for the native `http_server`
+handle) or an HTTP-specific weak-handle API, or accepting the leak. This is a design decision
+for the reviewer; capture/ownership semantics are not changed unilaterally.
+
+**Release status: NOT READY** — one material design decision (Defect C) outstanding. No tag,
+package, or publication of v0.0.5; v0.0.4 untouched; Nift core unmodified.
