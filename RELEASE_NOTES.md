@@ -9,6 +9,12 @@ Development in progress.
   after acknowledging the ConPTY Ctrl+C; interrupt delivery itself was correct. The helper now
   terminates deterministically from its signal handler, and the delivery/exit/cleanup assertions
   are unchanged. This is a test-helper correction only — no runtime behaviour changed.
+- **HTTP reactor saturation certification.** The intermittent macOS failure of the saturation
+  regression was a fixture synchronization issue: the repeated-saturation loop assumed a fixed
+  pair of blockers occupied the admission slots, but a still-releasing connection could
+  pre-occupy one, so the server never saturated and probes were admitted. The fixture now
+  establishes saturation robustly by holding blockers until a rejection is observed; the HTTP 503
+  assertion is unchanged. No runtime behaviour changed.
 
 # Strut 0.0.5
 

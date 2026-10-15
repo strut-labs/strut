@@ -146,17 +146,24 @@ Resolved — Windows ConPTY P8 interrupt fixture (certification helper only):
   supported.
 - Permanent failure-only `P8-INT-*` markers remain in `dogfood/pty_lifecycle_certification.py`.
 
-Open — macOS reactor saturation (separate v0.0.6 correctness follow-up):
-- `strut_reactor_saturation` (`dogfood/reactor_saturation_certification.py`) failed intermittently
-  on macos-arm64 in CI run **38618013023** (`RuntimeError: repeated saturation did not reject with
-  503`), then passed on rerun.
-- The failing assertion is the repeated-saturation loop's requirement that a request over the
-  admission budget receive HTTP 503 within the bounded `fast_status` poll. The available evidence
-  establishes intermittent failure, not its cause; it is **not** classified as a harmless flake.
-- Do not weaken the assertion, add retries/timeouts, or change saturation semantics without
-  evidence. Entry points: `dogfood/reactor_saturation_certification.py` (`fast_status`, the
-  repeated-saturation loop) and the reactor rejection/admission path in the generated runtime
-  (`reactor_reject_saturated`, rejection accounting).
+Resolved — macOS reactor saturation (v0.0.6):
+- `strut_reactor_saturation` failed intermittently on macos-arm64 (first seen CI run
+  **38618013023**, "repeated saturation did not reject with 503"), then passed on rerun.
+- Root cause (fixture synchronization, not a runtime defect): the repeated-saturation loop opened
+  a fixed pair of blockers and assumed both occupy admission slots. A still-releasing connection
+  from the previous iteration could pre-occupy one slot, so the second blocker was rejected
+  (holding no slot) and the server drained to unsaturated, admitting every probe. Server-side
+  admission logging (`STRUT_HTTP_DIAG`) showed `inflight=1 cap=2` throughout a failing iteration,
+  and a client-side re-establishment check confirmed the runtime saturates and rejects with 503
+  correctly (`established=True` on every failure).
+- Fix (`dogfood/reactor_saturation_certification.py`): establish saturation robustly by holding
+  blockers until a probe is rejected (open two, then add more only if needed), instead of assuming
+  a fixed pair both occupy slots. The 503 assertion and resource accounting are unchanged; no
+  runtime behaviour changed.
+- Validation: 20/20 focused macOS runs under background CPU load passed after the fix
+  (CI **38666866275**); the failure reproduced in 2/15 and 2/25 loaded runs before the fix.
+- Failure-only diagnostics are retained (mode, category, observed statuses, last raw response,
+  server stderr tail) and the env-gated `STRUT_HTTP_DIAG` admission logging remains available.
 
 ## Performance implementation rule
 
