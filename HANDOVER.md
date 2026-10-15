@@ -163,7 +163,7 @@ Resolved — macOS reactor saturation (v0.0.6):
 - Validation: 20/20 focused macOS runs under background CPU load passed after the fix
   (CI **38666866275**); the failure reproduced in 2/15 and 2/25 loaded runs before the fix.
 - Failure-only diagnostics are retained (mode, category, observed statuses, last raw response,
-  server stderr tail) and the env-gated `STRUT_HTTP_DIAG` admission logging remains available.
+  server stderr tail).
 
 ## Performance implementation rule
 
