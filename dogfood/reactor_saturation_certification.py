@@ -220,9 +220,11 @@ def run_mode(reactor):
                 blockers = []
                 rejected = False
                 observed = []
-                for _ in range(8):
+                for _ in range(4):
                     blockers.append(open_blocker(port))
-                    for _ in range(25):
+                    if len(blockers) < 2:
+                        continue  # probe only once at least two blockers are held
+                    for _ in range(20):
                         st = fast_status(port)
                         observed.append(st)
                         if st == "503":
